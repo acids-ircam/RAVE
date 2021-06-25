@@ -73,6 +73,7 @@ class TeacherFlow(pl.LightningModule):
     def __init__(self, in_size, res_size, skp_size, kernel_size, n_block,
                  dilation_cycle, n_flow):
         super().__init__()
+        self.save_hyperparameters()
         flows = []
         for _ in range(n_flow):
             flows.append(
@@ -92,7 +93,31 @@ class TeacherFlow(pl.LightningModule):
     def normal_ll(self, x):
         return -.5 * (math.log(2 * math.pi) + x * x)
 
-    def training_step(self, x):
+    def training_step(self, batch, batch_idx):
+        x = batch
+        T = x.shape[-1]
+
         y, logdet = self.flows(x)
-        logpy = self.normal_ll(y).reshape(y.shape[0], -1).sum(-1)
+        logpy = self.normal_ll(y).reshape(y.shape[0], -1).sum(-1) / T
+        logdet = logdet / T
         logpx = logpy + logdet
+
+        self.log("logpy", logpy)
+        self.log("logpx", logpx)
+        self.log("logdet", logdet)
+
+        return -logpx
+
+    def validation_step(self, batch, batch_idx):
+        x = batch
+        T = x.shape[-1]
+
+        y, logdet = self.flows(x)
+        logpy = self.normal_ll(y).reshape(y.shape[0], -1).sum(-1) / T
+        logdet = logdet / T
+        logpx = logpy + logdet
+
+        self.log("val_logpx", logpx)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), 1e-4)
