@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import DataLoader, random_split
-from fd.flows.ar_model import TeacherFlow
+from fd.parallel_model.model import ParallelModel
 from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config
 import pytorch_lightning as pl
@@ -9,13 +9,12 @@ from os import environ
 if __name__ == "__main__":
 
     class args(Config):
-        IN_SIZE = 1
-        RES_SIZE = 256
-        SKP_SIZE = 256
-        KERNEL_SIZE = 3
-        N_BLOCK = 10
-        DILATION_CYCLE = 5
-        N_FLOW = 4
+        DATA_SIZE = 1
+        CAPACITY = 64
+        LATENT_SIZE = 16
+        RATIOS = [8, 8, 4, 4]
+        BIAS = True
+        TEACHER_CHKPT = None
 
         PREPROCESSED = None
         WAV = None
@@ -29,14 +28,13 @@ if __name__ == "__main__":
 
     environ["CUDA_VISIBLE_DEVICES"] = str(args.CUDA)
 
-    model = TeacherFlow(
-        args.IN_SIZE,
-        args.RES_SIZE,
-        args.SKP_SIZE,
-        args.KERNEL_SIZE,
-        args.N_BLOCK,
-        args.DILATION_CYCLE,
-        args.N_FLOW,
+    model = ParallelModel(
+        data_size=args.DATA_SIZE,
+        capacity=args.CAPACITY,
+        latent_size=args.LATENT_SIZE,
+        ratios=args.RATIOS,
+        bias=args.BIAS,
+        teacher_chkpt=args.TEACHER_CHKPT,
     )
 
     dataset = SimpleDataset(
@@ -53,7 +51,7 @@ if __name__ == "__main__":
     train = DataLoader(train, args.BATCH, True)
     val = DataLoader(val, args.BATCH, False)
 
-    check_callback = pl.callbacks.ModelCheckpoint(monitor="val_logpx")
+    check_callback = pl.callbacks.ModelCheckpoint(monitor="validation")
     trainer = pl.Trainer(
         gpus=1,
         callbacks=[check_callback],

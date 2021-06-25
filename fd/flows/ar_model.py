@@ -58,6 +58,9 @@ class ARModel(nn.Module):
             nn.Conv1d(skp_size, 2 * in_size, 1),
         )
 
+        self.postnet[-1].weight.data.zero_()
+        self.postnet[-1].bias.data.zero_()
+
     def forward(self, x):
         x = self.prenet(x)
 
@@ -93,14 +96,24 @@ class TeacherFlow(pl.LightningModule):
     def normal_ll(self, x):
         return -.5 * (math.log(2 * math.pi) + x * x)
 
-    def training_step(self, batch, batch_idx):
-        x = batch
+    def logpx(self, x):
         T = x.shape[-1]
 
         y, logdet = self.flows(x)
         logpy = self.normal_ll(y).reshape(y.shape[0], -1).sum(-1) / T
         logdet = logdet / T
+
+        logpy = logpy.mean()
+        logdet = logdet.mean()
+
         logpx = logpy + logdet
+
+        return logpx, logpy, logdet
+
+    def training_step(self, batch, batch_idx):
+        x = batch.unsqueeze(1)
+
+        logpx, logpy, logdet = self.logpx(x)
 
         self.log("logpy", logpy)
         self.log("logpx", logpx)
@@ -109,13 +122,9 @@ class TeacherFlow(pl.LightningModule):
         return -logpx
 
     def validation_step(self, batch, batch_idx):
-        x = batch
-        T = x.shape[-1]
+        x = batch.unsqueeze(1)
 
-        y, logdet = self.flows(x)
-        logpy = self.normal_ll(y).reshape(y.shape[0], -1).sum(-1) / T
-        logdet = logdet / T
-        logpx = logpy + logdet
+        logpx, logpy, logdet = self.logpx(x)
 
         self.log("val_logpx", logpx)
 

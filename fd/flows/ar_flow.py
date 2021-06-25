@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 
 
 class StrictCausalConv(nn.Conv1d):
@@ -34,7 +35,7 @@ class ARFlow(nn.Module):
 
     @torch.no_grad()
     def inverse(self, x):
-        for t in range(x.shape[-1]):
+        for t in tqdm(range(x.shape[-1])):
             mean, var = self.extract_parameters(x[..., :t + 1])
             x[..., t:t + 1] = x[..., t:t + 1] / var[..., -1:] + mean[..., -1:]
         return x
