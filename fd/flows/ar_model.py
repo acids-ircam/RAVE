@@ -126,7 +126,7 @@ class TeacherFlow(pl.LightningModule):
 
         logpx, logpy, logdet = self.logpx(x)
 
-        self.log("val_logpx", logpx)
+        self.log("validation", -logpx)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), 1e-4)

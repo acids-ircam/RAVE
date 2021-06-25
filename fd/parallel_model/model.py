@@ -3,6 +3,12 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from ..flows.ar_model import TeacherFlow
 from .core import multiscale_stft
+from sklearn.decomposition import PCA
+from einops import rearrange
+from . import USE_BUFFER_CONV
+from .buffer_conv import CachedConv1d
+
+Conv1d = CachedConv1d if USE_BUFFER_CONV else nn.Conv1d
 
 
 class Residual(nn.Module):
@@ -24,7 +30,7 @@ class ResidualStack(nn.Module):
                 Residual(
                     nn.Sequential(
                         nn.LeakyReLU(.2),
-                        nn.Conv1d(
+                        Conv1d(
                             dim,
                             dim,
                             kernel_size,
@@ -33,7 +39,7 @@ class ResidualStack(nn.Module):
                             bias=bias,
                         ),
                         nn.LeakyReLU(.2),
-                        nn.Conv1d(
+                        Conv1d(
                             dim,
                             dim,
                             kernel_size,
@@ -63,7 +69,7 @@ class UpsampleLayer(nn.Module):
                     bias=bias,
                 ))
         else:
-            net.append(nn.Conv1d(
+            net.append(Conv1d(
                 in_dim,
                 out_dim,
                 3,
@@ -80,7 +86,7 @@ class UpsampleLayer(nn.Module):
 class Generator(nn.Module):
     def __init__(self, latent_size, capacity, data_size, ratios, bias=False):
         super().__init__()
-        self.pre_net = nn.Conv1d(
+        self.pre_net = Conv1d(
             latent_size,
             2**len(ratios) * capacity,
             7,
@@ -99,7 +105,7 @@ class Generator(nn.Module):
         self.net = nn.Sequential(*net)
 
         self.post_net = nn.Sequential(
-            nn.Conv1d(out_dim, data_size, 7, padding=3, bias=bias),
+            Conv1d(out_dim, data_size, 7, padding=3, bias=bias),
             nn.Tanh(),
         )
 
@@ -113,7 +119,7 @@ class Generator(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, data_size, capacity, latent_size, ratios, bias=False):
         super().__init__()
-        net = [nn.Conv1d(data_size, capacity, 7, padding=3, bias=bias)]
+        net = [Conv1d(data_size, capacity, 7, padding=3, bias=bias)]
 
         for i, r in enumerate(ratios):
             in_dim = 2**i * capacity
@@ -122,7 +128,7 @@ class Encoder(nn.Module):
             net.append(nn.BatchNorm1d(in_dim))
             net.append(nn.LeakyReLU(.2))
             net.append(
-                nn.Conv1d(
+                Conv1d(
                     in_dim,
                     out_dim,
                     2 * r + 1,
@@ -133,7 +139,7 @@ class Encoder(nn.Module):
 
         net.append(nn.LeakyReLU(.2))
         net.append(
-            nn.Conv1d(
+            Conv1d(
                 out_dim,
                 2 * latent_size,
                 5,
@@ -150,13 +156,16 @@ class Encoder(nn.Module):
 
 
 class ParallelModel(pl.LightningModule):
-    def __init__(self,
-                 data_size,
-                 capacity,
-                 latent_size,
-                 ratios,
-                 bias,
-                 teacher_chkpt=None):
+    def __init__(
+        self,
+        data_size,
+        capacity,
+        latent_size,
+        ratios,
+        bias,
+        teacher_chkpt=None,
+        freeze_encoder=False,
+    ):
         super().__init__()
         self.save_hyperparameters()
 
@@ -171,10 +180,17 @@ class ParallelModel(pl.LightningModule):
                                  bias)
 
         self.idx = 0
+        self.freeze_encoder = freeze_encoder
+
+        self.register_buffer("latent_pca", torch.eye(latent_size))
+        self.register_buffer("latent_mean", torch.zeros(latent_size))
+
+        self.latent_size = latent_size
 
     def configure_optimizers(self):
-        p = list(self.encoder.parameters())
-        p = p + list(self.decoder.parameters())
+        p = list(self.decoder.parameters())
+        if not self.freeze_encoder:
+            p = p + list(self.encoder.parameters())
         return torch.optim.Adam(p, 1e-4)
 
     def lin_distance(self, x, y):
@@ -193,8 +209,7 @@ class ParallelModel(pl.LightningModule):
 
         return lin + log
 
-    def reparametrize(self, x):
-        mean, scale = torch.split(x, x.shape[1] // 2, 1)
+    def reparametrize(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
         logvar = torch.log(var)
@@ -206,11 +221,15 @@ class ParallelModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
-        z, kl = self.reparametrize(self.encoder(x))
+        z, kl = self.reparametrize(*self.encoder(x))
         y = self.decoder(z)
 
         distance = self.distance(x, y)
-        self_likelihood = self.teacher.logpx(y)[0]
+
+        if self.teacher is not None:
+            self_likelihood = self.teacher.logpx(y)[0]
+        else:
+            self_likelihood = 0
 
         self.log("distance", distance)
         self.log("self_likelihood", self_likelihood)
@@ -220,17 +239,35 @@ class ParallelModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
-        z, kl = self.reparametrize(self.encoder(x))
+        mean, scale = self.encoder(x)
+        z, _ = self.reparametrize(mean, scale)
         y = self.decoder(z)
 
         distance = self.distance(x, y)
-        self_likelihood = self.teacher.logpx(y)[0]
+
+        if self.teacher is not None:
+            self_likelihood = self.teacher.logpx(y)[0]
+        else:
+            self_likelihood = 0
 
         self.log("validation", distance - self_likelihood)
 
-        return torch.cat([x, y], -1)
+        return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
-        y = torch.cat(out, 0)[:64].reshape(-1)
+        audio, z = list(zip(*out))
+
+        z = torch.cat(z, 0)
+        z = rearrange(z, "b c t -> (b t) c")
+
+        self.latent_mean.copy_(z.mean(0))
+        z = z - self.latent_mean
+
+        pca = PCA(self.latent_size).fit(z.cpu().numpy()).components_
+        pca = torch.from_numpy(pca).to(z)
+
+        self.latent_pca.copy_(pca)
+
+        y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, 24000)
         self.idx += 1

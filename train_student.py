@@ -15,6 +15,8 @@ if __name__ == "__main__":
         RATIOS = [8, 8, 4, 4]
         BIAS = True
         TEACHER_CHKPT = None
+        STUDENT_CHKPT = None
+        FREEZE_ENCODER = False
 
         PREPROCESSED = None
         WAV = None
@@ -35,6 +37,7 @@ if __name__ == "__main__":
         ratios=args.RATIOS,
         bias=args.BIAS,
         teacher_chkpt=args.TEACHER_CHKPT,
+        freeze_encoder=args.FREEZE_ENCODER,
     )
 
     dataset = SimpleDataset(

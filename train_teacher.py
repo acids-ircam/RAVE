@@ -53,7 +53,7 @@ if __name__ == "__main__":
     train = DataLoader(train, args.BATCH, True)
     val = DataLoader(val, args.BATCH, False)
 
-    check_callback = pl.callbacks.ModelCheckpoint(monitor="val_logpx")
+    check_callback = pl.callbacks.ModelCheckpoint(monitor="validation")
     trainer = pl.Trainer(
         gpus=1,
         callbacks=[check_callback],
