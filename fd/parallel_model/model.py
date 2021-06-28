@@ -268,8 +268,8 @@ class ParallelModel(pl.LightningModule):
             pred_true = self.discriminator(x).mean()
             pred_fake = self.discriminator(y).mean()
         else:
-            pred_true = 0
-            pred_fake = 0
+            pred_true = 0.
+            pred_fake = 0.
 
         if batch_idx % 2 and batch_idx > self.warmup:
             loss = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
@@ -282,7 +282,7 @@ class ParallelModel(pl.LightningModule):
 
             gen_opt.zero_grad()
             loss.backward()
-            gen_opt.zero_grad()
+            gen_opt.step()
 
         self.log("distance", distance)
         self.log("regularization", kl)
@@ -290,6 +290,24 @@ class ParallelModel(pl.LightningModule):
         self.log("pred_fake", pred_fake)
 
         return loss
+
+    # def training_step(self, batch, batch_idx):
+    #     x = batch.unsqueeze(1)
+    #     z, kl = self.reparametrize(*self.encoder(x))
+    #     y = self.decoder(z)
+
+    #     distance = self.distance(x, y)
+
+    #     if self.teacher is not None:
+    #         self_likelihood = self.teacher.logpx(y)[0]
+    #     else:
+    #         self_likelihood = 0
+
+    #     self.log("distance", distance)
+    #     self.log("self_likelihood", self_likelihood)
+    #     self.log("regularization", kl)
+
+    #     return distance - self_likelihood + 1e-3 * kl
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
