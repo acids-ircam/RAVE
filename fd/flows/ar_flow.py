@@ -5,7 +5,6 @@ from tqdm import tqdm
 
 class StrictCausalConv(nn.Conv1d):
     def __init__(self, *args, **kwargs):
-        padding = kwargs.get("padding", 0)
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
         self.causal_padding = self.kernel_size[0]
@@ -27,10 +26,14 @@ class ARFlow(nn.Module):
         var = torch.sigmoid(var)
         return mean, var
 
-    def forward(self, x, logdet=0):
+    def apply_transform(self, x):
         mean, var = self.extract_parameters(x)
         x = (x - mean) * var
         _logdet = torch.log(var).reshape(var.shape[0], -1).sum(-1)
+        return x, _logdet
+
+    def forward(self, x, logdet=0):
+        x, _logdet = self.apply_transform(x)
         return x, logdet + _logdet
 
     @torch.no_grad()
