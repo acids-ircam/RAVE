@@ -6,7 +6,7 @@ from einops import rearrange
 
 
 def test_jacobian():
-    model = StrictCausalConv(1, 3, 3)
+    model = StrictCausalConv(1, 30, 3)
     model = NAF1d(model).double()
 
     x = torch.randn(1, 1, 64).double()

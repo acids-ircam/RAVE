@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .ar_flow import StrictCausalConv, SequentialFlow, ARFlow, ActNorm1d
+from .naf import NAF1d
 import pytorch_lightning as pl
 import math
 
@@ -55,7 +56,7 @@ class ARModel(nn.Module):
             nn.LeakyReLU(.2),
             nn.Conv1d(skp_size, skp_size, 1),
             nn.LeakyReLU(.2),
-            nn.Conv1d(skp_size, 2 * in_size, 1),
+            nn.Conv1d(skp_size, 30 * in_size, 1),
         )
 
         self.postnet[-1].weight.data.zero_()
@@ -80,7 +81,7 @@ class TeacherFlow(pl.LightningModule):
         flows = []
         for _ in range(n_flow):
             flows.append(
-                ARFlow(
+                NAF1d(
                     ARModel(
                         in_size,
                         res_size,
@@ -92,6 +93,7 @@ class TeacherFlow(pl.LightningModule):
             flows.append(ActNorm1d(in_size))
 
         self.flows = SequentialFlow(nn.ModuleList(flows))
+        self.idx = 0
 
     def normal_ll(self, x):
         return -.5 * (math.log(2 * math.pi) + x * x)
@@ -124,9 +126,16 @@ class TeacherFlow(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
 
+        y, _ = self.flows(x)
+
+        self.logger.experiment.add_histogram("normalized", y.reshape(-1),
+                                             self.idx)
+
         logpx, logpy, logdet = self.logpx(x)
 
         self.log("validation", -logpx)
+
+        self.idx += 1
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), 1e-4)
