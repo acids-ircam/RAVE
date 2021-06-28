@@ -156,6 +156,40 @@ class Encoder(nn.Module):
         return torch.split(z, z.shape[1] // 2, 1)
 
 
+class Discriminator(nn.Module):
+    def __init__(self, capacity, multiplier, n_layers):
+        super().__init__()
+
+        net = [nn.Conv1d(1, capacity, 15, padding=7)]
+        net.append(nn.LeakyReLU(.2))
+
+        for i in range(n_layers):
+            net.append(
+                nn.Conv1d(
+                    capacity * multiplier**i,
+                    min(1024, capacity * multiplier**(i + 1)),
+                    41,
+                    stride=multiplier,
+                    padding=20,
+                    groups=multiplier**(i + 1),
+                ))
+            net.append(nn.LeakyReLU(.2))
+
+        net.append(
+            nn.Conv1d(
+                min(1024, capacity * multiplier**(i + 1)),
+                min(1024, capacity * multiplier**(i + 1)),
+                5,
+                padding=2,
+            ))
+        net.append(nn.LeakyReLU(.2))
+        net.append(nn.Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
+        self.net = nn.Sequential(*net)
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class ParallelModel(pl.LightningModule):
     def __init__(
         self,

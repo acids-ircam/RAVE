@@ -66,3 +66,8 @@ decode_rtf = (N / sr) / decode_time
 
 print(encode_rtf, decode_rtf)
 # %%
+from fd.parallel_model.model import Discriminator
+
+d = Discriminator(16, 4, 4)
+print(d)
+# %%
