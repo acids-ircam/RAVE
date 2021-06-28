@@ -7,10 +7,13 @@ import numpy as np
 
 torch.set_grad_enabled(False)
 from fd.parallel_model.model import ParallelModel
+from fd.flows.ar_model import TeacherFlow
 import matplotlib.pyplot as plt
 
 ckpt = glob("lightning_logs/version_4/checkpoints/*.ckpt")[0]
-model = ParallelModel.load_from_checkpoint(ckpt)
+student = ParallelModel.load_from_checkpoint(ckpt)
+ckpt = glob("lightning_logs/version_3/checkpoints/*.ckpt")[0]
+teacher = TeacherFlow.load_from_checkpoint(ckpt)
 # %%
 
 name = glob("/slow-2/antoine/dataset/ljspeech/LJSpeech-1.1/out_24k/*.wav")
@@ -22,23 +25,19 @@ x = x[:2**15].reshape(1, 1, -1)
 plt.plot(x.reshape(-1))
 plt.show()
 x = torch.from_numpy(x).float()
-z = model.encoder(x)[0]
-z = z.squeeze(0).T.cpu().numpy()
 
-mean = model.latent_mean.cpu().numpy()
-pca = model.latent_pca.cpu().numpy()
+y, logdet = teacher.flows(x)
+# %%
 
-z = pca @ (z - mean).T
-z = z.T
-
-plt.plot(z + 3 * np.arange(z.shape[1]), "k-")
-plt.show()
+plt.plot(y.reshape(-1))
+print(logdet)
 
 #%% SPEED TEST
 from time import time
 
 device = torch.device("cuda:4")
 model.to(device)
+
 
 def bench(func):
     mean = 0

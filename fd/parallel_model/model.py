@@ -6,9 +6,10 @@ from .core import multiscale_stft
 from sklearn.decomposition import PCA
 from einops import rearrange
 from . import USE_BUFFER_CONV
-from .buffer_conv import CachedConv1d
+from .buffer_conv import CachedConv1d, CachedConvTranspose1d
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else nn.Conv1d
+ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
 
 
 class Residual(nn.Module):
@@ -60,7 +61,7 @@ class UpsampleLayer(nn.Module):
         net = [nn.LeakyReLU(.2)]
         if ratio > 1:
             net.append(
-                nn.ConvTranspose1d(
+                ConvTranspose1d(
                     in_dim,
                     out_dim,
                     2 * ratio,
