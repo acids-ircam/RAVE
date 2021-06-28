@@ -65,8 +65,8 @@ class UpsampleLayer(nn.Module):
                     in_dim,
                     out_dim,
                     2 * ratio,
-                    ratio,
-                    ratio // 2,
+                    stride=ratio,
+                    padding=ratio // 2,
                     bias=bias,
                 ))
         else:
@@ -191,8 +191,17 @@ class Discriminator(nn.Module):
 
 
 class ParallelModel(pl.LightningModule):
-    def __init__(self, data_size, capacity, latent_size, ratios, bias,
-                 d_capacity, d_multiplier, d_n_layers, warmup):
+    def __init__(self,
+                 data_size,
+                 capacity,
+                 latent_size,
+                 ratios,
+                 bias,
+                 d_capacity,
+                 d_multiplier,
+                 d_n_layers,
+                 warmup,
+                 sr=24000):
         super().__init__()
         self.save_hyperparameters()
 
@@ -213,6 +222,7 @@ class ParallelModel(pl.LightningModule):
         self.automatic_optimization = False
 
         self.warmup = warmup
+        self.sr = sr
 
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
@@ -240,7 +250,8 @@ class ParallelModel(pl.LightningModule):
 
         return lin + log
 
-    def reparametrize(self, mean, scale):
+    @staticmethod
+    def reparametrize(mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
         logvar = torch.log(var)
@@ -251,27 +262,25 @@ class ParallelModel(pl.LightningModule):
         return z, kl
 
     def training_step(self, batch, batch_idx):
+        step = len(self.train_dataloader()) * self.current_epoch + batch_idx
+
         gen_opt, dis_opt = self.optimizers()
 
         x = batch.unsqueeze(1)
         z, kl = self.reparametrize(*self.encoder(x))
 
-        # if batch_idx > self.warmup:
-        #     z = z.detach()
-        #     kl = kl.detach()
-
         y = self.decoder(z)
 
         distance = self.distance(x, y)
 
-        if batch_idx > self.warmup:
+        if step > self.warmup:
             pred_true = self.discriminator(x).mean()
             pred_fake = self.discriminator(y).mean()
         else:
             pred_true = 0.
             pred_fake = 0.
 
-        if batch_idx % 2 and batch_idx > self.warmup:
+        if step % 2 and step > self.warmup:
             loss = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
 
             dis_opt.zero_grad()

@@ -42,6 +42,7 @@ if __name__ == "__main__":
         d_multiplier=args.D_MULTIPLIER,
         d_n_layers=args.D_N_LAYERS,
         warmup=args.WARMUP,
+        sr=args.SR,
     )
 
     dataset = SimpleDataset(
