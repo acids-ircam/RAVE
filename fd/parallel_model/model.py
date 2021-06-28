@@ -256,9 +256,9 @@ class ParallelModel(pl.LightningModule):
         x = batch.unsqueeze(1)
         z, kl = self.reparametrize(*self.encoder(x))
 
-        if batch_idx > self.warmup:
-            z = z.detach()
-            kl = kl.detach()
+        # if batch_idx > self.warmup:
+        #     z = z.detach()
+        #     kl = kl.detach()
 
         y = self.decoder(z)
 
@@ -288,8 +288,6 @@ class ParallelModel(pl.LightningModule):
         self.log("regularization", kl)
         self.log("pred_true", pred_true)
         self.log("pred_fake", pred_fake)
-
-        return loss
 
     # def training_step(self, batch, batch_idx):
     #     x = batch.unsqueeze(1)
