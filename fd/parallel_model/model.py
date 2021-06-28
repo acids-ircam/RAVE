@@ -191,42 +191,38 @@ class Discriminator(nn.Module):
 
 
 class ParallelModel(pl.LightningModule):
-    def __init__(
-        self,
-        data_size,
-        capacity,
-        latent_size,
-        ratios,
-        bias,
-        teacher_chkpt=None,
-        freeze_encoder=False,
-    ):
+    def __init__(self, data_size, capacity, latent_size, ratios, bias,
+                 d_capacity, d_multiplier, d_n_layers, warmup):
         super().__init__()
         self.save_hyperparameters()
-
-        if teacher_chkpt is not None:
-            self.teacher = TeacherFlow.load_from_checkpoint(
-                teacher_chkpt).eval()
-        else:
-            self.teacher = None
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  bias)
 
+        self.discriminator = Discriminator(d_capacity, d_multiplier,
+                                           d_n_layers)
+
         self.idx = 0
-        self.freeze_encoder = freeze_encoder
 
         self.register_buffer("latent_pca", torch.eye(latent_size))
         self.register_buffer("latent_mean", torch.zeros(latent_size))
 
         self.latent_size = latent_size
 
+        self.automatic_optimization = False
+
+        self.warmup = warmup
+
     def configure_optimizers(self):
-        p = list(self.decoder.parameters())
-        if not self.freeze_encoder:
-            p = p + list(self.encoder.parameters())
-        return torch.optim.Adam(p, 1e-4)
+        gen_p = list(self.encoder.parameters())
+        gen_p += list(self.decoder.parameters())
+        dis_p = self.discriminator.parameters()
+
+        gen_opt = torch.optim.Adam(gen_p, 1e-4, (.5, .9))
+        dis_opt = torch.optim.Adam(dis_p, 1e-4, (.5, .9))
+
+        return gen_opt, dis_opt
 
     def lin_distance(self, x, y):
         return torch.norm(x - y) / torch.norm(x)
@@ -255,22 +251,45 @@ class ParallelModel(pl.LightningModule):
         return z, kl
 
     def training_step(self, batch, batch_idx):
+        gen_opt, dis_opt = self.optimizers()
+
         x = batch.unsqueeze(1)
         z, kl = self.reparametrize(*self.encoder(x))
+
+        if batch_idx > self.warmup:
+            z = z.detach()
+            kl = kl.detach()
+
         y = self.decoder(z)
 
         distance = self.distance(x, y)
 
-        if self.teacher is not None:
-            self_likelihood = self.teacher.logpx(y)[0]
+        if batch_idx > self.warmup:
+            pred_true = self.discriminator(x).mean()
+            pred_fake = self.discriminator(y).mean()
         else:
-            self_likelihood = 0
+            pred_true = 0
+            pred_fake = 0
+
+        if batch_idx % 2 and batch_idx > self.warmup:
+            loss = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
+
+            dis_opt.zero_grad()
+            loss.backward()
+            dis_opt.step()
+        else:
+            loss = distance - pred_fake + 1e-3 * kl
+
+            gen_opt.zero_grad()
+            loss.backward()
+            gen_opt.zero_grad()
 
         self.log("distance", distance)
-        self.log("self_likelihood", self_likelihood)
         self.log("regularization", kl)
+        self.log("pred_true", pred_true)
+        self.log("pred_fake", pred_fake)
 
-        return distance - self_likelihood + 1e-3 * kl
+        return loss
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
@@ -280,12 +299,7 @@ class ParallelModel(pl.LightningModule):
 
         distance = self.distance(x, y)
 
-        if self.teacher is not None:
-            self_likelihood = self.teacher.logpx(y)[0]
-        else:
-            self_likelihood = 0
-
-        self.log("validation", distance - self_likelihood)
+        self.log("validation", distance)
 
         return torch.cat([x, y], -1), mean
 
