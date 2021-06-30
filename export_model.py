@@ -37,32 +37,34 @@ class TraceModel(ParallelModel):
 
 
 # args.parse_args()
-args.override(RUN="checkpoints/epoch=50-step=827574.ckpt")
+args.override(RUN="checkpoints/epoch=61-step=996673.ckpt")
 
 model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
 
 x = torch.zeros(1, 1, 1024)
 model(x)
 
-n_cache = 0
-for m in model.modules():
-    if isinstance(m, CachedConv1d) or isinstance(m, CachedConvTranspose1d):
-        m.script_cache()
-        n_cache += 1
 
-print(f"{n_cache} cached modules found and scripted !")
+if __name__ == "__main__":
+    n_cache = 0
+    for m in model.modules():
+        if isinstance(m, CachedConv1d) or isinstance(m, CachedConvTranspose1d):
+            m.script_cache()
+            n_cache += 1
 
-model.encoder = torch.jit.trace(model.encoder, torch.zeros(1, 1, 2**14))
-model.decoder = torch.jit.trace(
-    model.decoder,
-    torch.zeros(1, model.latent_size, 128),
-)
+    print(f"{n_cache} cached modules found and scripted !")
 
-sr = model.sr
+    model.encoder = torch.jit.trace(model.encoder, torch.zeros(1, 1, 2**14))
+    model.decoder = torch.jit.trace(
+        model.decoder,
+        torch.zeros(1, model.latent_size, 128),
+    )
 
-model = torch.jit.script(model)
+    sr = model.sr
 
-torch.jit.save(
-    model,
-    f"traced_model_{sr//1000}kHz_{model.latent_size}z.torchscript",
-)
+    model = torch.jit.script(model)
+
+    torch.jit.save(
+        model,
+        f"traced_model_{sr//1000}kHz_{model.latent_size}z.torchscript",
+    )

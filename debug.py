@@ -46,14 +46,14 @@ plt.show()
 # y = model.decoder(z).numpy().reshape(-1)
 y = model.decode(z).numpy().reshape(-1)
 
-sd.play(x, sr)
-sd.wait()
-sd.play(y, sr)
+# sd.play(x, sr)
+# sd.wait()
+# sd.play(y, sr)
 
 print(x.reshape(-1).shape[0] // z.reshape(-1).shape[0])
 
 # %%
-N = 64
+N = 128
 x = np.random.randn(1, 16, N)
 x = resample(x, 128, axis=-1)
 z = torch.from_numpy(x).float()

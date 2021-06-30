@@ -24,7 +24,7 @@ ids = list(map(id_extraction, convs))
 
 @pytest.mark.parametrize("conv", convs, ids=ids)
 def test_conv(conv: nn.Conv1d):
-    x = torch.randn(1, conv.in_channels, 256)
+    x = torch.randn(1, conv.in_channels, 2**14)
     cconv = CachedConv1d(
         conv.in_channels,
         conv.out_channels,
@@ -73,7 +73,7 @@ id_extraction = lambda conv: f"k:{conv.kernel_size[0]}, s:{conv.stride[0]}"
 
 @pytest.mark.parametrize("conv", convts, ids=list(map(id_extraction, convts)))
 def test_conv_t(conv: nn.ConvTranspose1d):
-    x = torch.randn(1, conv.in_channels, 128)
+    x = torch.randn(1, conv.in_channels, 2**10)
     cconv = CachedConvTranspose1d(
         conv.in_channels,
         conv.out_channels,

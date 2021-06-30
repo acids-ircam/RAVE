@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-from ..flows.ar_model import TeacherFlow
 from .core import multiscale_stft, get_padding
 from sklearn.decomposition import PCA
 from einops import rearrange
+
 from . import USE_BUFFER_CONV
-from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d
+from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
@@ -17,8 +17,21 @@ class Residual(nn.Module):
         super().__init__()
         self.module = module
 
+        if USE_BUFFER_CONV:
+            pad = 0
+            for m in self.module.modules():
+                if isinstance(m, CachedConv1d):
+                    pad = pad + m.cache.padding
+            self.cache = CachedPadding1d(pad)
+            self.pad = pad
+        else:
+            self.cache = None
+
     def forward(self, x):
-        return self.module(x) + x
+        x_net = self.module(x)
+        if self.cache is not None:
+            x = self.cache(x)[..., :-self.pad]
+        return x_net + x
 
 
 class ResidualStack(nn.Module):
