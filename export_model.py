@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from fd import parallel_model
 
-parallel_model.use_buffer_conv(True)
+parallel_model.use_buffer_conv(False)
 
 from fd.parallel_model.model import ParallelModel
 from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
