@@ -1,10 +1,10 @@
-#include "backend.h"
+#include "Backend.h"
 #include <iostream>
 #include <stdlib.h>
 
-backend::backend() : m_loaded(0) { at::init_num_threads(); }
+Backend::Backend() : m_loaded(0) { at::init_num_threads(); }
 
-void backend::perform(std::vector<float *> in_buffer,
+void Backend::perform(std::vector<float *> in_buffer,
                       std::vector<float *> out_buffer, int n_vec,
                       std::string method) {
   torch::NoGradGuard no_grad;
@@ -21,9 +21,16 @@ void backend::perform(std::vector<float *> in_buffer,
     auto tensor_out = m_model.get_method(method)(inputs).toTensor();
     int out_channels(tensor_out.size(1)), out_n_vec(tensor_out.size(2));
 
+    // CHECKS ON TENSOR SHAPE
     if (out_channels != out_buffer.size()) {
       std::cout << "bad out_buffer size, expected " << out_channels
                 << " buffers, got " << out_buffer.size() << "!\n";
+      return;
+    }
+
+    if (out_n_vec != n_vec) {
+      std::cout << "model output size is not consistent, expected " << n_vec
+                << " samples, got " << out_n_vec << "!\n";
       return;
     }
 
@@ -35,7 +42,7 @@ void backend::perform(std::vector<float *> in_buffer,
   }
 }
 
-int backend::load(std::string path) {
+int Backend::load(std::string path) {
   try {
     m_model = torch::jit::load(path);
     m_model.eval();
