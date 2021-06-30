@@ -66,3 +66,14 @@ class CachedConvTranspose1d(nn.ConvTranspose1d):
         x = super().forward(x)
         x = x[..., stride:-stride]
         return x
+
+
+class Conv1d(nn.Conv1d):
+    def __init__(self, *args, **kwargs):
+        self._pad = kwargs.get("padding", (0, 0))
+        kwargs["padding"] = 0
+        super().__init__(*args, **kwargs)
+
+    def forward(self, x):
+        x = nn.functional.pad(x, self._pad)
+        return super().forward(x)

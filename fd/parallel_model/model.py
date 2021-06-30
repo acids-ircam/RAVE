@@ -6,9 +6,9 @@ from .core import multiscale_stft, get_padding
 from sklearn.decomposition import PCA
 from einops import rearrange
 from . import USE_BUFFER_CONV
-from .buffer_conv import CachedConv1d, CachedConvTranspose1d
+from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d
 
-Conv1d = CachedConv1d if USE_BUFFER_CONV else nn.Conv1d
+Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
 
 
@@ -123,7 +123,9 @@ class Generator(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, data_size, capacity, latent_size, ratios, bias=False):
         super().__init__()
-        net = [Conv1d(data_size, capacity, 7, padding=3, bias=bias)]
+        net = [
+            Conv1d(data_size, capacity, 7, padding=get_padding(7), bias=bias)
+        ]
 
         for i, r in enumerate(ratios):
             in_dim = 2**i * capacity
