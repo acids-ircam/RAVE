@@ -5,6 +5,7 @@ import librosa as li
 from random import choice
 from glob import glob
 import matplotlib.pyplot as plt
+<<<<<<< Updated upstream
 import sounddevice as sd
 from fd.parallel_model.model import ParallelModel
 import numpy as np
@@ -54,4 +55,14 @@ z = nn.functional.conv1d(z, model.latent_pca.T.unsqueeze(-1))
 y = model.decoder(z).numpy().reshape(-1)
 sd.play(y, sr)
 
+=======
+
+torch.set_grad_enabled(False)
+
+audio = choice(glob("/slow-2/antoine/dataset/macron/out_24000/*.wav"))
+x, sr = li.load(audio, None)
+assert sr == 24000
+
+x = x[:2**16]
+>>>>>>> Stashed changes
 # %%

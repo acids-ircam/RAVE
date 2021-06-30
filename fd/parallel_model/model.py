@@ -250,8 +250,7 @@ class ParallelModel(pl.LightningModule):
 
         return lin + log
 
-    @staticmethod
-    def reparametrize(mean, scale):
+    def reparametrize(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
         logvar = torch.log(var)
@@ -277,44 +276,28 @@ class ParallelModel(pl.LightningModule):
             pred_true = self.discriminator(x).mean()
             pred_fake = self.discriminator(y).mean()
         else:
-            pred_true = 0.
-            pred_fake = 0.
+            pred_true = torch.tensor(0.).to(x)
+            pred_fake = torch.tensor(0.).to(x)
 
         if step % 2 and step > self.warmup:
-            loss = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
+            loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
 
             dis_opt.zero_grad()
-            loss.backward()
+            loss_dis.backward()
             dis_opt.step()
+            self.log("loss_dis", loss_dis)
         else:
-            loss = distance - pred_fake + 1e-3 * kl
+            loss_gen = distance - pred_fake + 1e-2 * kl
 
             gen_opt.zero_grad()
-            loss.backward()
+            loss_gen.backward()
             gen_opt.step()
+            self.log("loss_gen", loss_gen)
 
         self.log("distance", distance)
         self.log("regularization", kl)
         self.log("pred_true", pred_true)
         self.log("pred_fake", pred_fake)
-
-    # def training_step(self, batch, batch_idx):
-    #     x = batch.unsqueeze(1)
-    #     z, kl = self.reparametrize(*self.encoder(x))
-    #     y = self.decoder(z)
-
-    #     distance = self.distance(x, y)
-
-    #     if self.teacher is not None:
-    #         self_likelihood = self.teacher.logpx(y)[0]
-    #     else:
-    #         self_likelihood = 0
-
-    #     self.log("distance", distance)
-    #     self.log("self_likelihood", self_likelihood)
-    #     self.log("regularization", kl)
-
-    #     return distance - self_likelihood + 1e-3 * kl
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
