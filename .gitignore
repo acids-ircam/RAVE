@@ -3,3 +3,4 @@
 .vscode/
 lightning_logs/
 *.torchscript
+*build*
