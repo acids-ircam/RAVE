@@ -39,7 +39,7 @@ class TraceModel(ParallelModel):
 if __name__ == "__main__":
     args.parse_args()
 
-    model = TraceModel.load_from_checkpoint(args.RUN, strict=True)
+    model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
 
     x = torch.randn(1, 1, 1024)
     z = model.encode(x)
