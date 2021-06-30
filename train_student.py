@@ -14,9 +14,11 @@ if __name__ == "__main__":
         LATENT_SIZE = 16
         RATIOS = [8, 8, 4, 4]
         BIAS = True
-        TEACHER_CHKPT = None
         STUDENT_CHKPT = None
-        FREEZE_ENCODER = False
+        D_CAPACITY = 16
+        D_MULTIPLIER = 4
+        D_N_LAYERS = 4
+        WARMUP = 100000
 
         PREPROCESSED = None
         WAV = None
@@ -36,8 +38,11 @@ if __name__ == "__main__":
         latent_size=args.LATENT_SIZE,
         ratios=args.RATIOS,
         bias=args.BIAS,
-        teacher_chkpt=args.TEACHER_CHKPT,
-        freeze_encoder=args.FREEZE_ENCODER,
+        d_capacity=args.D_CAPACITY,
+        d_multiplier=args.D_MULTIPLIER,
+        d_n_layers=args.D_N_LAYERS,
+        warmup=args.WARMUP,
+        sr=args.SR,
     )
 
     dataset = SimpleDataset(

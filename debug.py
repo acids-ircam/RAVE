@@ -1,73 +1,57 @@
 # %%
 import torch
+import torch.nn as nn
 import librosa as li
 from random import choice
 from glob import glob
+import matplotlib.pyplot as plt
+import sounddevice as sd
+from fd.parallel_model.model import ParallelModel
 import numpy as np
+from scipy.signal import resample
 
 torch.set_grad_enabled(False)
-from fd.parallel_model.model import ParallelModel
-from fd.flows.ar_model import TeacherFlow
-import matplotlib.pyplot as plt
 
-ckpt = glob("lightning_logs/version_4/checkpoints/*.ckpt")[0]
-student = ParallelModel.load_from_checkpoint(ckpt)
-ckpt = glob("lightning_logs/version_3/checkpoints/*.ckpt")[0]
-teacher = TeacherFlow.load_from_checkpoint(ckpt)
-# %%
+audio = choice(glob("/Users/acaillon/Desktop/out_24k/*.wav"))
+x, sr = li.load(audio, None)
+assert sr == 24000
 
-name = glob("/slow-2/antoine/dataset/ljspeech/LJSpeech-1.1/out_24k/*.wav")
-name = choice(name)
+x = x[:2**16]
 
-x, sr = li.load(name, None)
+model = ParallelModel.load_from_checkpoint(
+    glob("lightning_logs/version_0/checkpoints/*.ckpt")[0])
+model.eval()
 
-x = x[:2**15].reshape(1, 1, -1)
-plt.plot(x.reshape(-1))
+x_ = torch.from_numpy(x).float().reshape(1, 1, -1)
+mean, scale = model.encoder(x_)
+z, _ = model.reparametrize(mean, scale)
+
+z = z - model.latent_mean.reshape(1, -1, 1)
+z = nn.functional.conv1d(z, model.latent_pca.unsqueeze(-1))
+
+plt.plot(z[0].T + 3 * torch.arange(16), "k-")
 plt.show()
-x = torch.from_numpy(x).float()
 
-y, logdet = teacher.flows(x)
+z = nn.functional.conv1d(z, model.latent_pca.T.unsqueeze(-1))
+z = z + model.latent_mean.reshape(1, -1, 1)
+
+y = model.decoder(z).numpy().reshape(-1)
+
+sd.play(x, sr)
+sd.wait()
+sd.play(y, sr)
+
+print(x.reshape(-1).shape[0] // z.reshape(-1).shape[0])
+
 # %%
+N = 128
+x = np.random.randn(1, 16, N)
+x = resample(x, 128, axis=-1)
+z = torch.from_numpy(x).float()
 
-plt.plot(y.reshape(-1))
-print(logdet)
+z = nn.functional.conv1d(z, model.latent_pca.T.unsqueeze(-1))
 
-#%% SPEED TEST
-from time import time
+y = model.decoder(z).numpy().reshape(-1)
+sd.play(y, sr)
 
-device = torch.device("cuda:4")
-model.to(device)
-
-
-def bench(func):
-    mean = 0
-    nel = 0
-
-    for i in range(20):
-        st = time()
-        func()
-        st = time() - st
-        nel += 1
-        mean += (st - mean) / nel
-
-    return mean
-
-
-N = 32768
-sr = 24000
-x = torch.randn(1, 1, N).to(device)
-z = model.encoder(x)[0]
-
-encode_time = bench(lambda: model.encoder(x))
-decode_time = bench(lambda: model.decoder(z))
-
-encode_rtf = (N / sr) / encode_time
-decode_rtf = (N / sr) / decode_time
-
-print(encode_rtf, decode_rtf)
-# %%
-from fd.parallel_model.model import Discriminator
-
-d = Discriminator(16, 4, 4)
-print(d)
 # %%
