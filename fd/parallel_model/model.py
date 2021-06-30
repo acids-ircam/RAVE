@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from ..flows.ar_model import TeacherFlow
-from .core import multiscale_stft
+from .core import multiscale_stft, get_padding
 from sklearn.decomposition import PCA
 from einops import rearrange
 from . import USE_BUFFER_CONV
@@ -26,7 +26,6 @@ class ResidualStack(nn.Module):
         super().__init__()
         net = []
         for i in range(3):
-            fk = (kernel_size - 1) * 3**i + 1
             net.append(
                 Residual(
                     nn.Sequential(
@@ -35,7 +34,10 @@ class ResidualStack(nn.Module):
                             dim,
                             dim,
                             kernel_size,
-                            padding=fk // 2,
+                            padding=get_padding(
+                                kernel_size,
+                                dilation=3**i,
+                            ),
                             dilation=3**i,
                             bias=bias,
                         ),
@@ -44,7 +46,7 @@ class ResidualStack(nn.Module):
                             dim,
                             dim,
                             kernel_size,
-                            padding=kernel_size // 2,
+                            padding=get_padding(kernel_size),
                             bias=bias,
                         ),
                     )))
@@ -70,13 +72,14 @@ class UpsampleLayer(nn.Module):
                     bias=bias,
                 ))
         else:
-            net.append(Conv1d(
-                in_dim,
-                out_dim,
-                3,
-                padding=1,
-                bias=bias,
-            ))
+            net.append(
+                Conv1d(
+                    in_dim,
+                    out_dim,
+                    3,
+                    padding=get_padding(3),
+                    bias=bias,
+                ))
 
         self.net = nn.Sequential(*net)
 
@@ -91,7 +94,7 @@ class Generator(nn.Module):
             latent_size,
             2**len(ratios) * capacity,
             7,
-            padding=3,
+            padding=get_padding(7),
             bias=bias,
         )
 
@@ -106,7 +109,7 @@ class Generator(nn.Module):
         self.net = nn.Sequential(*net)
 
         self.post_net = nn.Sequential(
-            Conv1d(out_dim, data_size, 7, padding=3, bias=bias),
+            Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias),
             nn.Tanh(),
         )
 
@@ -133,7 +136,7 @@ class Encoder(nn.Module):
                     in_dim,
                     out_dim,
                     2 * r + 1,
-                    padding=r,
+                    padding=get_padding(2 * r + 1, r),
                     stride=r,
                     bias=bias,
                 ))
@@ -144,7 +147,7 @@ class Encoder(nn.Module):
                 out_dim,
                 2 * latent_size,
                 5,
-                padding=2,
+                padding=get_padding(5),
                 groups=2,
                 bias=bias,
             ))
@@ -170,7 +173,7 @@ class Discriminator(nn.Module):
                     min(1024, capacity * multiplier**(i + 1)),
                     41,
                     stride=multiplier,
-                    padding=20,
+                    padding=get_padding(41, multiplier),
                     groups=multiplier**(i + 1),
                 ))
             net.append(nn.LeakyReLU(.2))
@@ -180,7 +183,7 @@ class Discriminator(nn.Module):
                 min(1024, capacity * multiplier**(i + 1)),
                 min(1024, capacity * multiplier**(i + 1)),
                 5,
-                padding=2,
+                padding=get_padding(5),
             ))
         net.append(nn.LeakyReLU(.2))
         net.append(nn.Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))

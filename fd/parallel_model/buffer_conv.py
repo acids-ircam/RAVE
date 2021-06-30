@@ -11,7 +11,7 @@ class CachedPadding1d(nn.Module):
     @torch.jit.unused
     @torch.no_grad()
     def init_cache(self, x):
-        b, c, t = x.shape
+        b, c, _ = x.shape
         self.register_buffer("pad", torch.zeros(b, c, self.padding))
         self.initialized += 1
 
@@ -35,6 +35,12 @@ class CachedConv1d(nn.Conv1d):
         kwargs["padding"] = 0
 
         super().__init__(*args, **kwargs)
+
+        if isinstance(padding, int):
+            padding = padding * 2
+        elif isinstance(padding, list) or isinstance(padding, tuple):
+            padding = padding[0] + padding[1]
+
         self.cache = CachedPadding1d(padding * 2)
 
     def script_cache(self):
@@ -42,15 +48,7 @@ class CachedConv1d(nn.Conv1d):
 
     def forward(self, x):
         x = self.cache(x)
-        return nn.functional.conv1d(
-            x,
-            self.weight,
-            self.bias,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-        )
+        return super().forward(x)
 
 
 class CachedConvTranspose1d(nn.ConvTranspose1d):
@@ -65,15 +63,6 @@ class CachedConvTranspose1d(nn.ConvTranspose1d):
     def forward(self, x):
         stride = self.stride[0]
         x = self.cache(x)
-        x = nn.functional.conv_transpose1d(
-            x,
-            self.weight,
-            self.bias,
-            self.stride,
-            self.padding,
-            self.output_padding,
-            self.groups,
-            self.dilation,
-        )
+        x = super().forward(x)
         x = x[..., stride:-stride]
         return x
