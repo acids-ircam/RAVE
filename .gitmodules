@@ -1,0 +1,3 @@
+[submodule "realtime/frontend/maxmsp/min-api"]
+	path = realtime/frontend/maxmsp/min-api
+	url = git@github.com:Cycling74/min-api.git
