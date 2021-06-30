@@ -37,8 +37,10 @@ class CachedConv1d(nn.Conv1d):
         super().__init__(*args, **kwargs)
 
         if isinstance(padding, int):
+            self.future_compensation = padding
             padding = padding * 2
         elif isinstance(padding, list) or isinstance(padding, tuple):
+            self.future_compensation = padding[1]
             padding = padding[0] + padding[1]
 
         self.cache = CachedPadding1d(padding)

@@ -21,7 +21,7 @@ class Residual(nn.Module):
             pad = 0
             for m in self.module.modules():
                 if isinstance(m, CachedConv1d):
-                    pad = pad + m.cache.padding
+                    pad = pad + m.future_compensation
             self.cache = CachedPadding1d(pad)
             self.pad = pad
         else:
