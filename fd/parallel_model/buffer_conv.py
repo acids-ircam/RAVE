@@ -41,7 +41,7 @@ class CachedConv1d(nn.Conv1d):
         elif isinstance(padding, list) or isinstance(padding, tuple):
             padding = padding[0] + padding[1]
 
-        self.cache = CachedPadding1d(padding * 2)
+        self.cache = CachedPadding1d(padding)
 
     def script_cache(self):
         self.cache = torch.jit.script(self.cache)
