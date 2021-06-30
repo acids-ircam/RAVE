@@ -5,7 +5,7 @@ import torch.nn as nn
 class CachedPadding1d(nn.Module):
     def __init__(self, padding):
         super().__init__()
-        self.register_buffer("initialized", torch.tensor(0))
+        self.initialized = 0
         self.padding = padding
 
     @torch.jit.unused
