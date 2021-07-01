@@ -15,11 +15,14 @@ include(${C74_MIN_API_DIR}/script/min-pretarget.cmake)
 include_directories( 
 	"${C74_INCLUDES}"
 )
+find_package(Torch REQUIRED)
 
-
-set( SOURCE_FILES
+set(
+SOURCE_FILES
 	${PROJECT_NAME}.cpp
 )
+
+
 
 
 add_library( 
@@ -27,6 +30,7 @@ add_library(
 	MODULE
 	${SOURCE_FILES}
 )
+target_link_libraries(${PROJECT_NAME} PRIVATE backend)
 
 
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)

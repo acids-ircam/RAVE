@@ -5,3 +5,4 @@ lightning_logs/
 *.torchscript
 *build*
 *.mxo
+realtime/docs
