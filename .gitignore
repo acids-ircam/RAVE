@@ -4,3 +4,4 @@
 lightning_logs/
 *.torchscript
 *build*
+*.mxo
