@@ -36,16 +36,15 @@ class TraceModel(ParallelModel):
         return self.decode(self.encode(x))
 
 
-# args.parse_args()
-args.override(RUN="checkpoints/epoch=61-step=996673.ckpt")
-
-model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
-
-x = torch.zeros(1, 1, 1024)
-model(x)
-
 
 if __name__ == "__main__":
+    args.parse_args()
+
+    model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
+
+    x = torch.zeros(1, 1, 1024)
+    model(x)
+    
     n_cache = 0
     for m in model.modules():
         if isinstance(m, CachedConv1d) or isinstance(m, CachedConvTranspose1d):
@@ -54,10 +53,15 @@ if __name__ == "__main__":
 
     print(f"{n_cache} cached modules found and scripted !")
 
-    model.encoder = torch.jit.trace(model.encoder, torch.zeros(1, 1, 2**14))
+    model.encoder = torch.jit.trace(
+        model.encoder,
+        torch.zeros(1, 1, 2**14),
+        check_trace=False,
+    )
     model.decoder = torch.jit.trace(
         model.decoder,
         torch.zeros(1, model.latent_size, 128),
+        check_trace=False,
     )
 
     sr = model.sr
