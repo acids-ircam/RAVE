@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 
-#define BUFFER_SIZE 2048
+#define BUFFER_SIZE 8192
 
 using namespace c74::min;
 

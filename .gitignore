@@ -7,3 +7,5 @@ lightning_logs/
 *.mxo
 realtime/docs
 *.dsp_cache
+*.ckpt
+*.ts
