@@ -183,7 +183,7 @@ class Discriminator(nn.Module):
 
         for i in range(n_layers):
             net.append(
-                nn.Conv1d(
+                Conv1d(
                     capacity * multiplier**i,
                     min(1024, capacity * multiplier**(i + 1)),
                     41,
@@ -194,14 +194,14 @@ class Discriminator(nn.Module):
             net.append(nn.LeakyReLU(.2))
 
         net.append(
-            nn.Conv1d(
+            Conv1d(
                 min(1024, capacity * multiplier**(i + 1)),
                 min(1024, capacity * multiplier**(i + 1)),
                 5,
                 padding=get_padding(5),
             ))
         net.append(nn.LeakyReLU(.2))
-        net.append(nn.Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
+        net.append(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
         self.net = nn.Sequential(*net)
 
     def forward(self, x):
@@ -297,21 +297,20 @@ class ParallelModel(pl.LightningModule):
             pred_true = torch.tensor(0.).to(x)
             pred_fake = torch.tensor(0.).to(x)
 
-        if step % 2 and step > self.warmup:
-            loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
+        loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
+        loss_gen = distance - pred_fake + 1e-2 * kl
 
+        if step % 2 and step > self.warmup:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
-            self.log("loss_dis", loss_dis)
         else:
-            loss_gen = distance - pred_fake + 1e-2 * kl
-
             gen_opt.zero_grad()
             loss_gen.backward()
             gen_opt.step()
-            self.log("loss_gen", loss_gen)
 
+        self.log("loss_dis", loss_dis)
+        self.log("loss_gen", loss_gen)
         self.log("distance", distance)
         self.log("regularization", kl)
         self.log("pred_true", pred_true)
