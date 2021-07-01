@@ -18,6 +18,33 @@ class TraceModel(ParallelModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.discriminator = None
+        x = torch.randn(1, 1, 2**11)
+        self(x)
+
+        n_cache = 0
+
+        cached_modules = [
+            CachedConv1d,
+            CachedConvTranspose1d,
+            Residual,
+        ]
+
+        for m in self.modules():
+            if any(list(map(lambda c: isinstance(m, c), cached_modules))):
+                m.script_cache()
+                n_cache += 1
+
+        print(f"{n_cache} cached modules found and scripted !")
+        self.encoder = torch.jit.trace(
+            self.encoder,
+            torch.zeros(1, 1, 2**14),
+            check_trace=False,
+        )
+        self.decoder = torch.jit.trace(
+            self.decoder,
+            torch.zeros(1, self.latent_size, 128),
+            check_trace=False,
+        )
 
     @torch.jit.export
     def encode(self, x):
@@ -40,41 +67,9 @@ if __name__ == "__main__":
     args.parse_args()
 
     model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
-
-    x = torch.zeros(1, 1, 1024)
-    model(x)
-
-    n_cache = 0
-
-    cached_modules = [
-        CachedConv1d,
-        CachedConvTranspose1d,
-        Residual,
-    ]
-
-    for m in model.modules():
-        if any(list(map(lambda c: isinstance(m, c), cached_modules))):
-            m.script_cache()
-            n_cache += 1
-
-    print(f"{n_cache} cached modules found and scripted !")
-
-    model.encoder = torch.jit.trace(
-        model.encoder,
-        torch.zeros(1, 1, 2**14),
-        check_trace=False,
-    )
-    model.decoder = torch.jit.trace(
-        model.decoder,
-        torch.zeros(1, model.latent_size, 128),
-        check_trace=False,
-    )
-
-    sr = model.sr
-
     model = torch.jit.script(model)
 
     torch.jit.save(
         model,
-        f"traced_model_{sr//1000}kHz_{model.latent_size}z.torchscript",
+        f"traced_model_{model.sr//1000}kHz_{model.latent_size}z.torchscript",
     )
