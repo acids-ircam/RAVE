@@ -5,7 +5,7 @@ from fd import parallel_model
 
 parallel_model.use_buffer_conv(True)
 
-from fd.parallel_model.model import ParallelModel
+from fd.parallel_model.model import ParallelModel, Residual
 from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
 from effortless_config import Config
 
@@ -36,7 +36,6 @@ class TraceModel(ParallelModel):
         return self.decode(self.encode(x))
 
 
-
 if __name__ == "__main__":
     args.parse_args()
 
@@ -44,10 +43,17 @@ if __name__ == "__main__":
 
     x = torch.zeros(1, 1, 1024)
     model(x)
-    
+
     n_cache = 0
+
+    cached_modules = [
+        CachedConv1d,
+        CachedConvTranspose1d,
+        Residual,
+    ]
+
     for m in model.modules():
-        if isinstance(m, CachedConv1d) or isinstance(m, CachedConvTranspose1d):
+        if any(list(map(lambda c: isinstance(m, c), cached_modules))):
             m.script_cache()
             n_cache += 1
 

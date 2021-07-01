@@ -27,6 +27,9 @@ class Residual(nn.Module):
         else:
             self.cache = None
 
+    def script_cache(self):
+        self.cache = torch.jit.script(self.cache)
+
     def forward(self, x):
         x_net = self.module(x)
 
