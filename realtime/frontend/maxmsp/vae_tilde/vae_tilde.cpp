@@ -1,5 +1,8 @@
 #include "../../../backend/backend.h"
 #include "c74_min.h"
+#include <vector>
+
+#define BUFFER_SIZE 2048
 
 using namespace c74::min;
 
@@ -16,6 +19,7 @@ public:
 
   message<> load{this, "load", "load a pretrained ai model into the external",
                  MIN_FUNCTION{auto status = m_model.load(args[0]);
+
   if (status != 0) {
     cout << "failed loading model" << endl;
   } else {
