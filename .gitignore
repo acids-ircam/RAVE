@@ -6,3 +6,4 @@ lightning_logs/
 *build*
 *.mxo
 realtime/docs
+*.dsp_cache
