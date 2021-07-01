@@ -3,10 +3,11 @@ import torch.nn as nn
 
 
 class CachedPadding1d(nn.Module):
-    def __init__(self, padding):
+    def __init__(self, padding, crop=False):
         super().__init__()
         self.initialized = 0
         self.padding = padding
+        self.crop = crop
 
     @torch.jit.unused
     @torch.no_grad()
@@ -24,6 +25,9 @@ class CachedPadding1d(nn.Module):
 
         padded_x = torch.cat([self.pad, x], -1)
         self.pad = padded_x[..., -self.padding:]
+
+        if self.crop:
+            padded_x = padded_x[..., :-self.padding]
 
         return padded_x
 

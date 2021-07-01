@@ -22,15 +22,17 @@ class Residual(nn.Module):
             for m in self.module.modules():
                 if isinstance(m, CachedConv1d):
                     pad = pad + m.future_compensation
-            self.cache = CachedPadding1d(pad)
+            self.cache = CachedPadding1d(pad, crop=True)
             self.pad = pad
         else:
             self.cache = None
 
     def forward(self, x):
         x_net = self.module(x)
+
         if self.cache is not None:
-            x = self.cache(x)[..., :-self.pad]
+            x = self.cache(x)
+
         return x_net + x
 
 
