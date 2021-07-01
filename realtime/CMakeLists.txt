@@ -4,3 +4,4 @@ project(realtime-wrapper)
 set(CMAKE_OSX_ARCHITECTURES x86_64)
 
 add_subdirectory(backend)
+add_subdirectory(frontend/maxmsp/vae_tilde)
