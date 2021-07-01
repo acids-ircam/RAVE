@@ -15,22 +15,11 @@ class args(Config):
 
 
 class TraceModel(nn.Module):
-    def __init__(self, pretrained: ParallelModel):
+    def __init__(self, pretrained: ParalleModel):
         super().__init__()
         latent_size = pretrained.latent_size
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
-
-        self.encoder = torch.jit.trace(
-            self.encoder,
-            torch.randn(1, 1, 2**11),
-            check_trace=False,
-        )
-        self.decoder = torch.jit.trace(
-            self.decoder,
-            torch.randn(1, latent_size, 128),
-            check_trace=False,
-        )
 
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
@@ -101,8 +90,4 @@ if __name__ == "__main__":
 
     model = TraceModel(model)
     model = torch.jit.script(model)
-
-    torch.jit.save(
-        model,
-        f"traced_model_{sr//1000}kHz_{model.latent_size}z.torchscript",
-    )
+    model.save("vae.ts")
