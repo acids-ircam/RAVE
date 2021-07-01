@@ -54,7 +54,15 @@ class CachedConv1d(nn.Conv1d):
 
     def forward(self, x):
         x = self.cache(x)
-        return super().forward(x)
+        return nn.functional.conv1d(
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+        )
 
 
 class CachedConvTranspose1d(nn.ConvTranspose1d):
@@ -69,7 +77,16 @@ class CachedConvTranspose1d(nn.ConvTranspose1d):
     def forward(self, x):
         stride = self.stride[0]
         x = self.cache(x)
-        x = super().forward(x)
+        x = nn.functional.conv_transpose1d(
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.output_padding,
+            self.groups,
+            self.dilation,
+        )
         x = x[..., stride:-stride]
         return x
 
@@ -82,4 +99,12 @@ class Conv1d(nn.Conv1d):
 
     def forward(self, x):
         x = nn.functional.pad(x, self._pad)
-        return super().forward(x)
+        return nn.functional.conv1d(
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+        )
