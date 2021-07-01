@@ -99,4 +99,12 @@ class Conv1d(nn.Conv1d):
 
     def forward(self, x):
         x = nn.functional.pad(x, self._pad)
-        return super().forward(x)
+        return nn.functional.conv1d(
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+        )
