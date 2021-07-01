@@ -14,48 +14,51 @@ class args(Config):
     RUN = None
 
 
-class TraceModel(ParallelModel):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.discriminator = None
-        x = torch.randn(1, 1, 2**11)
-        self(x)
+class TraceModel(nn.Module):
+    def __init__(self, pretrained: ParallelModel):
+        super().__init__()
+        latent_size = pretrained.latent_size
+        self.encoder = pretrained.encoder
+        self.decoder = pretrained.decoder
 
-        n_cache = 0
-
-        cached_modules = [
-            CachedConv1d,
-            CachedConvTranspose1d,
-            Residual,
-        ]
-
-        for m in self.modules():
-            if any(list(map(lambda c: isinstance(m, c), cached_modules))):
-                m.script_cache()
-                n_cache += 1
-
-        print(f"{n_cache} cached modules found and scripted !")
         self.encoder = torch.jit.trace(
             self.encoder,
-            torch.zeros(1, 1, 2**14),
+            torch.randn(1, 1, 2**11),
             check_trace=False,
         )
         self.decoder = torch.jit.trace(
             self.decoder,
-            torch.zeros(1, self.latent_size, 128),
+            torch.randn(1, latent_size, 128),
             check_trace=False,
         )
+
+        self.register_buffer("latent_pca", pretrained.latent_pca)
+        self.register_buffer("latent_mean", pretrained.latent_mean)
+        self.register_buffer("latent_size", torch.tensor(latent_size))
+        self.register_buffer("sampling_rate", torch.tensor(pretrained.sr))
+
+    def reparametrize(self, mean, scale):
+        std = nn.functional.softplus(scale) + 1e-4
+        var = std * std
+        logvar = torch.log(var)
+
+        z = torch.randn_like(mean) * std + mean
+        kl = (mean * mean + var - logvar - 1).sum(1).mean()
+
+        return z, kl
 
     @torch.jit.export
     def encode(self, x):
         mean, scale = self.encoder(x)
         z = self.reparametrize(mean, scale)[0]
+        z = z - self.latent_mean.unsqueeze(-1)
         z = nn.functional.conv1d(z, self.latent_pca.unsqueeze(-1))
         return z
 
     @torch.jit.export
     def decode(self, z):
         z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+        z = z + self.latent_mean.unsqueeze(-1)
         x = self.decoder(z)
         return x
 
@@ -66,10 +69,40 @@ class TraceModel(ParallelModel):
 if __name__ == "__main__":
     args.parse_args()
 
-    model = TraceModel.load_from_checkpoint(args.RUN, strict=True).eval()
+    print("loading model from checkpoint")
+    model = ParallelModel.load_from_checkpoint(args.RUN, strict=True).eval()
+
+    print("warmup forward pass")
+    x = torch.zeros(1, 1, 1024)
+    mean, scale = model.encoder(x)
+    y = model.decoder(mean)
+
+    print("scripting cached modules")
+    n_cache = 0
+
+    cached_modules = [
+        CachedConv1d,
+        CachedConvTranspose1d,
+        Residual,
+    ]
+
+    model.discriminator = None
+
+    for n, m in model.named_modules():
+        if any(list(map(lambda c: isinstance(m, c), cached_modules))):
+            if not m.cache.initialized:
+                print(f"warmup failed for module {n}")
+            m.script_cache()
+            n_cache += 1
+
+    print(f"{n_cache} cached modules found and scripted !")
+
+    sr = model.sr
+
+    model = TraceModel(model)
     model = torch.jit.script(model)
 
     torch.jit.save(
         model,
-        f"traced_model_{model.sr//1000}kHz_{model.latent_size}z.torchscript",
+        f"traced_model_{sr//1000}kHz_{model.latent_size}z.torchscript",
     )
