@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding
 from sklearn.decomposition import PCA
@@ -245,6 +246,7 @@ class ParallelModel(pl.LightningModule):
         self.automatic_optimization = False
 
         self.warmup = warmup
+        self.adv_warmup = 0
         self.sr = sr
 
     def configure_optimizers(self):
@@ -298,18 +300,21 @@ class ParallelModel(pl.LightningModule):
         if step > self.warmup:
             pred_true = self.discriminator(x).mean()
             pred_fake = self.discriminator(y).mean()
+
         else:
             pred_true = torch.tensor(0.).to(x)
             pred_fake = torch.tensor(0.).to(x)
 
         loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
-        loss_gen = distance - pred_fake + 1e-2 * kl
+        loss_gen = distance - self.adv_warmup * pred_fake + 1e-1 * kl
 
         if step % 2 and step > self.warmup:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
         else:
+            if self.training and step > self.warmup:
+                self.adv_warmup = min(self.adv_warmup + 1 / self.warmup, 1)
             gen_opt.zero_grad()
             loss_gen.backward()
             gen_opt.step()
@@ -320,6 +325,7 @@ class ParallelModel(pl.LightningModule):
         self.log("regularization", kl)
         self.log("pred_true", pred_true)
         self.log("pred_fake", pred_fake)
+        self.log("adv_warmup", self.adv_warmup)
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
@@ -342,10 +348,19 @@ class ParallelModel(pl.LightningModule):
         self.latent_mean.copy_(z.mean(0))
         z = z - self.latent_mean
 
-        pca = PCA(self.latent_size).fit(z.cpu().numpy()).components_
-        pca = torch.from_numpy(pca).to(z)
+        pca = PCA(self.latent_size).fit(z.cpu().numpy())
 
-        self.latent_pca.copy_(pca)
+        components = pca.components_
+        components = torch.from_numpy(components).to(z)
+
+        var = pca.explained_variance_ / np.sum(pca.explained_variance_)
+        var = np.cumsum(var) * 100
+
+        var_percent = [80, 90, 95, 99]
+        for p in var_percent:
+            self.log(f"{p}%_manifold", np.argmax(var > p))
+
+        self.latent_pca.copy_(components)
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, 24000)
