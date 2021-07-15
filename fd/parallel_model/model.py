@@ -352,6 +352,7 @@ class ParallelModel(pl.LightningModule):
 
         components = pca.components_
         components = torch.from_numpy(components).to(z)
+        self.latent_pca.copy_(components)
 
         var = pca.explained_variance_ / np.sum(pca.explained_variance_)
         var = np.cumsum(var) * 100
@@ -359,8 +360,6 @@ class ParallelModel(pl.LightningModule):
         var_percent = [80, 90, 95, 99]
         for p in var_percent:
             self.log(f"{p}%_manifold", np.argmax(var > p))
-
-        self.latent_pca.copy_(components)
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, 24000)
