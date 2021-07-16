@@ -8,44 +8,46 @@ void Backend::perform(std::vector<float *> in_buffer,
                       std::vector<float *> out_buffer, int n_vec,
                       std::string method) {
   torch::NoGradGuard no_grad;
-  if (m_loaded) {
-    // COPY BUFFER INTO A TENSOR
-    std::vector<at::Tensor> tensor_in;
-    for (int i(0); i < in_buffer.size(); i++) {
-      tensor_in.push_back(torch::from_blob(in_buffer[i], {1, 1, n_vec}));
-    }
-    auto cat_tensor_in = torch::cat(tensor_in, 1);
-    std::vector<torch::jit::IValue> inputs = {cat_tensor_in};
 
-    // PROCESS TENSOR
-    at::Tensor tensor_out;
-    try {
-      tensor_out = m_model.get_method(method)(inputs).toTensor();
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << '\n';
-      return;
-    }
+  if (!m_loaded)
+    return;
 
-    int out_channels(tensor_out.size(1)), out_n_vec(tensor_out.size(2));
+  // COPY BUFFER INTO A TENSOR
+  std::vector<at::Tensor> tensor_in;
+  for (int i(0); i < in_buffer.size(); i++) {
+    tensor_in.push_back(torch::from_blob(in_buffer[i], {1, 1, n_vec}));
+  }
+  auto cat_tensor_in = torch::cat(tensor_in, 1);
+  std::vector<torch::jit::IValue> inputs = {cat_tensor_in};
 
-    // CHECKS ON TENSOR SHAPE
-    if (out_channels != out_buffer.size()) {
-      std::cout << "bad out_buffer size, expected " << out_channels
-                << " buffers, got " << out_buffer.size() << "!\n";
-      return;
-    }
+  // PROCESS TENSOR
+  at::Tensor tensor_out;
+  try {
+    tensor_out = m_model.get_method(method)(inputs).toTensor();
+  } catch (const std::exception &e) {
+    std::cerr << e.what() << '\n';
+    return;
+  }
 
-    if (out_n_vec != n_vec) {
-      std::cout << "model output size is not consistent, expected " << n_vec
-                << " samples, got " << out_n_vec << "!\n";
-      return;
-    }
+  int out_channels(tensor_out.size(1)), out_n_vec(tensor_out.size(2));
 
-    auto out_ptr = tensor_out.contiguous().data_ptr<float>();
+  // CHECKS ON TENSOR SHAPE
+  if (out_channels != out_buffer.size()) {
+    std::cout << "bad out_buffer size, expected " << out_channels
+              << " buffers, got " << out_buffer.size() << "!\n";
+    return;
+  }
 
-    for (int i(0); i < out_buffer.size(); i++) {
-      memcpy(out_buffer[i], out_ptr + i * n_vec, n_vec * sizeof(float));
-    }
+  if (out_n_vec != n_vec) {
+    std::cout << "model output size is not consistent, expected " << n_vec
+              << " samples, got " << out_n_vec << "!\n";
+    return;
+  }
+
+  auto out_ptr = tensor_out.contiguous().data_ptr<float>();
+
+  for (int i(0); i < out_buffer.size(); i++) {
+    memcpy(out_buffer[i], out_ptr + i * n_vec, n_vec * sizeof(float));
   }
 }
 
