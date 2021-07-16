@@ -18,7 +18,14 @@ void Backend::perform(std::vector<float *> in_buffer,
     std::vector<torch::jit::IValue> inputs = {cat_tensor_in};
 
     // PROCESS TENSOR
-    auto tensor_out = m_model.get_method(method)(inputs).toTensor();
+    at::Tensor tensor_out;
+    try {
+      tensor_out = m_model.get_method(method)(inputs).toTensor();
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << '\n';
+      return;
+    }
+
     int out_channels(tensor_out.size(1)), out_n_vec(tensor_out.size(2));
 
     // CHECKS ON TENSOR SHAPE
