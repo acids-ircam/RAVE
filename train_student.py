@@ -30,11 +30,6 @@ if __name__ == "__main__":
 
     args.parse_args()
 
-    # args.override(PREPROCESSED="/fast-1/tmp/fast_macron",
-    #               WAV=".",
-    #               CUDA="0",
-    #               WARMUP=100)
-
     environ["CUDA_VISIBLE_DEVICES"] = str(args.CUDA)
 
     model = ParallelModel(
@@ -64,10 +59,8 @@ if __name__ == "__main__":
     train = DataLoader(train, args.BATCH, True, drop_last=True)
     val = DataLoader(val, args.BATCH, False)
 
-    check_callback = pl.callbacks.ModelCheckpoint(monitor="validation")
     trainer = pl.Trainer(
         gpus=1,
-        # callbacks=[check_callback],
         val_check_interval=0.1,
     )
     trainer.fit(model, train, val)
