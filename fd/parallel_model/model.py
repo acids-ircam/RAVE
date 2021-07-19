@@ -291,14 +291,14 @@ class ParallelModel(pl.LightningModule):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
 
-        warming_up = step > self.warmup
+        warmed_up = step > self.warmup
 
-        if warming_up:
+        if warmed_up:
             self.encoder.eval()
 
         z, kl = self.reparametrize(*self.encoder(x))
 
-        if warming_up:
+        if warmed_up:
             z = z.detach()
             kl = kl.detach()
 
@@ -306,7 +306,7 @@ class ParallelModel(pl.LightningModule):
 
         distance = self.distance(x, y)
 
-        if warming_up:
+        if warmed_up:
             pred_true = self.discriminator(x).mean()
             pred_fake = self.discriminator(y).mean()
 
@@ -317,12 +317,12 @@ class ParallelModel(pl.LightningModule):
         loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
         loss_gen = distance - self.adv_warmup * pred_fake + 1e-1 * kl
 
-        if step % 2 and warming_up:
+        if step % 2 and warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
         else:
-            if self.training and warming_up:
+            if self.training and warmed_up:
                 self.adv_warmup = min(self.adv_warmup + 1 / self.warmup, 1)
             gen_opt.zero_grad()
             loss_gen.backward()
