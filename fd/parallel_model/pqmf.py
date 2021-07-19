@@ -5,12 +5,20 @@ from scipy.optimize import fmin
 import math
 import numpy as np
 from einops import rearrange
+from .buffer_conv import CachedConv1d
 
 
 def center_pad_next_pow_2(x):
     next_2 = 2**math.ceil(math.log2(x.shape[-1]))
     pad = next_2 - x.shape[-1]
     return nn.functional.pad(x, (pad // 2, pad // 2 + int(pad % 2)))
+
+
+def make_odd(x):
+    if not x.shape[-1] % 2:
+        x = nn.functional.pad(x, (0, 1))
+    return x
+
 
 def get_qmf_bank(h, n_band):
     """
@@ -205,3 +213,49 @@ class PQMF(nn.Module):
         else:
             return classic_inverse(x, self.hk)
 
+
+class CachedPQMF(PQMF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        hkf = make_odd(self.hk).unsqueeze(1)
+
+        hki = self.hk.flip(-1)
+        hki = rearrange(hki, "c (t m) -> m c t", m=self.hk.shape[0])
+        hki = make_odd(hki)
+
+        self.forward_conv = CachedConv1d(
+            hkf.shape[1],
+            hkf.shape[0],
+            hkf.shape[2],
+            padding=hkf.shape[-1] // 2,
+            stride=hkf.shape[0],
+            bias=False,
+        )
+        self.forward_conv.weight.data.copy_(hkf)
+
+        self.inverse_conv = CachedConv1d(
+            hki.shape[1],
+            hki.shape[0],
+            hki.shape[-1],
+            padding=hki.shape[-1] // 2,
+            bias=False,
+        )
+        self.inverse_conv.weight.data.copy_(hki)
+
+    def script_cache(self):
+        self.forward_conv.script_cache()
+        self.inverse_conv.script_cache()
+
+    def forward(self, x):
+        x = self.forward_conv(x)
+        return x
+
+    def inverse(self, x):
+        m = self.hk.shape[0]
+        x = self.inverse_conv(x) * m
+        x = x.flip(1)
+        x = x.permute(0, 2, 1)
+        x = x.reshape(x.shape[0], x.shape[1], -1, m).permute(0, 2, 1, 3)
+        x = x.reshape(x.shape[0], x.shape[1], -1)
+        return x

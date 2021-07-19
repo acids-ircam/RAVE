@@ -1,23 +1,17 @@
 # %%
 import torch
-import librosa as li
-import sounddevice as sd
-
-
-def play(x):
-    sd.play(x.reshape(-1).cpu().numpy(), 24000)
-    sd.wait()
-
 
 torch.set_grad_enabled(False)
+from fd.parallel_model.pqmf import CachedPQMF
+import matplotlib.pyplot as plt
 
-x, sr = li.load("/Users/acaillon/Desktop/out_24k/LJ001-0001_0000.wav", None)
-model = torch.jit.load("vae.ts").eval()
+x = torch.randn(1, 1, 1024)
+pqmf = CachedPQMF(100, 8)
 
-x = torch.from_numpy(x).reshape(1, 1, -1).float()
+y = pqmf(x)
+z = pqmf.inverse(y)
 
-z = model.encode(x)
-z[:,9:] = torch.randn_like(z[:,9:])
-
-play(model.decode(z))
+print(pqmf.hk.shape)
+plt.plot(x.reshape(-1))
+plt.plot(z.reshape(-1))
 # %%

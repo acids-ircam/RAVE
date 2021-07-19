@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from effortless_config import Config
-
+from glob import glob
 from fd import parallel_model
 
 
@@ -18,6 +18,7 @@ parallel_model.use_buffer_conv(args.CACHED)
 from fd.parallel_model.model import ParallelModel, Residual
 from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
 from fd.parallel_model.resample import Resampling
+from fd.parallel_model.pqmf import CachedPQMF
 
 
 class TraceModel(nn.Module):
@@ -25,6 +26,8 @@ class TraceModel(nn.Module):
         super().__init__()
         latent_size = pretrained.latent_size
         self.resample = resample
+
+        self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
 
@@ -49,6 +52,10 @@ class TraceModel(nn.Module):
     @torch.jit.export
     def encode(self, x):
         x = self.resample.from_target_sampling_rate(x)
+
+        if self.pqmf is not None:
+            x = self.pqmf(x)
+
         mean, scale = self.encoder(x)
         z = self.reparametrize(mean, scale)[0]
         z = z - self.latent_mean.unsqueeze(-1)
@@ -60,6 +67,10 @@ class TraceModel(nn.Module):
         z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
         z = z + self.latent_mean.unsqueeze(-1)
         x = self.decoder(z)
+
+        if self.pqmf is not None:
+            x = self.pqmf.inverse(x)
+
         x = self.resample.to_target_sampling_rate(x)
         return x
 
@@ -68,12 +79,17 @@ class TraceModel(nn.Module):
 
 
 print("loading model from checkpoint")
-model = ParallelModel.load_from_checkpoint(args.RUN, strict=True).eval()
+run = glob(args.RUN + "*.ckpt")[-1]
+model = ParallelModel.load_from_checkpoint(run, strict=False).eval()
 
 print("warmup forward pass")
-x = torch.zeros(1, 1, 1024)
+x = torch.zeros(1, 1, 2**14)
+if model.pqmf is not None:
+    x = model.pqmf(x)
 mean, scale = model.encoder(x)
 y = model.decoder(mean)
+if model.pqmf is not None:
+    y = model.pqmf.inverse(y)
 
 print("scripting cached modules")
 n_cache = 0
@@ -82,6 +98,7 @@ cached_modules = [
     CachedConv1d,
     CachedConvTranspose1d,
     Residual,
+    CachedPQMF,
 ]
 
 model.discriminator = None
@@ -89,8 +106,6 @@ model.discriminator = None
 for n, m in model.named_modules():
     if any(list(map(lambda c: isinstance(m, c),
                     cached_modules))) and args.CACHED:
-        if not m.cache.initialized:
-            print(f"warmup failed for module {n}")
         m.script_cache()
         n_cache += 1
 

@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding
-from .pqmf import PQMF
+from .pqmf import PQMF, CachedPQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
@@ -12,6 +12,7 @@ from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadd
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
+PQMF = CachedPQMF if USE_BUFFER_CONV else CachedPQMF
 
 
 class Residual(nn.Module):
