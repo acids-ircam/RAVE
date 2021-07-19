@@ -361,6 +361,7 @@ class ParallelModel(pl.LightningModule):
         y = self.decoder(z)
 
         if self.pqmf is not None:
+            x = self.pqmf.inverse(x)
             y = self.pqmf.inverse(y)
 
         distance = self.distance(x, y)
