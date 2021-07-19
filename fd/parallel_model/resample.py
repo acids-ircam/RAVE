@@ -29,14 +29,17 @@ def kaiser_filter(wc, atten, N=None):
 class Resampling(nn.Module):
     def __init__(self, target_sr, source_sr):
         super().__init__()
+        self.source_sr = source_sr
+        self.taget_sr = target_sr
+
         ratio = target_sr // source_sr
         assert int(ratio) == ratio
+        self.identity = target_sr == source_sr
 
-        if target_sr == source_sr:
-            self.identity = True
+        if self.identity:
+            self.upsample = nn.Identity()
+            self.downsample = nn.Identity()
             return
-        else:
-            self.identity = False
 
         wc = np.pi / ratio
         filt = kaiser_filter(wc, 140)
@@ -75,13 +78,9 @@ class Resampling(nn.Module):
         self.ratio = ratio
 
     def from_target_sampling_rate(self, x):
-        if self.identity:
-            return x
         return self.downsample(x)
 
     def to_target_sampling_rate(self, x):
-        if self.identity:
-            return x
         x = self.upsample(x)  # B x 2 x T
         x = x.permute(0, 2, 1).reshape(x.shape[0], -1).unsqueeze(1)
         return x

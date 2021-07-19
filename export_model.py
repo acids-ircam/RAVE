@@ -1,19 +1,23 @@
 import torch
 import torch.nn as nn
+from effortless_config import Config
 
 from fd import parallel_model
-
-parallel_model.use_buffer_conv(True)
-
-from fd.parallel_model.model import ParallelModel, Residual
-from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
-from fd.parallel_model.resample import Resampling
-from effortless_config import Config
 
 
 class args(Config):
     RUN = None
     SR = None
+    CACHED = False
+
+
+args.parse_args()
+
+parallel_model.use_buffer_conv(args.CACHED)
+
+from fd.parallel_model.model import ParallelModel, Residual
+from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
+from fd.parallel_model.resample import Resampling
 
 
 class TraceModel(nn.Module):
@@ -27,7 +31,10 @@ class TraceModel(nn.Module):
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
         self.register_buffer("latent_size", torch.tensor(latent_size))
-        self.register_buffer("sampling_rate", torch.tensor(pretrained.sr))
+        self.register_buffer(
+            "sampling_rate",
+            torch.tensor(self.resample.taget_sr),
+        )
 
     def reparametrize(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
@@ -60,54 +67,54 @@ class TraceModel(nn.Module):
         return self.decode(self.encode(x))
 
 
-if __name__ == "__main__":
-    args.parse_args()
+print("loading model from checkpoint")
+model = ParallelModel.load_from_checkpoint(args.RUN, strict=True).eval()
 
-    print("loading model from checkpoint")
-    model = ParallelModel.load_from_checkpoint(args.RUN, strict=True).eval()
+print("warmup forward pass")
+x = torch.zeros(1, 1, 1024)
+mean, scale = model.encoder(x)
+y = model.decoder(mean)
 
-    print("warmup forward pass")
-    x = torch.zeros(1, 1, 1024)
-    mean, scale = model.encoder(x)
-    y = model.decoder(mean)
+print("scripting cached modules")
+n_cache = 0
 
-    print("scripting cached modules")
-    n_cache = 0
+cached_modules = [
+    CachedConv1d,
+    CachedConvTranspose1d,
+    Residual,
+]
 
-    cached_modules = [
-        CachedConv1d,
-        CachedConvTranspose1d,
-        Residual,
-    ]
+model.discriminator = None
 
-    model.discriminator = None
+for n, m in model.named_modules():
+    if any(list(map(lambda c: isinstance(m, c),
+                    cached_modules))) and args.CACHED:
+        if not m.cache.initialized:
+            print(f"warmup failed for module {n}")
+        m.script_cache()
+        n_cache += 1
 
-    for n, m in model.named_modules():
-        if any(list(map(lambda c: isinstance(m, c), cached_modules))):
-            if not m.cache.initialized:
-                print(f"warmup failed for module {n}")
-            m.script_cache()
-            n_cache += 1
+print(f"{n_cache} cached modules found and scripted !")
 
-    print(f"{n_cache} cached modules found and scripted !")
+sr = model.sr
 
-    sr = model.sr
+if args.SR is not None:
+    target_sr = int(args.SR)
+else:
+    target_sr = sr
 
-    if args.SR is not None:
-        target_sr = int(args.SR)
-    else:
-        target_sr = sr
+print("build resampling model")
+resample = Resampling(target_sr, sr)
+x = torch.randn(1, 1, 2**14)
+resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
 
-    print("build resampling model")
-    resample = Resampling(target_sr, sr)
-    x = torch.randn(1, 1, 2**14)
-    resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
+if not resample.identity and args.CACHED:
     resample.upsample.script_cache()
     resample.downsample.script_cache()
 
-    print("script model")
-    model = TraceModel(model, resample)
-    model = torch.jit.script(model)
+print("script model")
+model = TraceModel(model, resample)
+model = torch.jit.script(model)
 
-    print("save model")
-    model.save("vae.ts")
+print("save model")
+model.save("vae.ts")
