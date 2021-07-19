@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding
+from .pqmf import PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
@@ -229,6 +230,11 @@ class ParallelModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        if data_size == 1:
+            self.pqmf = None
+        else:
+            self.pqmf = PQMF(100, data_size)
+
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  bias)
@@ -291,6 +297,9 @@ class ParallelModel(pl.LightningModule):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
 
+        if self.pqmf is not None:
+            x = self.pqmf(x)
+
         warmed_up = step > self.warmup
 
         if warmed_up:
@@ -305,6 +314,11 @@ class ParallelModel(pl.LightningModule):
         y = self.decoder(z)
 
         distance = self.distance(x, y)
+
+        if self.pqmf is not None:
+            x = self.pqmf.inverse(x)
+            y = self.pqmf.inverse(y)
+            distance = distance + self.distance(x, y)
 
         if warmed_up:
             pred_true = self.discriminator(x).mean()
@@ -338,9 +352,16 @@ class ParallelModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
+
+        if self.pqmf is not None:
+            x = self.pqmf(x)
+
         mean, scale = self.encoder(x)
         z, _ = self.reparametrize(mean, scale)
         y = self.decoder(z)
+
+        if self.pqmf is not None:
+            y = self.pqmf.inverse(y)
 
         distance = self.distance(x, y)
 
