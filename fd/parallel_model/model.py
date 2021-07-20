@@ -12,7 +12,7 @@ from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadd
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
-PQMF = CachedPQMF if USE_BUFFER_CONV else CachedPQMF
+PQMF = CachedPQMF if USE_BUFFER_CONV else PQMF
 
 
 class Residual(nn.Module):
