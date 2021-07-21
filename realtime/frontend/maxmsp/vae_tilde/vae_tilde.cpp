@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 
-#define BUFFER_SIZE 8192
+#define BUFFER_SIZE 2048
 
 using namespace c74::min;
 
@@ -30,6 +30,9 @@ public:
     cout << "failed loading model" << endl;
   } else {
     cout << "successfully loaded model" << endl;
+    cout << "available methods:" << endl;
+    for (const auto &method : m_model.get_available_methods())
+      cout << " - " << method << endl;
   }
   return {};
 }

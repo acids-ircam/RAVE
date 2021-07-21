@@ -62,3 +62,10 @@ int Backend::load(std::string path) {
     return 1;
   }
 }
+
+std::vector<std::string> Backend::get_available_methods() {
+  std::vector<std::string> methods;
+  for (const auto &m : m_model.get_methods())
+    methods.push_back(m.name());
+  return methods;
+}
