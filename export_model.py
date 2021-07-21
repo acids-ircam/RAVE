@@ -9,6 +9,7 @@ class args(Config):
     RUN = None
     SR = None
     CACHED = False
+    LATENT_SIZE = 8
 
 
 args.parse_args()
@@ -39,6 +40,22 @@ class TraceModel(nn.Module):
             torch.tensor(self.resample.taget_sr),
         )
 
+        self.cropped_latent_size = args.LATENT_SIZE
+
+        x = torch.randn(1, 1, 2**14)
+        z = self.encode(x)
+        ratio = x.shape[-1] // z.shape[-1]
+
+        self.register_buffer(
+            "encode_params",
+            torch.tensor([1, 1, self.cropped_latent_size, ratio]))
+
+        self.register_buffer(
+            "decode_params",
+            torch.tensor([self.cropped_latent_size, ratio, 1, 1]))
+
+        self.register_buffer("forward_params", torch.tensor([1, 1, 1, 1]))
+
     @torch.jit.ignore
     def reparametrize(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
@@ -61,10 +78,15 @@ class TraceModel(nn.Module):
         z = self.reparametrize(mean, scale)[0]
         z = z - self.latent_mean.unsqueeze(-1)
         z = nn.functional.conv1d(z, self.latent_pca.unsqueeze(-1))
+
+        z = z[:, :self.cropped_latent_size]
         return z
 
     @torch.jit.export
     def decode(self, z):
+        pad_size = self.latent_size.item() - self.cropped_latent_size
+        z = torch.cat([z, torch.randn(z.shape[0], pad_size, z.shape[-1])], 1)
+
         z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
         z = z + self.latent_mean.unsqueeze(-1)
         x = self.decoder(z)

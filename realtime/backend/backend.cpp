@@ -69,3 +69,10 @@ std::vector<std::string> Backend::get_available_methods() {
     methods.push_back(m.name());
   return methods;
 }
+
+std::vector<std::string> Backend::get_available_attributes() {
+  std::vector<std::string> attributes;
+  for (const auto &attribute : m_model.named_attributes())
+    attributes.push_back(attribute.name);
+  return attributes;
+}

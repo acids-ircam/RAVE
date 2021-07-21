@@ -14,5 +14,6 @@ public:
   void perform(std::vector<float *> in_buffer, std::vector<float *> out_buffer,
                int n_vec, std::string method);
   std::vector<std::string> get_available_methods();
+  std::vector<std::string> get_available_attributes();
   int load(std::string path);
 };
