@@ -56,7 +56,6 @@ class TraceModel(nn.Module):
 
         self.register_buffer("forward_params", torch.tensor([1, 1, 1, 1]))
 
-    @torch.jit.ignore
     def reparametrize(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
