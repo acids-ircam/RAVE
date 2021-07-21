@@ -1,4 +1,5 @@
 #include "backend.h"
+#include <algorithm>
 #include <iostream>
 #include <stdlib.h>
 
@@ -75,4 +76,18 @@ std::vector<std::string> Backend::get_available_attributes() {
   for (const auto &attribute : m_model.named_attributes())
     attributes.push_back(attribute.name);
   return attributes;
+}
+
+std::vector<int> Backend::get_method_params(std::string method) {
+  auto am = get_available_methods();
+  std::vector<int> params;
+
+  if (std::find(am.begin(), am.end(), method) != am.end()) {
+
+    auto p = m_model.attr(method + "_params").toTensor();
+
+    for (int i(0); i < 4; i++)
+      params.push_back(p[i].item().to<int>());
+  }
+  return params;
 }

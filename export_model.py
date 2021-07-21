@@ -42,7 +42,7 @@ class TraceModel(nn.Module):
 
         self.cropped_latent_size = args.LATENT_SIZE
 
-        x = torch.randn(1, 1, 2**14)
+        x = torch.zeros(1, 1, 2**14)
         z = self.encode(x)
         ratio = x.shape[-1] // z.shape[-1]
 
@@ -142,7 +142,7 @@ else:
 
 print("build resampling model")
 resample = Resampling(target_sr, sr)
-x = torch.randn(1, 1, 2**14)
+x = torch.zeros(1, 1, 2**14)
 resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
 
 if not resample.identity and args.CACHED:
