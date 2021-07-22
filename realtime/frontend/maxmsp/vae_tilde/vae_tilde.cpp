@@ -4,7 +4,6 @@
 #include <thread>
 #include <vector>
 
-#define BUFFER_SIZE 2048
 
 using namespace c74::min;
 
@@ -33,6 +32,7 @@ public:
   // AUDIO PERFORM
   void operator()(audio_bundle input, audio_bundle output);
   using vector_operator::operator();
+  int m_buffer_size;
 };
 
 void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
@@ -41,28 +41,30 @@ void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
   vae_instance->m_model.perform(in_buffer, out_buffer, n_vec, method);
 }
 
-vae::vae(const atoms &args = {}) {
+vae::vae(const atoms &args) {
   m_head = 0;
   compute_thread = nullptr;
   m_in_dim = 1;
   m_in_ratio = 1;
   m_out_dim = 1;
   m_out_ratio = 1;
-
+  m_buffer_size = 2048;
+  m_method = "forward";
+  
   // CHECK ARGUMENTS
   if (!args.size()) {
-    // return;
-    m_path = "/Users/acaillon/Desktop/vae.ts";
-    cout << "Using " << m_path << endl;
+    return;
   }
   if (args.size() > 0) {
     m_path = std::string(args[0]);
   }
   if (args.size() > 1) {
     m_method = std::string(args[1]);
-  } else {
-    m_method = "forward";
-  }
+  } 
+  if (args.size() > 2) {
+    m_buffer_size = int(args[2]);
+  } 
+
 
   // TRY TO LOAD MODEL
   if (m_model.load(m_path)) {
@@ -91,12 +93,12 @@ vae::vae(const atoms &args = {}) {
   for (int i(0); i < m_in_dim; i++) {
     m_inlets.push_back(std::make_unique<inlet<>>(
         this, "(signal) model input " + std::to_string(i), "signal"));
-    m_in_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
+    m_in_buffer.push_back(std::make_unique<float[]>(2 * m_buffer_size));
   }
   for (int i(0); i < m_out_dim; i++) {
     m_outlets.push_back(std::make_unique<outlet<>>(
         this, "(signal) model output " + std::to_string(i), "signal"));
-    m_out_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
+    m_out_buffer.push_back(std::make_unique<float[]>(2 * m_buffer_size));
   }
 }
 
@@ -137,14 +139,14 @@ void vae::operator()(audio_bundle input, audio_bundle output) {
   m_head += input.frame_count();
 
   // IF BUFFER FILLED
-  if (!(m_head % BUFFER_SIZE)) {
+  if (!(m_head % m_buffer_size)) {
     if (compute_thread) {
       compute_thread->join();
     }
 
-    m_head = m_head % (2 * BUFFER_SIZE);
+    m_head = m_head % (2 * m_buffer_size);
 
-    int offset_head = (m_head + BUFFER_SIZE) % (2 * BUFFER_SIZE);
+    int offset_head = (m_head + m_buffer_size) % (2 * m_buffer_size);
 
     std::vector<float *> in_buffer;
     std::vector<float *> out_buffer;
@@ -157,7 +159,7 @@ void vae::operator()(audio_bundle input, audio_bundle output) {
     }
 
     compute_thread = std::make_unique<std::thread>(
-        thread_perform, this, in_buffer, out_buffer, BUFFER_SIZE, m_method);
+        thread_perform, this, in_buffer, out_buffer, m_buffer_size, m_method);
   }
 }
 
