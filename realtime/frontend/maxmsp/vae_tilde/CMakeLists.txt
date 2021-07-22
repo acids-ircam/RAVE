@@ -41,3 +41,4 @@ include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 #############################################################
 
 include(${C74_MIN_API_DIR}/test/min-object-unittest.cmake)
+target_link_libraries(${TEST_NAME} PRIVATE backend)

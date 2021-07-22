@@ -9,3 +9,5 @@ realtime/docs
 *.dsp_cache
 *.ckpt
 *.ts
+realtime/frontend/tests
+realtime/tests

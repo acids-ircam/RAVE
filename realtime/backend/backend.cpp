@@ -10,6 +10,15 @@ void Backend::perform(std::vector<float *> in_buffer,
                       std::string method) {
   torch::NoGradGuard no_grad;
 
+  auto params = get_method_params(method);
+  if (!params.size())
+    return;
+
+  auto in_dim = params[0];
+  auto in_ratio = params[1];
+  auto out_dim = params[2];
+  auto out_ratio = params[3];
+
   if (!m_loaded)
     return;
 
@@ -19,12 +28,16 @@ void Backend::perform(std::vector<float *> in_buffer,
     tensor_in.push_back(torch::from_blob(in_buffer[i], {1, 1, n_vec}));
   }
   auto cat_tensor_in = torch::cat(tensor_in, 1);
+  cat_tensor_in = cat_tensor_in.reshape({1, in_dim, -1, in_ratio}).mean(-1);
+
   std::vector<torch::jit::IValue> inputs = {cat_tensor_in};
 
   // PROCESS TENSOR
   at::Tensor tensor_out;
   try {
     tensor_out = m_model.get_method(method)(inputs).toTensor();
+    tensor_out =
+        tensor_out.repeat_interleave(out_ratio).reshape({1, out_dim, -1});
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return;

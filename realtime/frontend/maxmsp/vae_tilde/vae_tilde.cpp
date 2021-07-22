@@ -14,14 +14,22 @@ public:
   MIN_TAGS{"audio, deep learning, ai"};
   MIN_AUTHOR{"Antoine Caillon"};
 
-  inlet<> m_audio_input{this, "(signal) Audio input", "signal"};
-  outlet<> m_audio_output{this, "(signal) Audio output", "signal"};
+  std::vector<std::unique_ptr<inlet<>>> m_inlets;
+  std::vector<std::unique_ptr<outlet<>>> m_outlets;
 
-  vae(const atoms &args = {}) : m_head(0), compute_thread(nullptr) {
+  vae(const atoms &args = {}) {
+    m_head = 0;
+    compute_thread = nullptr;
+    m_in_dim = 1;
+    m_in_ratio = 1;
+    m_out_dim = 1;
+    m_out_ratio = 1;
+
+    // CHECK ARGUMENTS
     if (!args.size()) {
-      cout << "vae~ must be initialized with a path to a pretrained model!"
-           << endl;
-      return;
+      // return;
+      m_path = "/Users/acaillon/Desktop/vae.ts";
+      cout << "Using " << m_path << endl;
     }
     if (args.size() > 0) {
       m_path = std::string(args[0]);
@@ -32,6 +40,7 @@ public:
       m_method = "forward";
     }
 
+    // TRY TO LOAD MODEL
     if (m_model.load(m_path)) {
       cout << "error during loading" << endl;
       return;
@@ -39,6 +48,7 @@ public:
       cout << "successfully loaded model" << endl;
     }
 
+    // GET MODEL'S METHOD PARAMETERS
     auto params = m_model.get_method_params(m_method);
 
     if (!params.size()) {
@@ -53,16 +63,23 @@ public:
     m_out_dim = params[2];
     m_out_ratio = params[3];
 
-    cout << "using method " << m_method << ", ";
-    cout << "with " << m_in_dim << " input(s)";
-    if (m_in_ratio != 1) {
-      cout << " (" << m_in_ratio << "x downsampled)";
+    // CREATE INLETS, OUTLETS and BUFFERS
+    for (int i(0); i < m_in_dim; i++) {
+      m_inlets.push_back(std::make_unique<inlet<>>(
+          this, "(signal) model input " + std::to_string(i), "signal"));
+      m_in_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
     }
-    cout << " and " << m_out_dim << " output(s)";
-    if (m_out_ratio != 1) {
-      cout << " (" << m_out_ratio << "x upsampled)";
+    for (int i(0); i < m_out_dim; i++) {
+      m_outlets.push_back(std::make_unique<outlet<>>(
+          this, "(signal) model output " + std::to_string(i), "signal"));
+      m_out_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
     }
-    cout << "." << endl;
+  }
+
+  ~vae() {
+    if (compute_thread) {
+      compute_thread->join();
+    }
   }
 
   Backend m_model;
@@ -70,10 +87,12 @@ public:
   std::string m_path, m_method;
   int m_head, m_in_dim, m_in_ratio, m_out_dim, m_out_ratio;
 
-  float m_in_buffer[2 * BUFFER_SIZE], m_out_buffer[2 * BUFFER_SIZE];
-  std::thread *compute_thread;
+  std::vector<std::unique_ptr<float[]>> m_in_buffer, m_out_buffer;
+  std::unique_ptr<std::thread> compute_thread;
 
   void operator()(audio_bundle input, audio_bundle output);
+
+  using vector_operator::operator();
 };
 
 void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
@@ -83,17 +102,36 @@ void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
 }
 
 void vae::operator()(audio_bundle input, audio_bundle output) {
-
-  auto in = input.samples(0);
-  auto out = output.samples(0);
-
-  for (int i(0); i < input.frame_count(); i++) {
-    m_in_buffer[i + m_head] = float(in[i]);
-    out[i] = double(m_out_buffer[i + m_head]);
+  // TRANSFER MEMORY FROM BUFFERS - MAY BE OPTIMIZED TO AVOID
+  // NESTED LOOPS
+  if (input.channel_count() != m_in_buffer.size()) {
+    cout << "inconsistent in buffer size, expected " << m_in_buffer.size()
+         << " inlets, got " << input.channel_count() << "." << endl;
+    return;
+  }
+  if (output.channel_count() != m_out_buffer.size()) {
+    cout << "inconsistent out buffer size, expected " << m_out_buffer.size()
+         << " inlets, got " << output.channel_count() << "." << endl;
+    return;
   }
 
+  for (int c(0); c < input.channel_count(); c++) {
+    auto in = input.samples(c);
+    for (int i(0); i < input.frame_count(); i++) {
+      m_in_buffer[c][i + m_head] = float(in[i]);
+    }
+  }
+  for (int c(0); c < output.channel_count(); c++) {
+    auto out = output.samples(c);
+    for (int i(0); i < output.frame_count(); i++) {
+      out[i] = double(m_out_buffer[c][i + m_head]);
+    }
+  }
+
+  // INCREASE HEAD
   m_head += input.frame_count();
 
+  // IF BUFFER FILLED
   if (!(m_head % BUFFER_SIZE)) {
     if (compute_thread) {
       compute_thread->join();
@@ -102,11 +140,19 @@ void vae::operator()(audio_bundle input, audio_bundle output) {
     m_head = m_head % (2 * BUFFER_SIZE);
 
     int offset_head = (m_head + BUFFER_SIZE) % (2 * BUFFER_SIZE);
-    std::vector<float *> in_buffer{m_in_buffer + offset_head};
-    std::vector<float *> out_buffer{m_out_buffer + offset_head};
 
-    compute_thread = new std::thread(thread_perform, this, in_buffer,
-                                     out_buffer, BUFFER_SIZE, m_method);
+    std::vector<float *> in_buffer;
+    std::vector<float *> out_buffer;
+
+    for (int i(0); i < m_in_buffer.size(); i++) {
+      in_buffer.push_back(&m_in_buffer[i][offset_head]);
+    }
+    for (int i(0); i < m_out_buffer.size(); i++) {
+      out_buffer.push_back(&m_out_buffer[i][offset_head]);
+    }
+
+    compute_thread = std::make_unique<std::thread>(
+        thread_perform, this, in_buffer, out_buffer, BUFFER_SIZE, m_method);
   }
 }
 
