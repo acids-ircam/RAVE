@@ -14,84 +14,24 @@ public:
   MIN_TAGS{"audio, deep learning, ai"};
   MIN_AUTHOR{"Antoine Caillon"};
 
+  vae(const atoms &args = {});
+  ~vae();
+
+  // INLETS OUTLETS
   std::vector<std::unique_ptr<inlet<>>> m_inlets;
   std::vector<std::unique_ptr<outlet<>>> m_outlets;
 
-  vae(const atoms &args = {}) {
-    m_head = 0;
-    compute_thread = nullptr;
-    m_in_dim = 1;
-    m_in_ratio = 1;
-    m_out_dim = 1;
-    m_out_ratio = 1;
-
-    // CHECK ARGUMENTS
-    if (!args.size()) {
-      // return;
-      m_path = "/Users/acaillon/Desktop/vae.ts";
-      cout << "Using " << m_path << endl;
-    }
-    if (args.size() > 0) {
-      m_path = std::string(args[0]);
-    }
-    if (args.size() > 1) {
-      m_method = std::string(args[1]);
-    } else {
-      m_method = "forward";
-    }
-
-    // TRY TO LOAD MODEL
-    if (m_model.load(m_path)) {
-      cout << "error during loading" << endl;
-      return;
-    } else {
-      cout << "successfully loaded model" << endl;
-    }
-
-    // GET MODEL'S METHOD PARAMETERS
-    auto params = m_model.get_method_params(m_method);
-
-    if (!params.size()) {
-      cout << "method " << m_method << " not found, using forward instead"
-           << endl;
-      m_method = "forward";
-      params = m_model.get_method_params(m_method);
-    }
-
-    m_in_dim = params[0];
-    m_in_ratio = params[1];
-    m_out_dim = params[2];
-    m_out_ratio = params[3];
-
-    // CREATE INLETS, OUTLETS and BUFFERS
-    for (int i(0); i < m_in_dim; i++) {
-      m_inlets.push_back(std::make_unique<inlet<>>(
-          this, "(signal) model input " + std::to_string(i), "signal"));
-      m_in_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
-    }
-    for (int i(0); i < m_out_dim; i++) {
-      m_outlets.push_back(std::make_unique<outlet<>>(
-          this, "(signal) model output " + std::to_string(i), "signal"));
-      m_out_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
-    }
-  }
-
-  ~vae() {
-    if (compute_thread) {
-      compute_thread->join();
-    }
-  }
-
+  // BACKEND RELATED MEMBERS
   Backend m_model;
-
   std::string m_path, m_method;
-  int m_head, m_in_dim, m_in_ratio, m_out_dim, m_out_ratio;
-
-  std::vector<std::unique_ptr<float[]>> m_in_buffer, m_out_buffer;
   std::unique_ptr<std::thread> compute_thread;
 
-  void operator()(audio_bundle input, audio_bundle output);
+  // BUFFER RELATED MEMBERS
+  int m_head, m_in_dim, m_in_ratio, m_out_dim, m_out_ratio;
+  std::vector<std::unique_ptr<float[]>> m_in_buffer, m_out_buffer;
 
+  // AUDIO PERFORM
+  void operator()(audio_bundle input, audio_bundle output);
   using vector_operator::operator();
 };
 
@@ -99,6 +39,71 @@ void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
                     std::vector<float *> out_buffer, int n_vec,
                     std::string method) {
   vae_instance->m_model.perform(in_buffer, out_buffer, n_vec, method);
+}
+
+vae::vae(const atoms &args = {}) {
+  m_head = 0;
+  compute_thread = nullptr;
+  m_in_dim = 1;
+  m_in_ratio = 1;
+  m_out_dim = 1;
+  m_out_ratio = 1;
+
+  // CHECK ARGUMENTS
+  if (!args.size()) {
+    // return;
+    m_path = "/Users/acaillon/Desktop/vae.ts";
+    cout << "Using " << m_path << endl;
+  }
+  if (args.size() > 0) {
+    m_path = std::string(args[0]);
+  }
+  if (args.size() > 1) {
+    m_method = std::string(args[1]);
+  } else {
+    m_method = "forward";
+  }
+
+  // TRY TO LOAD MODEL
+  if (m_model.load(m_path)) {
+    cout << "error during loading" << endl;
+    return;
+  } else {
+    cout << "successfully loaded model" << endl;
+  }
+
+  // GET MODEL'S METHOD PARAMETERS
+  auto params = m_model.get_method_params(m_method);
+
+  if (!params.size()) {
+    cout << "method " << m_method << " not found, using forward instead"
+         << endl;
+    m_method = "forward";
+    params = m_model.get_method_params(m_method);
+  }
+
+  m_in_dim = params[0];
+  m_in_ratio = params[1];
+  m_out_dim = params[2];
+  m_out_ratio = params[3];
+
+  // CREATE INLETS, OUTLETS and BUFFERS
+  for (int i(0); i < m_in_dim; i++) {
+    m_inlets.push_back(std::make_unique<inlet<>>(
+        this, "(signal) model input " + std::to_string(i), "signal"));
+    m_in_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
+  }
+  for (int i(0); i < m_out_dim; i++) {
+    m_outlets.push_back(std::make_unique<outlet<>>(
+        this, "(signal) model output " + std::to_string(i), "signal"));
+    m_out_buffer.push_back(std::make_unique<float[]>(2 * BUFFER_SIZE));
+  }
+}
+
+vae::~vae() {
+  if (compute_thread) {
+    compute_thread->join();
+  }
 }
 
 void vae::operator()(audio_bundle input, audio_bundle output) {
