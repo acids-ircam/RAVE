@@ -40,6 +40,14 @@ public:
     }
 
     auto params = m_model.get_method_params(m_method);
+
+    if (!params.size()) {
+      cout << "method " << m_method << " not found, using forward instead"
+           << endl;
+      m_method = "forward";
+      params = m_model.get_method_params(m_method);
+    }
+
     m_in_dim = params[0];
     m_in_ratio = params[1];
     m_out_dim = params[2];
