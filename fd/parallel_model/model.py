@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding
@@ -51,25 +52,27 @@ class ResidualStack(nn.Module):
                 Residual(
                     nn.Sequential(
                         nn.LeakyReLU(.2),
-                        Conv1d(
-                            dim,
-                            dim,
-                            kernel_size,
-                            padding=get_padding(
+                        wn(
+                            Conv1d(
+                                dim,
+                                dim,
                                 kernel_size,
+                                padding=get_padding(
+                                    kernel_size,
+                                    dilation=3**i,
+                                ),
                                 dilation=3**i,
-                            ),
-                            dilation=3**i,
-                            bias=bias,
-                        ),
+                                bias=bias,
+                            )),
                         nn.LeakyReLU(.2),
-                        Conv1d(
-                            dim,
-                            dim,
-                            kernel_size,
-                            padding=get_padding(kernel_size),
-                            bias=bias,
-                        ),
+                        wn(
+                            Conv1d(
+                                dim,
+                                dim,
+                                kernel_size,
+                                padding=get_padding(kernel_size),
+                                bias=bias,
+                            )),
                     )))
 
         self.net = nn.Sequential(*net)
@@ -84,23 +87,25 @@ class UpsampleLayer(nn.Module):
         net = [nn.LeakyReLU(.2)]
         if ratio > 1:
             net.append(
-                ConvTranspose1d(
-                    in_dim,
-                    out_dim,
-                    2 * ratio,
-                    stride=ratio,
-                    padding=ratio // 2,
-                    bias=bias,
-                ))
+                wn(
+                    ConvTranspose1d(
+                        in_dim,
+                        out_dim,
+                        2 * ratio,
+                        stride=ratio,
+                        padding=ratio // 2,
+                        bias=bias,
+                    )))
         else:
             net.append(
-                Conv1d(
-                    in_dim,
-                    out_dim,
-                    3,
-                    padding=get_padding(3),
-                    bias=bias,
-                ))
+                wn(
+                    Conv1d(
+                        in_dim,
+                        out_dim,
+                        3,
+                        padding=get_padding(3),
+                        bias=bias,
+                    )))
 
         self.net = nn.Sequential(*net)
 
@@ -111,13 +116,14 @@ class UpsampleLayer(nn.Module):
 class Generator(nn.Module):
     def __init__(self, latent_size, capacity, data_size, ratios, bias=False):
         super().__init__()
-        self.pre_net = Conv1d(
-            latent_size,
-            2**len(ratios) * capacity,
-            7,
-            padding=get_padding(7),
-            bias=bias,
-        )
+        self.pre_net = wn(
+            Conv1d(
+                latent_size,
+                2**len(ratios) * capacity,
+                7,
+                padding=get_padding(7),
+                bias=bias,
+            ))
 
         net = []
         for i, r in enumerate(ratios):
@@ -130,7 +136,8 @@ class Generator(nn.Module):
         self.net = nn.Sequential(*net)
 
         self.post_net = nn.Sequential(
-            Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias),
+            wn(Conv1d(out_dim, data_size, 7, padding=get_padding(7),
+                      bias=bias)),
             nn.Tanh(),
         )
 
