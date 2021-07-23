@@ -4,7 +4,6 @@
 #include <thread>
 #include <vector>
 
-
 using namespace c74::min;
 
 class vae : public object<vae>, public vector_operator<> {
@@ -41,16 +40,10 @@ void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
   vae_instance->m_model.perform(in_buffer, out_buffer, n_vec, method);
 }
 
-vae::vae(const atoms &args) {
-  m_head = 0;
-  compute_thread = nullptr;
-  m_in_dim = 1;
-  m_in_ratio = 1;
-  m_out_dim = 1;
-  m_out_ratio = 1;
-  m_buffer_size = 2048;
-  m_method = "forward";
-  
+vae::vae(const atoms &args)
+    : m_head(0), compute_thread(nullptr), m_in_dim(1), m_in_ratio(1),
+      m_out_dim(1), m_out_ratio(1), m_buffer_size(2048), m_method("forward") {
+
   // CHECK ARGUMENTS
   if (!args.size()) {
     return;
@@ -60,11 +53,10 @@ vae::vae(const atoms &args) {
   }
   if (args.size() > 1) {
     m_method = std::string(args[1]);
-  } 
+  }
   if (args.size() > 2) {
     m_buffer_size = int(args[2]);
-  } 
-
+  }
 
   // TRY TO LOAD MODEL
   if (m_model.load(m_path)) {
