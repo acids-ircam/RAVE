@@ -104,6 +104,11 @@ print("loading model from checkpoint")
 run = glob(args.RUN + "*.ckpt")[-1]
 model = ParallelModel.load_from_checkpoint(run, strict=False).eval()
 
+print("flattening weights")
+for m in model.modules():
+    if hasattr(m, "weight_g"):
+        nn.utils.remove_weight_norm(m)
+
 print("warmup forward pass")
 x = torch.zeros(1, 1, 2**14)
 if model.pqmf is not None:

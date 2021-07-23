@@ -1,17 +1,9 @@
 # %%
 import torch
+import torch.nn as nn
 
-torch.set_grad_enabled(False)
-from fd.parallel_model.pqmf import CachedPQMF
-import matplotlib.pyplot as plt
-
-x = torch.randn(1, 1, 1024)
-pqmf = CachedPQMF(100, 8)
-
-y = pqmf(x)
-z = pqmf.inverse(y)
-
-print(pqmf.hk.shape)
-plt.plot(x.reshape(-1))
-plt.plot(z.reshape(-1))
+model = torch.jit.load("vae.ts")
+x = torch.randn(1, 1, 4096)
+# %%
+model(x).shape
 # %%
