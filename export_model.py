@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from effortless_config import Config
 from glob import glob
+from os import path
 from fd import parallel_model
 
 
@@ -101,7 +102,12 @@ class TraceModel(nn.Module):
 
 
 print("loading model from checkpoint")
-run = glob(args.RUN + "*.ckpt")[-1]
+if "checkpoints" in str(args.RUN):
+    RUN = path.join(args.RUN, "*.ckpt")
+else:
+    RUN = path.join(args.RUN, "checkpoints", "*.ckpt")
+
+run = glob(RUN)[-1]
 model = ParallelModel.load_from_checkpoint(run, strict=False).eval()
 
 print("flattening weights")
