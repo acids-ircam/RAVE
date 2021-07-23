@@ -101,19 +101,10 @@ vae::~vae() {
 }
 
 void vae::operator()(audio_bundle input, audio_bundle output) {
+  if (!m_model.is_loaded())
+    return;
   // TRANSFER MEMORY FROM BUFFERS - MAY BE OPTIMIZED TO AVOID
   // NESTED LOOPS
-  if (input.channel_count() != m_in_buffer.size()) {
-    cout << "inconsistent in buffer size, expected " << m_in_buffer.size()
-         << " inlets, got " << input.channel_count() << "." << endl;
-    return;
-  }
-  if (output.channel_count() != m_out_buffer.size()) {
-    cout << "inconsistent out buffer size, expected " << m_out_buffer.size()
-         << " inlets, got " << output.channel_count() << "." << endl;
-    return;
-  }
-
   for (int c(0); c < input.channel_count(); c++) {
     auto in = input.samples(c);
     for (int i(0); i < input.frame_count(); i++) {

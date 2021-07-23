@@ -104,3 +104,5 @@ std::vector<int> Backend::get_method_params(std::string method) {
   }
   return params;
 }
+
+bool Backend::is_loaded() { return m_loaded; }

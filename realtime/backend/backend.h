@@ -17,4 +17,5 @@ public:
   std::vector<std::string> get_available_attributes();
   std::vector<int> get_method_params(std::string method);
   int load(std::string path);
+  bool is_loaded();
 };
