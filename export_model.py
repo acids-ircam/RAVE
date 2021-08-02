@@ -102,13 +102,18 @@ class TraceModel(nn.Module):
 
 
 print("loading model from checkpoint")
-if "checkpoints" in str(args.RUN):
-    RUN = path.join(args.RUN, "*.ckpt")
-else:
-    RUN = path.join(args.RUN, "checkpoints", "*.ckpt")
 
-run = glob(RUN)[-1]
-model = ParallelModel.load_from_checkpoint(run, strict=False).eval()
+if ".ckpt" in (RUN := str(args.RUN)):
+    pass
+elif "checkpoints" in RUN:
+    RUN = path.join(RUN, "*.ckpt")
+    RUN = glob(RUN)[-1]
+else:
+    RUN = path.join(RUN, "checkpoints", "*.ckpt")
+    RUN = glob(RUN)[-1]
+
+print(f"found {RUN}")
+model = ParallelModel.load_from_checkpoint(RUN, strict=False).eval()
 
 print("flattening weights")
 for m in model.modules():
