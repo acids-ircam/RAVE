@@ -76,7 +76,7 @@ if __name__ == "__main__":
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(
         monitor="validation",
-        filename="{epoch}-{val_loss:.2f}",
+        filename="best",
     )
     last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
 
