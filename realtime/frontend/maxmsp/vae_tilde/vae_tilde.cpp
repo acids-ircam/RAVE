@@ -42,7 +42,7 @@ void thread_perform(vae *vae_instance, std::vector<float *> in_buffer,
 
 vae::vae(const atoms &args)
     : m_head(0), compute_thread(nullptr), m_in_dim(1), m_in_ratio(1),
-      m_out_dim(1), m_out_ratio(1), m_buffer_size(2048), m_method("forward") {
+      m_out_dim(1), m_out_ratio(1), m_buffer_size(4096), m_method("forward") {
 
   // CHECK ARGUMENTS
   if (!args.size()) {
