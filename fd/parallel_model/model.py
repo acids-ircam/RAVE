@@ -337,7 +337,7 @@ class ParallelModel(pl.LightningModule):
             pred_fake = torch.tensor(0.).to(x)
 
         loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
-        loss_gen = distance - self.adv_warmup * pred_fake + 1e-1 * kl
+        loss_gen = distance - self.adv_warmup * pred_fake * .1 + 1e-1 * kl
 
         if step % 2 and warmed_up:
             dis_opt.zero_grad()

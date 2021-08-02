@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 from os import environ
 import numpy as np
 
-from udls.transforms import Compose, RandomApply, Dequantize
+from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
 
 if __name__ == "__main__":
 
@@ -52,9 +52,11 @@ if __name__ == "__main__":
     dataset = SimpleDataset(
         args.PREPROCESSED,
         args.WAV,
-        preprocess_function=simple_audio_preprocess(args.SR, args.N_SIGNAL),
+        preprocess_function=simple_audio_preprocess(args.SR,
+                                                    2 * args.N_SIGNAL),
         split_set="full",
         transforms=Compose([
+            RandomCrop(args.N_SIGNAL),
             RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR),
                 p=.8,
