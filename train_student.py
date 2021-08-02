@@ -8,6 +8,8 @@ import pytorch_lightning as pl
 from os import environ
 import numpy as np
 
+from udls.transforms import Compose, RandomApply, Dequantize
+
 if __name__ == "__main__":
 
     class args(Config):
@@ -16,11 +18,11 @@ if __name__ == "__main__":
         LATENT_SIZE = 16
         RATIOS = [8, 8, 4, 4]
         BIAS = True
-        STUDENT_CHKPT = None
         D_CAPACITY = 16
         D_MULTIPLIER = 4
         D_N_LAYERS = 4
         WARMUP = 100000
+        CKPT = None
 
         PREPROCESSED = None
         WAV = None
@@ -52,21 +54,34 @@ if __name__ == "__main__":
         args.WAV,
         preprocess_function=simple_audio_preprocess(args.SR, args.N_SIGNAL),
         split_set="full",
-        transforms=[
-            lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR), # phase mangling
-            lambda x: x + np.random.rand(*x.shape) / 2**16, # de-quantization
-        ],
+        transforms=Compose([
+            RandomApply(
+                lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR),
+                p=.8,
+            ),
+            Dequantize(16),
+            lambda x: x.astype(np.float32),
+        ]),
     )
 
     val = (2 * len(dataset)) // 100
     train = len(dataset) - val
     train, val = random_split(dataset, [train, val])
 
-    train = DataLoader(train, args.BATCH, True, drop_last=True)
-    val = DataLoader(val, args.BATCH, False)
+    train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
+    val = DataLoader(val, args.BATCH, False, num_workers=8)
+
+    # CHECKPOINT CALLBACKS
+    validation_checkpoint = pl.callbacks.ModelCheckpoint(
+        monitor="validation",
+        filename="{epoch}-{val_loss:.2f}",
+    )
+    last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
 
     trainer = pl.Trainer(
         gpus=1,
         val_check_interval=0.1,
+        callbacks=[validation_checkpoint, last_checkpoint],
+        resume_from_checkpoint=args.CKPT,
     )
     trainer.fit(model, train, val)
