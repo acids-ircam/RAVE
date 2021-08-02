@@ -1,10 +1,12 @@
 import torch
 from torch.utils.data import DataLoader, random_split
 from fd.parallel_model.model import ParallelModel
+from fd.parallel_model.core import random_phase_mangle
 from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config
 import pytorch_lightning as pl
 from os import environ
+import numpy as np
 
 if __name__ == "__main__":
 
@@ -50,6 +52,10 @@ if __name__ == "__main__":
         args.WAV,
         preprocess_function=simple_audio_preprocess(args.SR, args.N_SIGNAL),
         split_set="full",
+        transforms=[
+            lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR), # phase mangling
+            lambda x: x + np.random.rand(*x.shape) / 2**16, # de-quantization
+        ],
     )
 
     val = (2 * len(dataset)) // 100
