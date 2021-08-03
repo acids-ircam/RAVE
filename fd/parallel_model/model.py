@@ -234,6 +234,7 @@ class ParallelModel(pl.LightningModule):
                  d_multiplier,
                  d_n_layers,
                  warmup,
+                 mode,
                  sr=24000):
         super().__init__()
         self.save_hyperparameters()
@@ -262,7 +263,7 @@ class ParallelModel(pl.LightningModule):
         self.warmup = warmup
         self.adv_warmup = 0
         self.sr = sr
-
+        self.mode = mode
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
         gen_p += list(self.decoder.parameters())
@@ -299,6 +300,19 @@ class ParallelModel(pl.LightningModule):
 
         return z, kl
 
+    def adversarial_combine(self, score_real, score_fake, mode="hinge"):
+        if mode == "hinge":
+            loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
+            loss_dis = loss_dis.mean()
+            loss_gen = -score_fake.mean()
+        elif mode == "square":
+            loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
+            loss_dis = loss_dis.mean()
+            loss_gen = (score_fake - 1).pow(2).mean()
+        else:
+            raise NotImplementedError
+        return loss_dis, loss_gen
+
     def training_step(self, batch, batch_idx):
         step = len(self.train_dataloader()) * self.current_epoch + batch_idx
 
@@ -329,15 +343,19 @@ class ParallelModel(pl.LightningModule):
             distance = distance + self.distance(x, y)
 
         if warmed_up:
-            pred_true = self.discriminator(x).mean()
-            pred_fake = self.discriminator(y).mean()
+            pred_true = self.discriminator(x)
+            pred_fake = self.discriminator(y)
 
         else:
             pred_true = torch.tensor(0.).to(x)
             pred_fake = torch.tensor(0.).to(x)
 
-        loss_dis = torch.relu(1 - pred_true) + torch.relu(1 + pred_fake)
-        loss_gen = distance - self.adv_warmup * pred_fake * .1 + 1e-1 * kl
+        loss_dis, loss_adv = self.adversarial_combine(
+            pred_true,
+            pred_fake,
+            mode=self.mode,
+        )
+        loss_gen = distance + self.adv_warmup * loss_adv * .1 + 1e-1 * kl
 
         if step % 2 and warmed_up:
             dis_opt.zero_grad()
@@ -354,8 +372,8 @@ class ParallelModel(pl.LightningModule):
         self.log("loss_gen", loss_gen)
         self.log("distance", distance)
         self.log("regularization", kl)
-        self.log("pred_true", pred_true)
-        self.log("pred_fake", pred_fake)
+        self.log("pred_true", pred_true.mean())
+        self.log("pred_fake", pred_fake.mean())
         self.log("adv_warmup", self.adv_warmup)
 
     def validation_step(self, batch, batch_idx):

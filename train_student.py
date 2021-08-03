@@ -22,6 +22,7 @@ if __name__ == "__main__":
         D_MULTIPLIER = 4
         D_N_LAYERS = 4
         WARMUP = 100000
+        MODE = "hinge"
         CKPT = None
 
         PREPROCESSED = None
@@ -46,6 +47,7 @@ if __name__ == "__main__":
         d_multiplier=args.D_MULTIPLIER,
         d_n_layers=args.D_N_LAYERS,
         warmup=args.WARMUP,
+        mode=args.MODE,
         sr=args.SR,
     )
 
