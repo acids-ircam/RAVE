@@ -264,6 +264,7 @@ class ParallelModel(pl.LightningModule):
         self.adv_warmup = 0
         self.sr = sr
         self.mode = mode
+
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
         gen_p += list(self.decoder.parameters())
@@ -355,7 +356,7 @@ class ParallelModel(pl.LightningModule):
             pred_fake,
             mode=self.mode,
         )
-        loss_gen = distance + self.adv_warmup * loss_adv * .1 + 1e-1 * kl
+        loss_gen = distance + self.adv_warmup * loss_adv + 1e-1 * kl
 
         if step % 2 and warmed_up:
             dis_opt.zero_grad()
