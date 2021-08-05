@@ -217,10 +217,15 @@ class Discriminator(nn.Module):
             ))
         net.append(nn.LeakyReLU(.2))
         net.append(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
-        self.net = nn.Sequential(*net)
+        self.net = nn.ModuleList(net)
 
     def forward(self, x):
-        return self.net(x)
+        feature = []
+        for layer in self.net:
+            x = layer(x)
+            if isinstance(layer, Conv1d):
+                feature.append(x)
+        return x, feature
 
 
 class ParallelModel(pl.LightningModule):
@@ -344,8 +349,17 @@ class ParallelModel(pl.LightningModule):
             distance = distance + self.distance(x, y)
 
         if warmed_up:
-            pred_true = self.discriminator(x)
-            pred_fake = self.discriminator(y)
+            pred_true, feature_true = self.discriminator(x)
+            pred_fake, feature_fake = self.discriminator(y)
+
+            feature_match = sum(
+                map(
+                    lambda x, y: torch.norm(x - y, p=2),
+                    feature_true,
+                    feature_fake,
+                )) / len(feature_true)
+            
+            distance += feature_match
 
         else:
             pred_true = torch.tensor(0.).to(x)
