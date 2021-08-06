@@ -190,10 +190,10 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, capacity, multiplier, n_layers):
+    def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
-        net = [nn.Conv1d(1, capacity, 15, padding=7)]
+        net = [nn.Conv1d(in_size, capacity, 15, padding=7)]
         net.append(nn.LeakyReLU(.2))
 
         for i in range(n_layers):
@@ -253,8 +253,10 @@ class ParallelModel(pl.LightningModule):
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  bias)
 
-        self.discriminator = Discriminator(d_capacity, d_multiplier,
-                                           d_n_layers)
+        self.discriminator_fb = Discriminator(1, d_capacity, d_multiplier,
+                                              d_n_layers)
+        self.discriminator_mb = Discriminator(data_size, d_capacity, 4,
+                                              d_n_layers)
 
         self.idx = 0
 
@@ -273,7 +275,8 @@ class ParallelModel(pl.LightningModule):
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
         gen_p += list(self.decoder.parameters())
-        dis_p = self.discriminator.parameters()
+        dis_p = list(self.discriminator_fb.parameters())
+        dis_p += list(self.discriminator_mb.parameters())
 
         gen_opt = torch.optim.Adam(gen_p, 1e-4, (.5, .9))
         dis_opt = torch.optim.Adam(dis_p, 1e-4, (.5, .9))
@@ -325,53 +328,72 @@ class ParallelModel(pl.LightningModule):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
 
-        if self.pqmf is not None:
+        if self.pqmf is not None:  # MULTIBAND DECOMPOSITION
             x = self.pqmf(x)
 
         warmed_up = step > self.warmup
 
-        if warmed_up:
+        if warmed_up:  # EVAL ENCODER
             self.encoder.eval()
 
+        # ENCODE INPUT
         z, kl = self.reparametrize(*self.encoder(x))
 
-        if warmed_up:
+        if warmed_up:  # FREEZE ENCODER
             z = z.detach()
             kl = kl.detach()
 
+        # DECODE LATENT
         y = self.decoder(z)
 
+        # DISTANCE BETWEEN INPUT AND OUTPUT
         distance = self.distance(x, y)
 
-        if self.pqmf is not None:
+        if warmed_up and self.pqmf is not None:  # DISCRIMINATION MULTI BAND
+            mb_pred_true, mb_feature_true = self.discriminator_mb(x)
+            mb_pred_fake, mb_feature_fake = self.discriminator_mb(y)
+
+            distance += sum(
+                map(lambda x, y: torch.norm(x - y, p=2), mb_feature_true,
+                    mb_feature_fake)) / len(mb_feature_fake)
+        else:
+            mb_pred_true = torch.tensor(0.).to(x)
+            mb_pred_fake = torch.tensor(0.).to(x)
+
+        if self.pqmf is not None:  # FULL BAND RECOMPOSITION
             x = self.pqmf.inverse(x)
             y = self.pqmf.inverse(y)
             distance = distance + self.distance(x, y)
 
-        if warmed_up:
-            pred_true, feature_true = self.discriminator(x)
-            pred_fake, feature_fake = self.discriminator(y)
+        if warmed_up:  # DISCRIMINATION FULL BAND
+            fb_pred_true, feature_true = self.discriminator_fb(x)
+            fb_pred_fake, feature_fake = self.discriminator_fb(y)
 
-            feature_match = sum(
+            distance += sum(
                 map(
                     lambda x, y: torch.norm(x - y, p=2),
                     feature_true,
                     feature_fake,
                 )) / len(feature_true)
-            
-            distance += feature_match
+
+            pred_true = mb_pred_true.mean() + fb_pred_true.mean()
+            pred_fake = mb_pred_fake.mean() + fb_pred_fake.mean()
 
         else:
             pred_true = torch.tensor(0.).to(x)
             pred_fake = torch.tensor(0.).to(x)
 
+        # COMPUTE DIS AND ADV LOSS
         loss_dis, loss_adv = self.adversarial_combine(
             pred_true,
             pred_fake,
             mode=self.mode,
         )
+
+        # COMPOSE GEN LOSS
         loss_gen = distance + self.adv_warmup * loss_adv + 1e-1 * kl
 
+        # OPTIMIZATION
         if step % 2 and warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
@@ -383,6 +405,7 @@ class ParallelModel(pl.LightningModule):
             loss_gen.backward()
             gen_opt.step()
 
+        # LOGGING
         self.log("loss_dis", loss_dis)
         self.log("loss_gen", loss_gen)
         self.log("distance", distance)
@@ -390,6 +413,13 @@ class ParallelModel(pl.LightningModule):
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
         self.log("adv_warmup", self.adv_warmup)
+
+        if step % 1000: return
+
+        for n, p in self.discriminator_fb.named_parameters():
+            self.logger.experiment.add_histogram(n, p.reshape(-1))
+        for n, p in self.discriminator_mb.named_parameters():
+            self.logger.experiment.add_histogram(n, p.reshape(-1))
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
@@ -436,3 +466,4 @@ class ParallelModel(pl.LightningModule):
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, 24000)
         self.idx += 1
+
