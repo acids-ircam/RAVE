@@ -8,6 +8,14 @@ from einops import rearrange
 from .buffer_conv import CachedConv1d
 
 
+def reverse_half(x):
+    # x[..., 1::2, ::2] *= -1
+    mask = torch.ones_like(x)
+    mask[..., 1::2, ::2] = -1
+
+    return x * mask
+
+
 def center_pad_next_pow_2(x):
     next_2 = 2**math.ceil(math.log2(x.shape[-1]))
     pad = next_2 - x.shape[-1]
@@ -201,14 +209,21 @@ class PQMF(nn.Module):
         if self.n_band == 1:
             return x
         elif self.polyphase:
-            return polyphase_forward(x, self.hk)
+            x = polyphase_forward(x, self.hk)
         else:
-            return classic_forward(x, self.hk)
+            x = classic_forward(x, self.hk)
+
+        x = reverse_half(x)
+
+        return x
 
     def inverse(self, x):
         if self.n_band == 1:
             return x
-        elif self.polyphase:
+
+        x = reverse_half(x)
+
+        if self.polyphase:
             return polyphase_inverse(x, self.hk)
         else:
             return classic_inverse(x, self.hk)
@@ -249,9 +264,11 @@ class CachedPQMF(PQMF):
 
     def forward(self, x):
         x = self.forward_conv(x)
+        x = reverse_half(x)
         return x
 
     def inverse(self, x):
+        x = reverse_half(x)
         m = self.hk.shape[0]
         x = self.inverse_conv(x) * m
         x = x.flip(1)

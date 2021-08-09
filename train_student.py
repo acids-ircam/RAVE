@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, random_split
 from fd.parallel_model.model import ParallelModel
-from fd.parallel_model.core import random_phase_mangle
+from fd.parallel_model.core import random_phase_mangle, EMAModelCheckPoint
 from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config
 import pytorch_lightning as pl
@@ -81,11 +81,15 @@ if __name__ == "__main__":
         filename="best",
     )
     last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
+    ema_checkpoint = EMAModelCheckPoint(model,
+                                        filename="ema",
+                                        monitor="validation")
 
     trainer = pl.Trainer(
         gpus=1,
-        val_check_interval=0.1,
-        callbacks=[validation_checkpoint, last_checkpoint],
+        # val_check_interval=.1 ,
+        check_val_every_n_epoch=10,
+        callbacks=[validation_checkpoint, last_checkpoint, ema_checkpoint],
         resume_from_checkpoint=args.CKPT,
     )
     trainer.fit(model, train, val)

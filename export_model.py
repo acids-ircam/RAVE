@@ -139,7 +139,8 @@ cached_modules = [
     CachedPQMF,
 ]
 
-model.discriminator = None
+model.discriminator_fb = None
+model.discriminator_mb = None
 
 for n, m in model.named_modules():
     if any(list(map(lambda c: isinstance(m, c),
