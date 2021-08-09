@@ -83,6 +83,12 @@ class EMAModelCheckPoint(ModelCheckpoint):
                     self.shadow[n] *= self.alpha
                     self.shadow[n] += (1 - self.alpha) * p.data
 
+    def on_validation_epoch_start(self, *args, **kwargs):
+        self.swap()
+
+    def on_validation_epoch_end(self, *args, **kwargs):
+        self.swap()
+
     def swap(self):
         for n, p in self.model.named_parameters():
             if n in self.shadow:
