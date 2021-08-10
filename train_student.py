@@ -89,7 +89,9 @@ if __name__ == "__main__":
         gpus=1,
         # val_check_interval=.1 ,
         check_val_every_n_epoch=10,
-        callbacks=[validation_checkpoint, last_checkpoint, ema_checkpoint],
+        callbacks=[validation_checkpoint,
+                   last_checkpoint],  #, ema_checkpoint],
         resume_from_checkpoint=args.CKPT,
+        max_epochs=100000,
     )
     trainer.fit(model, train, val)

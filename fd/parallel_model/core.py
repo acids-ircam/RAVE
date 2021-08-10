@@ -72,7 +72,7 @@ class EMAModelCheckPoint(ModelCheckpoint):
         self.shadow = {}
         for n, p in model.named_parameters():
             if p.requires_grad:
-                self.shadow[n] = p
+                self.shadow[n] = p.data.clone()
         self.model = model
         self.alpha = alpha
 
