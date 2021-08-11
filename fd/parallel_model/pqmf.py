@@ -9,7 +9,6 @@ from .buffer_conv import CachedConv1d
 
 
 def reverse_half(x):
-    # x[..., 1::2, ::2] *= -1
     mask = torch.ones_like(x)
     mask[..., 1::2, ::2] = -1
 
