@@ -87,8 +87,8 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         gpus=1,
-        # val_check_interval=.1 ,
-        check_val_every_n_epoch=10,
+        # val_check_interval=1,
+        check_val_every_n_epoch=1,
         callbacks=[validation_checkpoint,
                    last_checkpoint],  #, ema_checkpoint],
         resume_from_checkpoint=args.CKPT,

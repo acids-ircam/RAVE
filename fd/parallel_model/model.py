@@ -401,10 +401,13 @@ class ParallelModel(pl.LightningModule):
             loss_dis = 0
             loss_adv = 0
 
+            pred_true = 0
+            pred_fake = 0
+
             for scale_true, scale_fake in zip(feature_true, feature_fake):
                 distance = distance + sum(
                     map(
-                        lambda x, y: torch.norm(x - y, p=2),
+                        lambda x, y: torch.norm(x - y, p=1),
                         scale_true,
                         scale_fake,
                     )) / len(scale_true)
@@ -415,8 +418,13 @@ class ParallelModel(pl.LightningModule):
                     mode=self.mode,
                 )
 
+                pred_true = pred_true + scale_true[-1].mean()
+                pred_fake = pred_fake + scale_fake[-1].mean()
+
                 loss_dis = loss_dis + _dis
                 loss_adv = loss_adv + _adv
+            
+
 
         else:
             pred_true = torch.tensor(0.).to(x)
@@ -448,7 +456,7 @@ class ParallelModel(pl.LightningModule):
         self.log("pred_fake", pred_fake.mean())
         p.tick("log")
 
-        print(p)
+        # print(p)
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
