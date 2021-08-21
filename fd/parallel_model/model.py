@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
-from .core import multiscale_stft, get_padding
+from .core import multiscale_stft, get_padding, Loudness
 from .pqmf import PQMF, CachedPQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
@@ -282,6 +282,8 @@ class ParallelModel(pl.LightningModule):
         else:
             self.pqmf = PQMF(100, data_size)
 
+        self.loudness = Loudness(sr, 512)
+
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  bias)
@@ -392,6 +394,12 @@ class ParallelModel(pl.LightningModule):
             x = self.pqmf.inverse(x)
             y = self.pqmf.inverse(y)
             distance = distance + self.distance(x, y)
+
+            loud_x = self.loudness(x)
+            loud_y = self.loudness(y)
+            loud_dist = (loud_x - loud_y).pow(2).mean()
+            distance = distance + loud_dist
+
             p.tick("fb distance")
 
         if warmed_up:  # DISCRIMINATION
@@ -449,6 +457,7 @@ class ParallelModel(pl.LightningModule):
         self.log("loss_dis", loss_dis)
         self.log("loss_gen", loss_gen)
         self.log("distance", distance)
+        self.log("loud_dist", loud_dist)
         self.log("regularization", kl)
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())

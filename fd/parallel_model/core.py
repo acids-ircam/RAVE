@@ -1,9 +1,12 @@
 import torch
+import torch.nn as nn
+import torch.fft as fft
 from einops import rearrange
 import numpy as np
 from random import random
 from scipy.signal import lfilter
 from pytorch_lightning.callbacks import ModelCheckpoint
+import librosa as li
 
 
 def multiscale_stft(signal, scales, overlap):
@@ -100,3 +103,30 @@ class EMAModelCheckPoint(ModelCheckpoint):
         self.swap()
         super().save_checkpoint(*args, **kwargs)
         self.swap()
+
+
+class Loudness(nn.Module):
+    def __init__(self, sr, block_size, n_fft=2048):
+        super().__init__()
+        self.sr = sr
+        self.block_size = block_size
+        self.n_fft = n_fft
+
+        f = li.fft_frequencies(sr, n_fft)
+        a_weight = li.A_weighting(f).reshape(-1, 1)
+
+        self.register_buffer("a_weight", torch.from_numpy(a_weight).float())
+        self.register_buffer("window", torch.hann_window(self.n_fft))
+
+    def forward(self, x):
+        x = torch.stft(
+            x.squeeze(1),
+            self.n_fft,
+            self.block_size,
+            self.n_fft,
+            center=True,
+            window=self.window,
+            return_complex=True,
+        ).abs()
+        x = torch.log(x + 1e-7) + self.a_weight
+        return torch.mean(x, 1, keepdim=True)

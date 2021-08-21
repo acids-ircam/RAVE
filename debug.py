@@ -1,28 +1,18 @@
-#%%
-import librosa as li
-import matplotlib.pyplot as plt
-from fd.parallel_model.pqmf import PQMF
+# %%
+from fd.parallel_model.core import Loudness
 import torch
+import matplotlib.pyplot as plt
+import librosa as li
+import sounddevice as sd
 
-torch.set_grad_enabled(False)
+x, sr = li.load("/Users/acaillon/Desktop/out_24k/LJ001-0173_0000.wav", None)
+sd.play(x, sr)
+sd.wait()
 
-x, sr = li.load(li.example("trumpet"), 24000)
-x = x[:2**16]
+x = torch.from_numpy(x).reshape(1, 1, -1)
 
-x = torch.from_numpy(x).float().reshape(1, 1, -1)
-
-pqmf = PQMF(100, 4)
-
-y = pqmf(x)
-
-z = pqmf.inverse(y)
-
+l = Loudness(24000, 512)
+y = l(x)
 # %%
-plt.plot(x.reshape(-1)[:1000])
-plt.plot(z.reshape(-1)[:1000])
-# %%
-x=  torch.randn(1,4,4)
-print(x)
-x[:,1::2,::2] *= -1
-print(x)
+plt.plot(y.reshape(-1))
 # %%
