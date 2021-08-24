@@ -17,6 +17,7 @@ if __name__ == "__main__":
         CAPACITY = 64
         LATENT_SIZE = 16
         RATIOS = [8, 8, 4, 4]
+        LOUDNESS_STRIDE = 32
         BIAS = True
         D_CAPACITY = 16
         D_MULTIPLIER = 4
@@ -43,6 +44,7 @@ if __name__ == "__main__":
         latent_size=args.LATENT_SIZE,
         ratios=args.RATIOS,
         bias=args.BIAS,
+        loudness_stride=args.LOUDNESS_STRIDE,
         d_capacity=args.D_CAPACITY,
         d_multiplier=args.D_MULTIPLIER,
         d_n_layers=args.D_N_LAYERS,

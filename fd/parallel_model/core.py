@@ -7,6 +7,11 @@ from random import random
 from scipy.signal import lfilter
 from pytorch_lightning.callbacks import ModelCheckpoint
 import librosa as li
+import math
+
+
+def mod_sigmoid(x):
+    return 2 * torch.sigmoid(x)**math.log(10) + 1e-7
 
 
 def multiscale_stft(signal, scales, overlap):
