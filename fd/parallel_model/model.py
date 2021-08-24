@@ -154,17 +154,26 @@ class Generator(nn.Module):
 
         self.net = nn.Sequential(*net)
 
-        self.post_net = nn.Sequential(
-            wn(Conv1d(out_dim, data_size, 7, padding=get_padding(7),
-                      bias=bias)),
-            nn.Tanh(),
-        )
+        self.post_net = wn(
+            Conv1d(
+                out_dim,
+                data_size + 1,  # add loudness
+                7,
+                padding=get_padding(7),
+                bias=bias))
 
     def forward(self, x):
         x = self.pre_net(x)
         x = self.net(x)
         x = self.post_net(x)
-        return x
+
+        loudness = x[:, :1]
+        waveform = x[:, 1:]
+
+        loudness = nn.functional.softplus(loudness)
+        waveform = torch.tanh(waveform) * loudness
+
+        return waveform
 
 
 class Encoder(nn.Module):
