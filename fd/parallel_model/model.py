@@ -179,7 +179,8 @@ class Generator(nn.Module):
             ),
         )
 
-        self.loudness_stride = loudness_stride
+        self.register_buffer("loudness_stride",
+                             torch.tensor(loudness_stride).long())
 
     def forward(self, x):
         x = self.pre_net(x)
@@ -189,7 +190,7 @@ class Generator(nn.Module):
         loudness = self.loud_net(x)
         loudness = nn.functional.interpolate(
             loudness,
-            scale_factor=self.loudness_stride,
+            size=loudness.shape[-1] * self.loudness_stride,
             mode="nearest",
         )
 
