@@ -11,3 +11,4 @@ realtime/docs
 *.ts
 realtime/frontend/tests
 realtime/tests
+*libtorch*

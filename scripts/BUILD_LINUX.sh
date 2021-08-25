@@ -7,6 +7,7 @@ if [ ! -d "libtorch/" ]
 then
 echo "downloading libtorch"
 curl $LIBTORCH -o libtorch.zip &> /dev/null
+echo "unzipping libtorch"
 unzip libtorch.zip &> /dev/null
 rm libtorch.zip
 else
