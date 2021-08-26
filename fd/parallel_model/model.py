@@ -542,5 +542,5 @@ class ParallelModel(pl.LightningModule):
             self.log(f"{p}%_manifold", np.argmax(var > p))
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
-        self.logger.experiment.add_audio("audio_val", y, self.idx, 24000)
+        self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
         self.idx += 1
