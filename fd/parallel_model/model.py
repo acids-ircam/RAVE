@@ -3,10 +3,12 @@ import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
-from .core import multiscale_stft, get_padding, Loudness
+from .core import multiscale_stft, get_padding, Loudness, mod_sigmoid
 from .pqmf import PQMF, CachedPQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
+
+import math
 
 from time import time
 
@@ -133,7 +135,13 @@ class UpsampleLayer(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, latent_size, capacity, data_size, ratios, bias=False):
+    def __init__(self,
+                 latent_size,
+                 capacity,
+                 data_size,
+                 ratios,
+                 loudness_stride,
+                 bias=False):
         super().__init__()
         self.pre_net = wn(
             Conv1d(
@@ -160,11 +168,36 @@ class Generator(nn.Module):
             nn.Tanh(),
         )
 
+        self.loud_net = Conv1d(
+            out_dim,
+            1,
+            2 * loudness_stride + 1,
+            stride=loudness_stride,
+            padding=get_padding(
+                2 * loudness_stride + 1,
+                loudness_stride,
+            ),
+        )
+
+        self.register_buffer("loudness_stride",
+                             torch.tensor(loudness_stride).long())
+
     def forward(self, x):
         x = self.pre_net(x)
         x = self.net(x)
-        x = self.post_net(x)
-        return x
+        waveform = self.post_net(x)
+
+        loudness = self.loud_net(x)
+        loudness = nn.functional.interpolate(
+            loudness,
+            size=loudness.shape[-1] * self.loudness_stride,
+            mode="nearest",
+        )
+
+        loudness = mod_sigmoid(loudness)
+        waveform = torch.tanh(waveform) * loudness
+
+        return waveform
 
 
 class Encoder(nn.Module):
@@ -268,6 +301,7 @@ class ParallelModel(pl.LightningModule):
                  latent_size,
                  ratios,
                  bias,
+                 loudness_stride,
                  d_capacity,
                  d_multiplier,
                  d_n_layers,
@@ -286,7 +320,7 @@ class ParallelModel(pl.LightningModule):
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
-                                 bias)
+                                 loudness_stride, bias)
 
         self.discriminator = StackDiscriminators(
             3,
