@@ -13,10 +13,10 @@ from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
 if __name__ == "__main__":
 
     class args(Config):
-        DATA_SIZE = 1
+        DATA_SIZE = 8
         CAPACITY = 64
-        LATENT_SIZE = 16
-        RATIOS = [8, 8, 4, 4]
+        LATENT_SIZE = 128
+        RATIOS = [4, 4, 4, 2]
         LOUDNESS_STRIDE = 32
         BIAS = True
         D_CAPACITY = 16
