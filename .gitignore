@@ -12,3 +12,5 @@ realtime/docs
 realtime/frontend/tests
 realtime/tests
 *libtorch*
+
+!scripts/*.sh
