@@ -66,6 +66,12 @@ class CachedConv1d(nn.Conv1d):
 
 
 class CachedConvTranspose1d(nn.ConvTranspose1d):
+    @property
+    def future_compensation(self):
+        raise Exception(
+            f"Future compensation not implemented for {self.__class__.__name__} yet."
+        )
+
     def __init__(self, *args, **kwargs):
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
@@ -96,6 +102,7 @@ class Conv1d(nn.Conv1d):
         self._pad = kwargs.get("padding", (0, 0))
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
+        self.future_compensation = 0
 
     def forward(self, x):
         x = nn.functional.pad(x, self._pad)
@@ -108,3 +115,29 @@ class Conv1d(nn.Conv1d):
             self.dilation,
             self.groups,
         )
+
+
+class AlignBranches(nn.Module):
+    def __init__(self, *branches, futures=None):
+        super().__init__()
+        self.branches = branches
+
+        if futures is None:
+            futures = list(map(lambda x: x.future_compensation, self.branches))
+
+        max_future = max(futures)
+
+        self.paddings = [
+            CachedPadding1d(p, crop=True)
+            for p in map(lambda f: max_future - f, futures)
+        ]
+
+    def forward(self, x):
+        outs = []
+        for b, p in zip(self.branches, self.paddings):
+            outs.append(p(b(x)))
+        return outs
+
+    def script_cache(self):
+        for p in self.paddings:
+            p.script_cache()

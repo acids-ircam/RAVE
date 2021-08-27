@@ -18,7 +18,7 @@ args.parse_args()
 parallel_model.use_buffer_conv(args.CACHED)
 
 from fd.parallel_model.model import ParallelModel, Residual
-from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d
+from fd.parallel_model.buffer_conv import CachedConv1d, CachedConvTranspose1d, AlignBranches
 from fd.parallel_model.resample import Resampling
 from fd.parallel_model.pqmf import CachedPQMF
 
@@ -137,6 +137,7 @@ cached_modules = [
     CachedConvTranspose1d,
     Residual,
     CachedPQMF,
+    AlignBranches,
 ]
 
 model.discriminator = None

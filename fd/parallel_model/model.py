@@ -13,7 +13,7 @@ import math
 from time import time
 
 from . import USE_BUFFER_CONV
-from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d
+from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d, AlignBranches
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
@@ -162,13 +162,11 @@ class Generator(nn.Module):
 
         self.net = nn.Sequential(*net)
 
-        self.post_net = nn.Sequential(
+        post_net = nn.Sequential(
             wn(Conv1d(out_dim, data_size, 7, padding=get_padding(7),
-                      bias=bias)),
-            nn.Tanh(),
-        )
+                      bias=bias)), )
 
-        self.loud_net = Conv1d(
+        loud_net = Conv1d(
             out_dim,
             1,
             2 * loudness_stride + 1,
@@ -179,15 +177,24 @@ class Generator(nn.Module):
             ),
         )
 
+        self.post_net = AlignBranches(
+            post_net,
+            loud_net,
+            futures=[
+                post_net[0].future_compensation,
+                loud_net.future_compensation,
+            ],
+        )
+
         self.register_buffer("loudness_stride",
                              torch.tensor(loudness_stride).long())
 
     def forward(self, x):
         x = self.pre_net(x)
         x = self.net(x)
-        waveform = self.post_net(x)
 
-        loudness = self.loud_net(x)
+        waveform, loudness = self.post_net(x)
+
         loudness = nn.functional.interpolate(
             loudness,
             size=loudness.shape[-1] * self.loudness_stride,
