@@ -120,7 +120,7 @@ class Conv1d(nn.Conv1d):
 class AlignBranches(nn.Module):
     def __init__(self, *branches, futures=None):
         super().__init__()
-        self.branches = branches
+        self.branches = nn.ModuleList(branches)
 
         if futures is None:
             futures = list(map(lambda x: x.future_compensation, self.branches))
