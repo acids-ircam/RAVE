@@ -21,6 +21,6 @@ LIBTORCH=$(pwd)
 cd ../../realtime
 mkdir -p build
 cd build
-cmake ../ -DCMAKE_PREFIX_PATH=$LIBTORCH &> /dev/null
+cmake ../ -DCMAKE_PREFIX_PATH=$LIBTORCH -DCMAKE_BUILD_TYPE=Release &> /dev/null
 echo "building project"
 make &> /dev/null
