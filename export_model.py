@@ -4,6 +4,12 @@ from effortless_config import Config
 from glob import glob
 from os import path
 from fd import parallel_model
+import logging
+from termcolor import colored
+
+logging.basicConfig(level=logging.INFO,
+                    format=colored("[%(relativeCreated).2f] ", "green") +
+                    "%(message)s")
 
 
 class args(Config):
@@ -14,7 +20,6 @@ class args(Config):
 
 
 args.parse_args()
-
 parallel_model.use_buffer_conv(args.CACHED)
 
 from fd.parallel_model.model import ParallelModel
@@ -101,7 +106,7 @@ class TraceModel(nn.Module):
         return self.decode(self.encode(x))
 
 
-print("loading model from checkpoint")
+logging.info("loading model from checkpoint")
 
 if ".ckpt" in (RUN := str(args.RUN)):
     pass
@@ -112,15 +117,15 @@ else:
     RUN = path.join(RUN, "checkpoints", "*.ckpt")
     RUN = glob(RUN)[-1]
 
-print(f"found {RUN}")
+logging.info(f"using {path.basename(RUN)}")
 model = ParallelModel.load_from_checkpoint(RUN, strict=False).eval()
 
-print("flattening weights")
+logging.info("flattening weights")
 for m in model.modules():
     if hasattr(m, "weight_g"):
         nn.utils.remove_weight_norm(m)
 
-print("warmup forward pass")
+logging.info("warmup forward pass")
 x = torch.zeros(1, 1, 2**14)
 if model.pqmf is not None:
     x = model.pqmf(x)
@@ -129,7 +134,7 @@ y = model.decoder(mean)
 if model.pqmf is not None:
     y = model.pqmf.inverse(y)
 
-print("scripting cached modules")
+logging.info("scripting cached modules")
 n_cache = 0
 
 cached_modules = [
@@ -147,7 +152,7 @@ for n, m in model.named_modules():
         m.script_cache()
         n_cache += 1
 
-print(f"{n_cache} cached modules found and scripted !")
+logging.info(f"{n_cache} cached modules found and scripted")
 
 sr = model.sr
 
@@ -156,7 +161,7 @@ if args.SR is not None:
 else:
     target_sr = sr
 
-print("build resampling model")
+logging.info("build resampling model")
 resample = Resampling(target_sr, sr)
 x = torch.zeros(1, 1, 2**14)
 resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
@@ -165,9 +170,9 @@ if not resample.identity and args.CACHED:
     resample.upsample.script_cache()
     resample.downsample.script_cache()
 
-print("script model")
+logging.info("script model")
 model = TraceModel(model, resample)
 model = torch.jit.script(model)
 
-print("save model")
+logging.info("save model")
 model.save("vae.ts")

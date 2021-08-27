@@ -117,7 +117,7 @@ class Loudness(nn.Module):
         self.block_size = block_size
         self.n_fft = n_fft
 
-        f = li.fft_frequencies(sr, n_fft)
+        f = li.fft_frequencies(sr, n_fft) + 1e-7
         a_weight = li.A_weighting(f).reshape(-1, 1)
 
         self.register_buffer("a_weight", torch.from_numpy(a_weight).float())

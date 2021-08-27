@@ -66,12 +66,6 @@ class CachedConv1d(nn.Conv1d):
 
 
 class CachedConvTranspose1d(nn.ConvTranspose1d):
-    @property
-    def future_compensation(self):
-        raise Exception(
-            f"Future compensation not implemented for {self.__class__.__name__} yet."
-        )
-
     def __init__(self, *args, **kwargs):
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
@@ -127,10 +121,10 @@ class AlignBranches(nn.Module):
 
         max_future = max(futures)
 
-        self.paddings = [
+        self.paddings = nn.ModuleList([
             CachedPadding1d(p, crop=True)
             for p in map(lambda f: max_future - f, futures)
-        ]
+        ])
 
     def forward(self, x):
         outs = []
@@ -139,5 +133,5 @@ class AlignBranches(nn.Module):
         return outs
 
     def script_cache(self):
-        for p in self.paddings:
-            p.script_cache()
+        for i, p in enumerate(self.paddings):
+            self.paddings[i] = torch.jit.script(p)
