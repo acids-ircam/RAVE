@@ -40,28 +40,19 @@ class Profiler:
 class Residual(nn.Module):
     def __init__(self, module):
         super().__init__()
-        self.module = module
-
-        if USE_BUFFER_CONV:
-            pad = 0
-            for m in self.module.modules():
-                if isinstance(m, CachedConv1d):
-                    pad = pad + m.future_compensation
-            self.cache = CachedPadding1d(pad, crop=True)
-            self.pad = pad
-        else:
-            self.cache = None
-
-    def script_cache(self):
-        self.cache = torch.jit.script(self.cache)
+        future = sum([
+            m.future_compensation for m in filter(
+                lambda x: hasattr(x, "future_compensation"), module.modules())
+        ])
+        self.aligned = AlignBranches(
+            module,
+            nn.Identity(),
+            futures=[future, 0],
+        )
 
     def forward(self, x):
-        x_net = self.module(x)
-
-        if self.cache is not None:
-            x = self.cache(x)
-
-        return x_net + x
+        x_net, x_res = self.aligned(x)
+        return x_net + x_res
 
 
 class ResidualStack(nn.Module):
@@ -162,29 +153,22 @@ class Generator(nn.Module):
 
         self.net = nn.Sequential(*net)
 
-        post_net = nn.Sequential(
-            wn(Conv1d(out_dim, data_size, 7, padding=get_padding(7),
-                      bias=bias)), )
+        post_net = wn(
+            Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
 
-        loud_net = Conv1d(
-            out_dim,
-            1,
-            2 * loudness_stride + 1,
-            stride=loudness_stride,
-            padding=get_padding(
+        loud_net = wn(
+            Conv1d(
+                out_dim,
+                1,
                 2 * loudness_stride + 1,
-                loudness_stride,
-            ),
-        )
+                stride=loudness_stride,
+                padding=get_padding(
+                    2 * loudness_stride + 1,
+                    loudness_stride,
+                ),
+            ))
 
-        self.post_net = AlignBranches(
-            post_net,
-            loud_net,
-            futures=[
-                post_net[0].future_compensation,
-                loud_net.future_compensation,
-            ],
-        )
+        self.post_net = AlignBranches(post_net, loud_net)
 
         self.register_buffer("loudness_stride",
                              torch.tensor(loudness_stride).long())
