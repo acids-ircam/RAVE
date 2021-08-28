@@ -53,6 +53,9 @@ if __name__ == "__main__":
         sr=args.SR,
     )
 
+    x = torch.zeros(args.BATCH, 2**14)
+    model.validation_step(x, 0)
+
     dataset = SimpleDataset(
         args.PREPROCESSED,
         args.WAV,
