@@ -40,13 +40,14 @@ class CachedConv1d(nn.Conv1d):
         kwargs["padding"] = 0
 
         super().__init__(*args, **kwargs)
+
         if isinstance(padding, int):
             stride_compensation = (stride - (padding % stride)) % stride
-            self.future_compensation = padding
+            self.future_compensation = padding + stride_compensation
             padding = padding + padding + stride_compensation
         elif isinstance(padding, list) or isinstance(padding, tuple):
             stride_compensation = (stride - (padding[1] % stride)) % stride
-            self.future_compensation = padding[1]
+            self.future_compensation = padding[1] + stride_compensation
             padding = padding[0] + padding[1] + stride_compensation
 
         self.stride_compensation = stride_compensation
@@ -75,7 +76,7 @@ class CachedConvTranspose1d(nn.ConvTranspose1d):
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
         self.cache = CachedPadding1d(1)
-        self.future_compensation = 0
+        self.future_compensation = 1
 
     def script_cache(self):
         self.cache = torch.jit.script(self.cache)
