@@ -203,12 +203,15 @@ class Generator(nn.Module):
 
         self.synth = AlignBranches(wave_gen, loud_gen, noise_gen)
 
-    def forward(self, x):
+    def forward(self, x, add_noise=True):
         x = self.net(x)
 
         waveform, loudness, noise = self.synth(x)
 
-        waveform = torch.tanh(waveform) * mod_sigmoid(loudness) + noise
+        waveform = torch.tanh(waveform) * mod_sigmoid(loudness)
+
+        if add_noise:
+            waveform = waveform + noise
 
         return waveform
 
@@ -432,7 +435,7 @@ class ParallelModel(pl.LightningModule):
             kl = kl.detach()
 
         # DECODE LATENT
-        y = self.decoder(z)
+        y = self.decoder(z, add_noise=warmed_up)
         p.tick("decode")
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
