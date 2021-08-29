@@ -18,7 +18,7 @@ if __name__ == "__main__":
         LATENT_SIZE = 128
         RATIOS = [4, 4, 4, 2]
         NOISE_RATIOS = [4, 4, 4]
-        NOISE_BANDS = 17
+        NOISE_BANDS = 9
         BIAS = True
         D_CAPACITY = 16
         D_MULTIPLIER = 4
