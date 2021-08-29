@@ -11,7 +11,7 @@ import math
 
 
 def mod_sigmoid(x):
-    return 2 * torch.sigmoid(x)**math.log(10) + 1e-7
+    return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
 
 def multiscale_stft(signal, scales, overlap):
