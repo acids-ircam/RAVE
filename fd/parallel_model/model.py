@@ -4,6 +4,7 @@ import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding, Loudness, mod_sigmoid
+from .core import amp_to_impulse_response, fft_convolve
 from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
@@ -124,13 +125,48 @@ class UpsampleLayer(nn.Module):
         return self.net(x)
 
 
+class NoiseGenerator(nn.Module):
+    def __init__(self, in_size, data_size, ratios, noise_bands):
+        super().__init__()
+        net = []
+        channels = [in_size] * len(ratios) + [data_size * noise_bands]
+        for i, r in enumerate(ratios):
+            net.append(
+                Conv1d(
+                    channels[i],
+                    channels[i + 1],
+                    3,
+                    padding=get_padding(3, r),
+                    stride=r,
+                ))
+            if i != len(ratios) - 1:
+                net.append(nn.LeakyReLU(.2))
+
+        self.net = CachedSequential(*net)
+        self.target_size = np.prod(ratios)
+        self.data_size = data_size
+
+    def forward(self, x):
+        amp = mod_sigmoid(self.net(x) - 5)
+        amp = amp.permute(0, 2, 1)
+        amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
+
+        ir = amp_to_impulse_response(amp, self.target_size)
+        noise = torch.rand_like(ir) * 2 - 1
+
+        noise = fft_convolve(noise, ir).permute(0, 2, 1, 3)
+        noise = noise.reshape(noise.shape[0], noise.shape[1], -1)
+        return noise
+
+
 class Generator(nn.Module):
     def __init__(self,
                  latent_size,
                  capacity,
                  data_size,
                  ratios,
-                 loudness_stride,
+                 noise_ratios,
+                 noise_bands,
                  bias=False):
         super().__init__()
         net = [
@@ -152,37 +188,26 @@ class Generator(nn.Module):
 
         self.net = CachedSequential(*net)
 
-        post_net = wn(
+        self.wave_out = wn(
             Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
 
-        loud_net = wn(
-            Conv1d(
-                out_dim,
-                1,
-                2 * loudness_stride + 1,
-                stride=loudness_stride,
-                padding=get_padding(
-                    2 * loudness_stride + 1,
-                    loudness_stride,
-                ),
-            ))
+        self.loud_out = wn(
+            Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
 
-        self.post_net = AlignBranches(post_net, loud_net)
-
-        self.register_buffer("loudness_stride",
-                             torch.tensor(loudness_stride).long())
+        self.noise_gen = NoiseGenerator(
+            out_dim,
+            data_size,
+            noise_ratios,
+            noise_bands,
+        )
 
     def forward(self, x):
         x = self.pre_net(x)
         x = self.net(x)
 
-        waveform, loudness = self.post_net(x)
-
-        loudness = loudness.repeat_interleave(
-            self.loudness_stride.item()).reshape(x.shape[0], 1, -1)
-
-        loudness = mod_sigmoid(loudness)
-        waveform = torch.tanh(waveform) * loudness
+        waveform = torch.tanh(self.wave_out(x))
+        waveform = waveform * mod_sigmoid(self.loud_out(x))
+        waveform = waveform + self.noise_gen(x)
 
         return waveform
 
