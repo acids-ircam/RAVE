@@ -314,7 +314,8 @@ class ParallelModel(pl.LightningModule):
                  latent_size,
                  ratios,
                  bias,
-                 loudness_stride,
+                 noise_ratios,
+                 noise_bands,
                  d_capacity,
                  d_multiplier,
                  d_n_layers,
@@ -333,7 +334,7 @@ class ParallelModel(pl.LightningModule):
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
-                                 loudness_stride, bias)
+                                 noise_ratios, noise_bands, bias)
 
         self.discriminator = StackDiscriminators(
             3,
