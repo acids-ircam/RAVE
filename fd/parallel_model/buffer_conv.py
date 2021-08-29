@@ -2,6 +2,14 @@ import torch
 import torch.nn as nn
 
 
+class CachedSequential(nn.Sequential):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.future_compensation = 0
+        for elm in self._modules.values():
+            self.future_compensation += getattr(elm, "future_compensation", 0)
+
+
 class CachedPadding1d(nn.Module):
     def __init__(self, padding, crop=False):
         super().__init__()

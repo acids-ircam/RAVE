@@ -13,7 +13,7 @@ import math
 from time import time
 
 from . import USE_BUFFER_CONV
-from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d, AlignBranches
+from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d, AlignBranches, CachedSequential
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
@@ -39,15 +39,13 @@ class Profiler:
 class Residual(nn.Module):
     def __init__(self, module):
         super().__init__()
-        future = sum([
-            m.future_compensation for m in filter(
-                lambda x: hasattr(x, "future_compensation"), module.modules())
-        ])
+        future = module.future_compensation
         self.aligned = AlignBranches(
             module,
             nn.Identity(),
             futures=[future, 0],
         )
+        self.future_compensation = future
 
     def forward(self, x):
         x_net, x_res = self.aligned(x)
@@ -61,7 +59,7 @@ class ResidualStack(nn.Module):
         for i in range(3):
             net.append(
                 Residual(
-                    nn.Sequential(
+                    CachedSequential(
                         nn.LeakyReLU(.2),
                         wn(
                             Conv1d(
@@ -86,7 +84,8 @@ class ResidualStack(nn.Module):
                             )),
                     )))
 
-        self.net = nn.Sequential(*net)
+        self.net = CachedSequential(*net)
+        self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
         return self.net(x)
@@ -118,7 +117,8 @@ class UpsampleLayer(nn.Module):
                         bias=bias,
                     )))
 
-        self.net = nn.Sequential(*net)
+        self.net = CachedSequential(*net)
+        self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
         return self.net(x)
@@ -133,16 +133,16 @@ class Generator(nn.Module):
                  loudness_stride,
                  bias=False):
         super().__init__()
-        self.pre_net = wn(
-            Conv1d(
-                latent_size,
-                2**len(ratios) * capacity,
-                7,
-                padding=get_padding(7),
-                bias=bias,
-            ))
-
-        net = []
+        net = [
+            wn(
+                Conv1d(
+                    latent_size,
+                    2**len(ratios) * capacity,
+                    7,
+                    padding=get_padding(7),
+                    bias=bias,
+                ))
+        ]
         for i, r in enumerate(ratios):
             in_dim = 2**(len(ratios) - i) * capacity
             out_dim = 2**(len(ratios) - i - 1) * capacity
@@ -150,7 +150,7 @@ class Generator(nn.Module):
             net.append(UpsampleLayer(in_dim, out_dim, r))
             net.append(ResidualStack(out_dim, 3))
 
-        self.net = nn.Sequential(*net)
+        self.net = CachedSequential(*net)
 
         post_net = wn(
             Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
@@ -221,7 +221,8 @@ class Encoder(nn.Module):
                 bias=bias,
             ))
 
-        self.net = nn.Sequential(*net)
+        self.net = CachedSequential(*net)
+        self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
         z = self.net(x)
