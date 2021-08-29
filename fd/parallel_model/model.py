@@ -148,7 +148,7 @@ class NoiseGenerator(nn.Module):
         self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
-        amp = mod_sigmoid(self.net(x)-5)
+        amp = mod_sigmoid(self.net(x) - 2)
         amp = amp.permute(0, 2, 1)
         amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
 
@@ -189,10 +189,10 @@ class Generator(nn.Module):
 
         self.net = CachedSequential(*net)
 
-        wave_out = wn(
+        wave_gen = wn(
             Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
 
-        loud_out = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
+        loud_gen = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
 
         noise_gen = NoiseGenerator(
             out_dim,
@@ -201,7 +201,7 @@ class Generator(nn.Module):
             noise_bands,
         )
 
-        self.synth = AlignBranches(wave_out, loud_out, noise_gen)
+        self.synth = AlignBranches(wave_gen, loud_gen, noise_gen)
 
     def forward(self, x):
         x = self.net(x)
