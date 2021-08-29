@@ -35,17 +35,18 @@ class CachedPadding1d(nn.Module):
 class CachedConv1d(nn.Conv1d):
     def __init__(self, *args, **kwargs):
         padding = kwargs.get("padding", 0)
+        stride = kwargs.get("stride", 1)
 
         kwargs["padding"] = 0
 
         super().__init__(*args, **kwargs)
 
         if isinstance(padding, int):
-            self.future_compensation = padding
-            padding = padding * 2
+            self.future_compensation = padding * stride
+            padding = padding + self.future_compensation
         elif isinstance(padding, list) or isinstance(padding, tuple):
-            self.future_compensation = padding[1]
-            padding = padding[0] + padding[1]
+            self.future_compensation = padding[1] * stride
+            padding = padding[0] + self.future_compensation
 
         self.cache = CachedPadding1d(padding)
 
@@ -54,6 +55,10 @@ class CachedConv1d(nn.Conv1d):
 
     def forward(self, x):
         x = self.cache(x)
+        if self.stride[0] > 1:
+            stride = self.stride[0]
+            crop = -(stride - 1) * self.future_compensation // stride
+            x = x[..., :crop]
         return nn.functional.conv1d(
             x,
             self.weight,
