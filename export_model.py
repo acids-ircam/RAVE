@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO,
                     format=colored("[%(relativeCreated).2f] ", "green") +
                     "%(message)s")
 
+logging.info("exporting model")
 
 class args(Config):
     RUN = None
