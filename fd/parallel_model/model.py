@@ -4,7 +4,7 @@ import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, get_padding, Loudness, mod_sigmoid
-from .pqmf import PQMF, CachedPQMF
+from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
@@ -17,7 +17,6 @@ from .buffer_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadd
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
-PQMF = CachedPQMF if USE_BUFFER_CONV else PQMF
 
 
 class Profiler:
@@ -179,11 +178,8 @@ class Generator(nn.Module):
 
         waveform, loudness = self.post_net(x)
 
-        loudness = nn.functional.interpolate(
-            loudness,
-            size=loudness.shape[-1] * self.loudness_stride,
-            mode="nearest",
-        )
+        loudness = loudness.repeat_interleave(
+            self.loudness_stride.item()).reshape(x.shape[0], 1, -1)
 
         loudness = mod_sigmoid(loudness)
         waveform = torch.tanh(waveform) * loudness

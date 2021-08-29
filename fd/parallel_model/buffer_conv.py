@@ -40,14 +40,16 @@ class CachedConv1d(nn.Conv1d):
         kwargs["padding"] = 0
 
         super().__init__(*args, **kwargs)
-
         if isinstance(padding, int):
-            self.future_compensation = padding * stride
-            padding = padding + self.future_compensation
+            stride_compensation = (stride - (padding % stride)) % stride
+            self.future_compensation = padding
+            padding = padding + padding + stride_compensation
         elif isinstance(padding, list) or isinstance(padding, tuple):
-            self.future_compensation = padding[1] * stride
-            padding = padding[0] + self.future_compensation
+            stride_compensation = (stride - (padding[1] % stride)) % stride
+            self.future_compensation = padding[1]
+            padding = padding[0] + padding[1] + stride_compensation
 
+        self.stride_compensation = stride_compensation
         self.cache = CachedPadding1d(padding)
 
     def script_cache(self):
@@ -55,10 +57,8 @@ class CachedConv1d(nn.Conv1d):
 
     def forward(self, x):
         x = self.cache(x)
-        if self.stride[0] > 1:
-            stride = self.stride[0]
-            crop = -(stride - 1) * self.future_compensation // stride
-            x = x[..., :crop]
+        if self.stride_compensation:
+            x = x[..., :-self.stride_compensation]
         return nn.functional.conv1d(
             x,
             self.weight,
@@ -75,6 +75,7 @@ class CachedConvTranspose1d(nn.ConvTranspose1d):
         kwargs["padding"] = 0
         super().__init__(*args, **kwargs)
         self.cache = CachedPadding1d(1)
+        self.future_compensation = 0
 
     def script_cache(self):
         self.cache = torch.jit.script(self.cache)
@@ -130,6 +131,8 @@ class AlignBranches(nn.Module):
             CachedPadding1d(p, crop=True)
             for p in map(lambda f: max_future - f, futures)
         ])
+
+        self.future_compensation = max_future
 
     def forward(self, x):
         outs = []
