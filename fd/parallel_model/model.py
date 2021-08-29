@@ -125,13 +125,7 @@ class UpsampleLayer(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self,
-                 latent_size,
-                 capacity,
-                 data_size,
-                 ratios,
-                 loudness_stride,
-                 bias=False):
+    def __init__(self, latent_size, capacity, data_size, ratios, bias=False):
         super().__init__()
         net = [
             wn(
@@ -154,35 +148,16 @@ class Generator(nn.Module):
 
         post_net = wn(
             Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
-
-        loud_net = wn(
-            Conv1d(
-                out_dim,
-                1,
-                2 * loudness_stride + 1,
-                stride=loudness_stride,
-                padding=get_padding(
-                    2 * loudness_stride + 1,
-                    loudness_stride,
-                ),
-            ))
+        loud_net = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
 
         self.post_net = AlignBranches(post_net, loud_net)
 
-        self.register_buffer("loudness_stride",
-                             torch.tensor(loudness_stride).long())
-
     def forward(self, x):
-        x = self.pre_net(x)
         x = self.net(x)
 
         waveform, loudness = self.post_net(x)
 
-        loudness = loudness.repeat_interleave(
-            self.loudness_stride.item()).reshape(x.shape[0], 1, -1)
-
-        loudness = mod_sigmoid(loudness)
-        waveform = torch.tanh(waveform) * loudness
+        waveform = torch.tanh(waveform) * mod_sigmoid(loudness)
 
         return waveform
 
@@ -289,7 +264,6 @@ class ParallelModel(pl.LightningModule):
                  latent_size,
                  ratios,
                  bias,
-                 loudness_stride,
                  d_capacity,
                  d_multiplier,
                  d_n_layers,
@@ -308,7 +282,7 @@ class ParallelModel(pl.LightningModule):
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
-                                 loudness_stride, bias)
+                                 bias)
 
         self.discriminator = StackDiscriminators(
             3,
