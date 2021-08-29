@@ -5,7 +5,13 @@ from scipy.optimize import fmin
 import math
 import numpy as np
 from einops import rearrange
-from .buffer_conv import CachedConv1d
+
+from .core import get_padding
+
+from . import USE_BUFFER_CONV
+from .buffer_conv import CachedConv1d, Conv1d
+
+Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 
 
 def reverse_half(x):
@@ -238,21 +244,21 @@ class CachedPQMF(PQMF):
         hki = rearrange(hki, "c (t m) -> m c t", m=self.hk.shape[0])
         hki = make_odd(hki)
 
-        self.forward_conv = CachedConv1d(
+        self.forward_conv = Conv1d(
             hkf.shape[1],
             hkf.shape[0],
             hkf.shape[2],
-            padding=hkf.shape[-1] // 2,
+            padding=get_padding(hkf.shape[-1]),
             stride=hkf.shape[0],
             bias=False,
         )
         self.forward_conv.weight.data.copy_(hkf)
 
-        self.inverse_conv = CachedConv1d(
+        self.inverse_conv = Conv1d(
             hki.shape[1],
             hki.shape[0],
             hki.shape[-1],
-            padding=hki.shape[-1] // 2,
+            padding=get_padding(hki.shape[-1]),
             bias=False,
         )
         self.inverse_conv.weight.data.copy_(hki)
