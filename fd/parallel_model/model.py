@@ -143,9 +143,13 @@ class NoiseGenerator(nn.Module):
                 net.append(nn.LeakyReLU(.2))
 
         self.net = CachedSequential(*net)
-        self.target_size = np.prod(ratios)
         self.data_size = data_size
         self.future_compensation = self.net.future_compensation
+
+        self.register_buffer(
+            "target_size",
+            torch.tensor(np.prod(ratios)).long(),
+        )
 
     def forward(self, x):
         amp = mod_sigmoid(self.net(x) - 5)
@@ -209,7 +213,7 @@ class Generator(nn.Module):
         self.synth = AlignBranches(*branches)
         self.use_noise = use_noise
 
-    def forward(self, x, add_noise=True):
+    def forward(self, x, add_noise: bool = True):
         x = self.net(x)
 
         if self.use_noise:
