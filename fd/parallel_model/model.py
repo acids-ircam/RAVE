@@ -197,7 +197,7 @@ class Generator(nn.Module):
 
         branches = [wave_gen, loud_gen]
 
-        if noise:
+        if use_noise:
             noise_gen = NoiseGenerator(
                 out_dim,
                 data_size,
