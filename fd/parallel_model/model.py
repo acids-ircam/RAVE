@@ -148,7 +148,7 @@ class NoiseGenerator(nn.Module):
         self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
-        amp = mod_sigmoid(self.net(x) - 2)
+        amp = mod_sigmoid(self.net(x) - 5)
         amp = amp.permute(0, 2, 1)
         amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
 
