@@ -23,4 +23,7 @@ mkdir -p build
 cd build
 cmake ../ -DCMAKE_PREFIX_PATH="$LIBTORCH" -DCMAKE_BUILD_TYPE=Release > /dev/null
 echo "building project"
-make &> /dev/null
+make > /dev/null
+echo "moving max external"
+rm -fr ../../externals
+mv ../externals/ ../../
