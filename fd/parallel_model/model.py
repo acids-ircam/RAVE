@@ -146,11 +146,11 @@ class Generator(nn.Module):
 
         self.net = CachedSequential(*net)
 
-        post_net = wn(
+        wave_out = wn(
             Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
-        loud_net = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
+        loud_out = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
 
-        self.post_net = AlignBranches(post_net, loud_net)
+        self.post_net = AlignBranches(wave_out, loud_out)
 
     def forward(self, x):
         x = self.net(x)
