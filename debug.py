@@ -37,28 +37,15 @@ def generate(x):
     z, _ = model_check.reparametrize(mean, scale)
     y = model_check.decoder(z)
 
-    # if model_check.pqmf is not None:
-    #     y = model_check.pqmf.inverse(y)
+    if model_check.pqmf is not None:
+        y = model_check.pqmf.inverse(y)
     return y
 
 
 x = torch.from_numpy(x).float().reshape(1, 1, -1)
-mean = model_check.encoder(model_check.pqmf(x))[0]
 
-loud_script, wave_script = model_script.decode(mean)
-loud_check, wave_check = model_check.decoder(mean)
+y_c = generate(x)
+y_s = model_script(x)
 
-# %%
-N = 2181
-plt.plot(loud_script[0, 0, N:])
-plt.plot(loud_check[0, 0, :-N])
-plt.show()
-
-plt.plot(wave_script[0, 0, N:])
-plt.plot(wave_check[0, 0, :-N])
-plt.show()
-
-# y = torch.cat([y_script, y_check], -1).reshape(-1).numpy()
-# sf.write("eval.wav", y, sr)
-
-# %%
+y = torch.cat([y_c, y_s], -1).reshape(-1).numpy()
+sf.write("eval.wav", y, sr)

@@ -166,6 +166,7 @@ class Generator(nn.Module):
                  capacity,
                  data_size,
                  ratios,
+                 use_noise,
                  noise_ratios,
                  noise_bands,
                  bias=False):
@@ -194,23 +195,32 @@ class Generator(nn.Module):
 
         loud_gen = wn(Conv1d(out_dim, 1, 7, padding=get_padding(7), bias=bias))
 
-        noise_gen = NoiseGenerator(
-            out_dim,
-            data_size,
-            noise_ratios,
-            noise_bands,
-        )
+        branches = [wave_gen, loud_gen]
 
-        self.synth = AlignBranches(wave_gen, loud_gen, noise_gen)
+        if noise:
+            noise_gen = NoiseGenerator(
+                out_dim,
+                data_size,
+                noise_ratios,
+                noise_bands,
+            )
+            branches.append(noise_gen)
+
+        self.synth = AlignBranches(*branches)
+        self.use_noise = use_noise
 
     def forward(self, x, add_noise=True):
         x = self.net(x)
 
-        waveform, loudness, noise = self.synth(x)
+        if self.use_noise:
+            waveform, loudness, noise = self.synth(x)
+        else:
+            waveform, loudness = self.synth(x)
+            noise = None
 
         waveform = torch.tanh(waveform) * mod_sigmoid(loudness)
 
-        if add_noise:
+        if add_noise and self.use_noise:
             waveform = waveform + noise
 
         return waveform
@@ -318,6 +328,7 @@ class ParallelModel(pl.LightningModule):
                  latent_size,
                  ratios,
                  bias,
+                 use_noise,
                  noise_ratios,
                  noise_bands,
                  d_capacity,
@@ -338,7 +349,7 @@ class ParallelModel(pl.LightningModule):
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
-                                 noise_ratios, noise_bands, bias)
+                                 use_noise, noise_ratios, noise_bands, bias)
 
         self.discriminator = StackDiscriminators(
             3,
