@@ -358,6 +358,7 @@ class ParallelModel(pl.LightningModule):
         self.automatic_optimization = False
 
         self.warmup = warmup
+        self.warmed_up = False
         self.sr = sr
         self.mode = mode
 
@@ -421,7 +422,7 @@ class ParallelModel(pl.LightningModule):
             x = self.pqmf(x)
             p.tick("pqmf")
 
-        warmed_up = step > self.warmup
+        self.warmed_up = warmed_up = step > self.warmup
 
         if warmed_up:  # EVAL ENCODER
             self.encoder.eval()
@@ -525,7 +526,7 @@ class ParallelModel(pl.LightningModule):
 
         mean, scale = self.encoder(x)
         z, _ = self.reparametrize(mean, scale)
-        y = self.decoder(z)
+        y = self.decoder(z, add_noise=self.warmed_up)
 
         if self.pqmf is not None:
             x = self.pqmf.inverse(x)
