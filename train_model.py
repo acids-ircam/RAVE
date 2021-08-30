@@ -17,12 +17,16 @@ if __name__ == "__main__":
         CAPACITY = 64
         LATENT_SIZE = 128
         RATIOS = [4, 4, 4, 2]
+        BIAS = True
+
+        USE_NOISE = True
         NOISE_RATIOS = [4, 4, 4]
         NOISE_BANDS = 5
-        BIAS = True
+
         D_CAPACITY = 16
         D_MULTIPLIER = 4
         D_N_LAYERS = 4
+
         WARMUP = 100000
         MODE = "hinge"
         CKPT = None
@@ -45,6 +49,7 @@ if __name__ == "__main__":
         latent_size=args.LATENT_SIZE,
         ratios=args.RATIOS,
         bias=args.BIAS,
+        use_noise=args.USE_NOISE,
         noise_ratios=args.NOISE_RATIOS,
         noise_bands=args.NOISE_BANDS,
         d_capacity=args.D_CAPACITY,
