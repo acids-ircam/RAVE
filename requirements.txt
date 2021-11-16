@@ -1,0 +1,17 @@
+tqdm
+effortless_config
+einops
+librosa
+matplotlib
+numpy
+pytest
+pytorch_lightning==1.4.9
+scikit_learn
+scipy
+soundfile
+termcolor
+torch
+tensorboard
+GPUtil
+git+https://github.com/caillonantoine/cached_conv.git#egg=cached_conv
+git+https://github.com/caillonantoine/UDLS.git#egg=udls

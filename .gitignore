@@ -1,3 +1,9 @@
 *pycache*
 *DS_Store
-.vscode/
+lightning_logs/
+*.ckpt
+*.ts
+*libtorch*
+*.wav
+*.txt
+runs
