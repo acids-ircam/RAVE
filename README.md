@@ -1,3 +1,5 @@
+![rave_logo](docs/rave.png)
+
 # RAVE: Realtime Audio Variational autoEncoder
 
 Official implementation of _RAVE: A variational autoencoder for fast and high-quality neural audio synthesis_ ([article link](https://arxiv.org/abs/2111.05011))
