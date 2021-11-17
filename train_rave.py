@@ -106,13 +106,21 @@ if __name__ == "__main__":
                                         monitor="validation")
 
     CUDA = gpu.getAvailable(maxMemory=.05)
-    assert len(CUDA)
-    environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
+    if len(CUDA):
+        environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
+        use_gpu = 1
+    elif torch.cuda.is_available():
+        print("Cuda is available but no fully free GPU found.")
+        print("Training may be slower due to concurrent processes.")
+        use_gpu = 1
+    else:
+        print("No GPU found.")
+        use_gpu = 0
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
                                             name="rave"),
-        gpus=1,
+        gpus=use_gpu,
         # val_check_interval=1,
         check_val_every_n_epoch=1,
         callbacks=[validation_checkpoint,

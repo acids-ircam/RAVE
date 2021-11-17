@@ -85,13 +85,21 @@ validation_checkpoint = pl.callbacks.ModelCheckpoint(
 last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
 
 CUDA = gpu.getAvailable(maxMemory=.05)
-assert len(CUDA)
-environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
+if len(CUDA):
+    environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
+    use_gpu = 1
+elif torch.cuda.is_available():
+    print("Cuda is available but no fully free GPU found.")
+    print("Training may be slower due to concurrent processes.")
+    use_gpu = 1
+else:
+    print("No GPU found.")
+    use_gpu = 0
 
 trainer = pl.Trainer(
     logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
                                         name="prior"),
-    gpus=1,
+    gpus=use_gpu,
     check_val_every_n_epoch=10,
     callbacks=[validation_checkpoint, last_checkpoint],
     resume_from_checkpoint=args.CKPT,
