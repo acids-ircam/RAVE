@@ -380,7 +380,7 @@ class RAVE(pl.LightningModule):
         if data_size == 1:
             self.pqmf = None
         else:
-            self.pqmf = PQMF(100, data_size)
+            self.pqmf = PQMF(40 if no_latency else 100, data_size)
 
         self.loudness = Loudness(sr, 512)
 
@@ -389,8 +389,7 @@ class RAVE(pl.LightningModule):
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  loud_stride, use_noise, noise_ratios,
                                  noise_bands,
-                                 "anticausal" if no_latency else "centered",
-                                 bias)
+                                 "causal" if no_latency else "centered", bias)
 
         self.discriminator = StackDiscriminators(
             3,
