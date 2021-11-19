@@ -22,6 +22,7 @@ if __name__ == "__main__":
         LATENT_SIZE = 128
         RATIOS = [4, 4, 4, 2]
         BIAS = True
+        NO_LATENCY = False
 
         LOUD_STRIDE = 1
 
@@ -65,6 +66,7 @@ if __name__ == "__main__":
         d_n_layers=args.D_N_LAYERS,
         warmup=args.WARMUP,
         mode=args.MODE,
+        no_latency=args.NO_LATENCY,
         sr=args.SR,
     )
 

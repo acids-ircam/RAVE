@@ -54,7 +54,7 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
-    def __init__(self, dim, kernel_size, bias=False):
+    def __init__(self, dim, kernel_size, padding_mode, bias=False):
         super().__init__()
         net = []
         for i in range(3):
@@ -70,6 +70,7 @@ class ResidualStack(nn.Module):
                                 padding=get_padding(
                                     kernel_size,
                                     dilation=3**i,
+                                    mode=padding_mode,
                                 ),
                                 dilation=3**i,
                                 bias=bias,
@@ -80,7 +81,8 @@ class ResidualStack(nn.Module):
                                 dim,
                                 dim,
                                 kernel_size,
-                                padding=get_padding(kernel_size),
+                                padding=get_padding(kernel_size,
+                                                    mode=padding_mode),
                                 bias=bias,
                             )),
                     )))
@@ -93,7 +95,7 @@ class ResidualStack(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
-    def __init__(self, in_dim, out_dim, ratio, bias=False):
+    def __init__(self, in_dim, out_dim, ratio, padding_mode, bias=False):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
         if ratio > 1:
@@ -114,7 +116,7 @@ class UpsampleLayer(nn.Module):
                         in_dim,
                         out_dim,
                         3,
-                        padding=get_padding(3),
+                        padding=get_padding(3, mode=padding_mode),
                         bias=bias,
                     )))
 
@@ -126,7 +128,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
-    def __init__(self, in_size, data_size, ratios, noise_bands):
+    def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
         channels = [in_size] * len(ratios) + [data_size * noise_bands]
@@ -136,7 +138,7 @@ class NoiseGenerator(nn.Module):
                     channels[i],
                     channels[i + 1],
                     3,
-                    padding=get_padding(3, r),
+                    padding=get_padding(3, r, mode=padding_mode),
                     stride=r,
                 ))
             if i != len(ratios) - 1:
@@ -174,6 +176,7 @@ class Generator(nn.Module):
                  use_noise,
                  noise_ratios,
                  noise_bands,
+                 padding_mode,
                  bias=False):
         super().__init__()
         net = [
@@ -182,7 +185,7 @@ class Generator(nn.Module):
                     latent_size,
                     2**len(ratios) * capacity,
                     7,
-                    padding=get_padding(7),
+                    padding=get_padding(7, mode=padding_mode),
                     bias=bias,
                 ))
         ]
@@ -190,20 +193,26 @@ class Generator(nn.Module):
             in_dim = 2**(len(ratios) - i) * capacity
             out_dim = 2**(len(ratios) - i - 1) * capacity
 
-            net.append(UpsampleLayer(in_dim, out_dim, r))
-            net.append(ResidualStack(out_dim, 3))
+            net.append(UpsampleLayer(in_dim, out_dim, r, padding_mode))
+            net.append(ResidualStack(out_dim, 3, padding_mode))
 
         self.net = CachedSequential(*net)
 
         wave_gen = wn(
-            Conv1d(out_dim, data_size, 7, padding=get_padding(7), bias=bias))
+            Conv1d(out_dim,
+                   data_size,
+                   7,
+                   padding=get_padding(7, mode=padding_mode),
+                   bias=bias))
 
         loud_gen = wn(
             Conv1d(out_dim,
                    1,
                    2 * loud_stride + 1,
                    stride=loud_stride,
-                   padding=get_padding(2 * loud_stride + 1, loud_stride),
+                   padding=get_padding(2 * loud_stride + 1,
+                                       loud_stride,
+                                       mode=padding_mode),
                    bias=bias))
 
         branches = [wave_gen, loud_gen]
@@ -214,6 +223,7 @@ class Generator(nn.Module):
                 data_size,
                 noise_ratios,
                 noise_bands,
+                padding_mode=padding_mode,
             )
             branches.append(noise_gen)
 
@@ -242,10 +252,20 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, data_size, capacity, latent_size, ratios, bias=False):
+    def __init__(self,
+                 data_size,
+                 capacity,
+                 latent_size,
+                 ratios,
+                 padding_mode,
+                 bias=False):
         super().__init__()
         net = [
-            Conv1d(data_size, capacity, 7, padding=get_padding(7), bias=bias)
+            Conv1d(data_size,
+                   capacity,
+                   7,
+                   padding=get_padding(7, mode=padding_mode),
+                   bias=bias)
         ]
 
         for i, r in enumerate(ratios):
@@ -259,7 +279,7 @@ class Encoder(nn.Module):
                     in_dim,
                     out_dim,
                     2 * r + 1,
-                    padding=get_padding(2 * r + 1, r),
+                    padding=get_padding(2 * r + 1, r, mode=padding_mode),
                     stride=r,
                     bias=bias,
                 ))
@@ -270,7 +290,7 @@ class Encoder(nn.Module):
                 out_dim,
                 2 * latent_size,
                 5,
-                padding=get_padding(5),
+                padding=get_padding(5, mode=padding_mode),
                 groups=2,
                 bias=bias,
             ))
@@ -352,6 +372,7 @@ class RAVE(pl.LightningModule):
                  d_n_layers,
                  warmup,
                  mode,
+                 no_latency=False,
                  sr=24000):
         super().__init__()
         self.save_hyperparameters()
@@ -363,10 +384,13 @@ class RAVE(pl.LightningModule):
 
         self.loudness = Loudness(sr, 512)
 
-        self.encoder = Encoder(data_size, capacity, latent_size, ratios, bias)
+        self.encoder = Encoder(data_size, capacity, latent_size, ratios,
+                               "causal" if no_latency else "centered", bias)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  loud_stride, use_noise, noise_ratios,
-                                 noise_bands, bias)
+                                 noise_bands,
+                                 "anticausal" if no_latency else "centered",
+                                 bias)
 
         self.discriminator = StackDiscriminators(
             3,

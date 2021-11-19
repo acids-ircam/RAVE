@@ -57,6 +57,7 @@ if __name__ == "__main__":
     warmup = input("number of steps for stage 1 (defaults to 1000000): ")
     prior_resolution = input("prior resolution (defaults to 32): ")
     fidelity = input("reconstruction fidelity (defaults to 0.95): ")
+    no_latency = input("latency compensation (defaults to false): ")
 
     header(f"{name}: training instructions")
     subsection("train rave")
@@ -80,6 +81,8 @@ if __name__ == "__main__":
         cmd += f"--capacity {2**int(capacity)} "
     if warmup:
         cmd += f"--warmup {warmup} "
+    if no_latency:
+        cmd += f"--no-latency {no_latency.lower()} "
 
     p(cmd)
     p("")
