@@ -570,6 +570,20 @@ class RAVE(pl.LightningModule):
 
         # print(p)
 
+    def encode(self, x):
+        if self.pqmf is not None:
+            x = self.pqmf(x)
+
+        mean, scale = self.encoder(x)
+        z, _ = self.reparametrize(mean, scale)
+        return z
+
+    def decode(self, z):
+        y = self.decoder(z, add_noise=True)
+        if self.pqmf is not None:
+            y = self.pqmf.inverse(y)
+        return y
+
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
 
