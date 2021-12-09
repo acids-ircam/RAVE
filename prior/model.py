@@ -25,6 +25,7 @@ class Model(pl.LightningModule):
         self.quantized_normal = QuantizedNormal(resolution)
 
         self.synth = torch.jit.load(pretrained_vae)
+        self.sr = self.synth.sampling_rate.item()
         data_size = self.synth.cropped_latent_size
 
         self.pre_net = nn.Sequential(

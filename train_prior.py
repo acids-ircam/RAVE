@@ -26,7 +26,6 @@ class args(Config):
 
     PREPROCESSED = None
     WAV = None
-    SR = 48000
     N_SIGNAL = 65536
 
     BATCH = 8
@@ -65,7 +64,7 @@ args.N_SIGNAL = max(args.N_SIGNAL, get_n_signal(args, model.synth))
 dataset = SimpleDataset(
     args.PREPROCESSED,
     args.WAV,
-    preprocess_function=simple_audio_preprocess(args.SR, args.N_SIGNAL),
+    preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL),
     split_set="full",
     transforms=lambda x: x.reshape(1, -1),
 )
