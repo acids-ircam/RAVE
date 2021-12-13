@@ -62,7 +62,7 @@ if __name__ == "__main__":
     header(f"{name}: training instructions")
     subsection("train rave")
 
-    p("Train rave (both training stage are included)")
+    p("Train rave (both training stages are included)")
     p("")
 
     cmd = "python train_rave.py "
