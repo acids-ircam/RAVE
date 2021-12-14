@@ -72,7 +72,30 @@ sf.write("output_audio.wav", y.reshape(-1).numpy(), sr)
 
 ```
 
-## Realtime usage
+## Online usage
+
+RAVE exported as a realtime torchscript file can be used like this
+
+```python
+import torch
+
+model = torch.jit.load("pretrained.ts")
+
+x = torch.randn(1, 1, 16384)
+
+z = model.encode(x) # PROJECT TO LATENT SPACE
+
+y = model.decode(z) # SYNTHESIZE FROM LATENT TRAJECTORY
+
+y = model(x) # FORWARD COMBINES ENCODE AND DECODE
+
+z = model.prior(torch.zeros(1,1,2048) * .5) # PRIOR GENERATION ON 2048 LATENT POINTS WITH TEMPERATURE .5
+
+y = model.decode(z) # RESULTING UNCONDITIONAL GENERATION
+
+```
+
+## MAX / MSP - PureData usage
 
 **[NOT AVAILABLE YET]**
 
