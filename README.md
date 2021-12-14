@@ -83,15 +83,17 @@ model = torch.jit.load("pretrained.ts")
 
 x = torch.randn(1, 1, 16384)
 
-z = model.encode(x) # PROJECT TO LATENT SPACE
+# ENCODE DECODE
+z = model.encode(x)
+y = model.decode(z)
+y = model(x)
 
-y = model.decode(z) # SYNTHESIZE FROM LATENT TRAJECTORY
-
-y = model(x) # FORWARD COMBINES ENCODE AND DECODE
-
-z = model.prior(torch.zeros(1,1,2048) * .5) # PRIOR GENERATION ON 2048 LATENT POINTS WITH TEMPERATURE .5
-
-y = model.decode(z) # RESULTING UNCONDITIONAL GENERATION
+# PRIOR GENERATION
+# we give to the prior method a tensor containing the temperature of the generation
+# here prior will generate 2048 latent points with temperature 0.5
+# temperature must be a real-valued number between
+z = model.prior(torch.ones(1,1,2048) * .5)
+y = model.decode(z)-
 
 ```
 
