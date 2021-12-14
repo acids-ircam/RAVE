@@ -81,6 +81,7 @@ import torch
 
 model = torch.jit.load("pretrained.ts")
 
+# DUMMY INPUT
 x = torch.randn(1, 1, 16384)
 
 # ENCODE DECODE
@@ -91,7 +92,7 @@ y = model(x)
 # PRIOR GENERATION
 # we give to the prior method a tensor containing the temperature of the generation
 # here prior will generate 2048 latent points with temperature 0.5
-# temperature must be a real-valued number between
+# temperature must be a real-valued number
 z = model.prior(torch.ones(1,1,2048) * .5)
 y = model.decode(z)-
 
