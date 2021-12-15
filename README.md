@@ -37,8 +37,8 @@ import librosa as li
 import soundfile as sf
 
 ################ LOADING PRETRAINED MODELS ################
-rave = RAVE.load_from_checkpoint("/path/to/checkpoint.ckpt").eval()
-prior = Prior.load_from_checkpoint("/path/to/checkpoint.ckpt").eval()
+rave = RAVE.load_from_checkpoint("/path/to/checkpoint.ckpt", strict=False).eval()
+prior = Prior.load_from_checkpoint("/path/to/checkpoint.ckpt", strict=False).eval()
 
 ################ RECONSTRUCTION ################
 
