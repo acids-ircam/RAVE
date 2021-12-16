@@ -631,6 +631,6 @@ class RAVE(pl.LightningModule):
             for p in var_percent:
                 self.log(f"{p}%_manifold", np.argmax(var > p))
 
-        y = torch.cat(audio[:64], 0).reshape(-1)
+        y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
         self.idx += 1
