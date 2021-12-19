@@ -55,6 +55,9 @@ sf.write("output_audio.wav", y.reshape(-1).numpy(), sr)
 
 ################ PRIOR GENERATION ################
 
+# STEP 0: LOAD EXPORTED RAVE
+rave = torch.jit.load("/path/to/exported/model.ts").eval()
+
 # STEP 1: CREATE DUMMY INPUT TENSOR
 generation_length = 2**18  # approximately 6s at 48kHz
 x = torch.randn(1, 1, generation_length)  # dummy input
