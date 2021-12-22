@@ -95,13 +95,20 @@ else:
     print("No GPU found.")
     use_gpu = 0
 
+val_check = {}
+if len(train) >= 10000:
+    val_check["val_check_interval"] = 10000
+else:
+    nepoch = 10000 // len(train)
+    val_check["check_val_every_n_epoch"] = nepoch
+
 trainer = pl.Trainer(
     logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
                                         name="prior"),
     gpus=use_gpu,
-    val_check_interval=min(10000, len(train)),
     callbacks=[validation_checkpoint, last_checkpoint],
     resume_from_checkpoint=args.CKPT,
     max_epochs=100000,
+    **val_check,
 )
 trainer.fit(model, train, val)
