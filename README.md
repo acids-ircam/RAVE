@@ -22,7 +22,7 @@ python cli_helper.py
 
 However, if you want to customize even more your training, you can use the provided `train_{rave, prior}.py` and `export_{rave, prior}.py` scripts manually.
 
-## Offline usage
+<!-- ## Offline usage
 
 Once trained, you can evaluate RAVE and the prior model using
 
@@ -99,7 +99,7 @@ y = model(x)
 z = model.prior(torch.ones(1,1,2048) * .5)
 y = model.decode(z)-
 
-```
+``` -->
 
 ## MAX / MSP - PureData usage
 
