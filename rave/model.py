@@ -507,6 +507,7 @@ class RAVE(pl.LightningModule):
         distance = distance + loud_dist
         p.tick("loudness distance")
 
+        feature_matching_distance = 0
         if warmed_up:  # DISCRIMINATION
             feature_true = self.discriminator(x)
             feature_fake = self.discriminator(y)
@@ -518,7 +519,7 @@ class RAVE(pl.LightningModule):
             pred_fake = 0
 
             for scale_true, scale_fake in zip(feature_true, feature_fake):
-                distance = distance + 10 * sum(
+                feature_matching_distance = feature_matching_distance + 10 * sum(
                     map(
                         lambda x, y: abs(x - y).mean(),
                         scale_true,
@@ -544,7 +545,7 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        loss_gen = distance + loss_adv + 1e-1 * kl
+        loss_gen = distance + feature_matching_distance + loss_adv + 1e-1 * kl
         p.tick("gen loss compose")
 
         # OPTIMIZATION
@@ -561,11 +562,12 @@ class RAVE(pl.LightningModule):
         # LOGGING
         self.log("loss_dis", loss_dis)
         self.log("loss_gen", loss_gen)
-        self.log("distance", distance)
         self.log("loud_dist", loud_dist)
         self.log("regularization", kl)
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
+        self.log("distance", distance)
+        self.log("feature_matching", feature_matching_distance)
         p.tick("log")
 
         # print(p)
