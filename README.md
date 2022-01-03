@@ -30,7 +30,7 @@ Once trained, you can reconstruct an entire folder containing wav files using
 python reconstruct.py --ckpt /path/to/checkpoint --wav-folder /path/to/wav/folder
 ```
 
-You can also export RAVE to a `torchscript` file and use the `encode` and `decode` methods on tensors.
+You can also export RAVE to a `torchscript` file using `export_rave.py` and use the `encode` and `decode` methods on tensors.
 
 ## MAX / MSP - PureData usage
 
