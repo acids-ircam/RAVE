@@ -19,8 +19,8 @@ import soundfile as sf
 
 
 class args(Config):
-    CKPT = "runs/muse/rave/version_0"
-    WAV_FOLDER = "/slow-2/antoine/dataset/wheel/out_48k"
+    CKPT = None  # PATH TO YOUR PRETRAINED CHECKPOINT
+    WAV_FOLDER = None  # PATH TO YOUR WAV FOLDER
     OUT = "./reconstruction/"
 
 
