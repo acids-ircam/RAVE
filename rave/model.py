@@ -4,7 +4,7 @@ import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, Loudness, mod_sigmoid
-from .core import amp_to_impulse_response, fft_convolve
+from .core import amp_to_impulse_response, fft_convolve, get_beta_kl_cyclic_annealed
 from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
@@ -545,7 +545,15 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        loss_gen = distance + feature_matching_distance + loss_adv + 1e-1 * kl
+        beta = get_beta_kl_cyclic_annealed(
+            step=step,
+            cycle_size=5e4,
+            warmup=self.warmup // 2,
+            min_beta=1e-4,
+            max_beta=1e-1,
+        )
+        beta = 1e-1
+        loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
 
         # OPTIMIZATION
@@ -567,6 +575,7 @@ class RAVE(pl.LightningModule):
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
         self.log("distance", distance)
+        self.log("beta", beta)
         self.log("feature_matching", feature_matching_distance)
         p.tick("log")
 
