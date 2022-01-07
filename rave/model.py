@@ -307,30 +307,33 @@ class Discriminator(nn.Module):
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
-        net = [nn.Conv1d(in_size, capacity, 15, padding=7)]
+        net = [wn(nn.Conv1d(in_size, capacity, 15, padding=7))]
         net.append(nn.LeakyReLU(.2))
 
         for i in range(n_layers):
             net.append(
-                Conv1d(
-                    capacity * multiplier**i,
-                    min(1024, capacity * multiplier**(i + 1)),
-                    41,
-                    stride=multiplier,
-                    padding=get_padding(41, multiplier),
-                    groups=multiplier**(i + 1),
-                ))
+                wn(
+                    nn.Conv1d(
+                        capacity * multiplier**i,
+                        min(1024, capacity * multiplier**(i + 1)),
+                        41,
+                        stride=multiplier,
+                        padding=get_padding(41, multiplier),
+                        groups=multiplier**(i + 1),
+                    )))
             net.append(nn.LeakyReLU(.2))
 
         net.append(
-            Conv1d(
-                min(1024, capacity * multiplier**(i + 1)),
-                min(1024, capacity * multiplier**(i + 1)),
-                5,
-                padding=get_padding(5),
-            ))
+            wn(
+                nn.Conv1d(
+                    min(1024, capacity * multiplier**(i + 1)),
+                    min(1024, capacity * multiplier**(i + 1)),
+                    5,
+                    padding=get_padding(5),
+                )))
         net.append(nn.LeakyReLU(.2))
-        net.append(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
+        net.append(
+            wn(nn.Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1)))
         self.net = nn.ModuleList(net)
 
     def forward(self, x):
