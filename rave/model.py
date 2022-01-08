@@ -413,6 +413,7 @@ class RAVE(pl.LightningModule):
         self.warmed_up = False
         self.sr = sr
         self.mode = mode
+        self.step = 0
 
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
