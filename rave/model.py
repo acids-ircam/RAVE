@@ -466,6 +466,7 @@ class RAVE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         p = Profiler()
         step = len(self.train_dataloader()) * self.current_epoch + batch_idx
+        self.step = step
 
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
@@ -474,21 +475,19 @@ class RAVE(pl.LightningModule):
             x = self.pqmf(x)
             p.tick("pqmf")
 
-        self.warmed_up = warmed_up = step > self.warmup
-
-        if warmed_up:  # EVAL ENCODER
+        if self.warmed_up:  # EVAL ENCODER
             self.encoder.eval()
 
         # ENCODE INPUT
         z, kl = self.reparametrize(*self.encoder(x))
         p.tick("encode")
 
-        if warmed_up:  # FREEZE ENCODER
+        if self.warmed_up:  # FREEZE ENCODER
             z = z.detach()
             kl = kl.detach()
 
         # DECODE LATENT
-        y = self.decoder(z, add_noise=warmed_up)
+        y = self.decoder(z, add_noise=self.warmed_up)
         p.tick("decode")
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
@@ -508,7 +507,7 @@ class RAVE(pl.LightningModule):
         p.tick("loudness distance")
 
         feature_matching_distance = 0
-        if warmed_up:  # DISCRIMINATION
+        if self.warmed_up:  # DISCRIMINATION
             feature_true = self.discriminator(x)
             feature_fake = self.discriminator(y)
 
@@ -549,7 +548,7 @@ class RAVE(pl.LightningModule):
         p.tick("gen loss compose")
 
         # OPTIMIZATION
-        if step % 2 and warmed_up:
+        if step % 2 and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
@@ -632,6 +631,9 @@ class RAVE(pl.LightningModule):
             var_percent = [.8, .9, .95, .99]
             for p in var_percent:
                 self.log(f"{p}%_manifold", np.argmax(var > p))
+
+        if self.step > self.warmup:
+            self.warmed_up = True
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
