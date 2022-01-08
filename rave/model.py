@@ -307,13 +307,13 @@ class Discriminator(nn.Module):
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
-        net = [wn(nn.Conv1d(in_size, capacity, 15, padding=7))]
+        net = [wn(Conv1d(in_size, capacity, 15, padding=get_padding(15)))]
         net.append(nn.LeakyReLU(.2))
 
         for i in range(n_layers):
             net.append(
                 wn(
-                    nn.Conv1d(
+                    Conv1d(
                         capacity * multiplier**i,
                         min(1024, capacity * multiplier**(i + 1)),
                         41,
@@ -325,15 +325,14 @@ class Discriminator(nn.Module):
 
         net.append(
             wn(
-                nn.Conv1d(
+                Conv1d(
                     min(1024, capacity * multiplier**(i + 1)),
                     min(1024, capacity * multiplier**(i + 1)),
                     5,
                     padding=get_padding(5),
                 )))
         net.append(nn.LeakyReLU(.2))
-        net.append(
-            wn(nn.Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1)))
+        net.append(wn(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1)))
         self.net = nn.ModuleList(net)
 
     def forward(self, x):
@@ -555,7 +554,6 @@ class RAVE(pl.LightningModule):
             min_beta=1e-4,
             max_beta=1e-1,
         )
-        beta = 1e-1
         loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
 
