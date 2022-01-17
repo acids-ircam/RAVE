@@ -382,7 +382,7 @@ class RAVE(pl.LightningModule):
         if data_size == 1:
             self.pqmf = None
         else:
-            self.pqmf = PQMF(40 if no_latency else 100, data_size)
+            self.pqmf = PQMF(70 if no_latency else 100, data_size)
 
         self.loudness = Loudness(sr, 512)
 
