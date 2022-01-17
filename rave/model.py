@@ -9,12 +9,10 @@ from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-import math
-
 from time import time
 
 from cached_conv import USE_BUFFER_CONV, get_padding
-from cached_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d, AlignBranches, CachedSequential
+from cached_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, AlignBranches, CachedSequential
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
