@@ -387,7 +387,7 @@ class RAVE(pl.LightningModule):
         else:
             self.pqmf = PQMF(a_n_channels, 40 if no_latency else 100, data_size)
 
-        self.loudness = Loudness(sr, 512, a_n_channels)
+        self.loudness = Loudness(sr, 512, a_n_channels = self.a_n_channels)
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios,
                                "causal" if no_latency else "centered", bias, a_n_channels)

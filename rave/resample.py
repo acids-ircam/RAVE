@@ -33,7 +33,7 @@ class Resampling(nn.Module):
             1,
             len(filt),
             stride=ratio,
-            padding=get_padding(len(filt), ratio),
+            padding=get_padding(len(filt), ratio)
         )
 
         self.downsample.weight.data.copy_(filt.reshape(1, 1, -1))
@@ -64,6 +64,5 @@ class Resampling(nn.Module):
         return self.downsample(x)
 
     def to_target_sampling_rate(self, x):
-        x = self.upsample(x)  # B x 2 x T
-        x = x.permute(0, 2, 1).reshape(x.shape[0], -1).unsqueeze(1)
+        x = self.upsample(x)
         return x
