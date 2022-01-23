@@ -2,9 +2,9 @@ import torch
 from torch.utils.data import DataLoader, random_split
 
 from rave.model import RAVE
-from rave.core import random_phase_mangle, EMAModelCheckPoint
+from rave.core import random_phase_mangle, simple_audio_preprocess, EMAModelCheckPoint, RandomCrop, Dequantize
 
-from udls import SimpleDataset, simple_audio_preprocess
+from udls import SimpleDataset
 from effortless_config import Config
 import pytorch_lightning as pl
 from os import environ, path
@@ -12,7 +12,7 @@ import numpy as np
 
 import GPUtil as gpu
 
-from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
+from udls.transforms import Compose, RandomApply
 
 if __name__ == "__main__":
 
@@ -42,6 +42,7 @@ if __name__ == "__main__":
         WAV = None
         SR = 48000
         N_SIGNAL = 65536
+        MONO = True
 
         BATCH = 8
 
@@ -68,21 +69,23 @@ if __name__ == "__main__":
         mode=args.MODE,
         no_latency=args.NO_LATENCY,
         sr=args.SR,
+        a_n_channels = 1 if args.MONO else 2
     )
 
-    x = torch.zeros(args.BATCH, 2**14)
+    x = torch.zeros(args.BATCH, model.a_n_channels, 2**14)
     model.validation_step(x, 0)
 
     dataset = SimpleDataset(
         args.PREPROCESSED,
         args.WAV,
         preprocess_function=simple_audio_preprocess(args.SR,
-                                                    2 * args.N_SIGNAL),
+                                                    2 * args.N_SIGNAL,
+                                                    mono=args.MONO),
         split_set="full",
         transforms=Compose([
-            RandomCrop(args.N_SIGNAL),
+            RandomCrop(args.N_SIGNAL, multichannel=True),
             RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR),
+                lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR, axis=0),
                 p=.8,
             ),
             Dequantize(16),

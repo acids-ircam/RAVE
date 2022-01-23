@@ -233,7 +233,7 @@ class PQMF(nn.Module):
 
 
 class CachedPQMF(PQMF):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, a_n_channels, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         hkf = make_odd(self.hk).unsqueeze(1)
@@ -241,6 +241,8 @@ class CachedPQMF(PQMF):
         hki = self.hk.flip(-1)
         hki = rearrange(hki, "c (t m) -> m c t", m=self.hk.shape[0])
         hki = make_odd(hki)
+
+        self.a_n_channels = a_n_channels
 
         self.forward_conv = Conv1d(
             hkf.shape[1],
@@ -266,11 +268,25 @@ class CachedPQMF(PQMF):
         self.inverse_conv.script_cache()
 
     def forward(self, x):
+        batch_size = x.size(0)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, 1, dim=1), dim=0)
+
         x = self.forward_conv(x)
         x = reverse_half(x)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, batch_size, dim=0), dim=1)
+
         return x
 
     def inverse(self, x):
+        batch_size = x.size(0)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+
         x = reverse_half(x)
         m = self.hk.shape[0]
         x = self.inverse_conv(x) * m
@@ -278,4 +294,8 @@ class CachedPQMF(PQMF):
         x = x.permute(0, 2, 1)
         x = x.reshape(x.shape[0], x.shape[1], -1, m).permute(0, 2, 1, 3)
         x = x.reshape(x.shape[0], x.shape[1], -1)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, batch_size, dim=0), dim=1)
+
         return x

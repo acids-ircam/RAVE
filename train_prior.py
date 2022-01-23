@@ -5,8 +5,9 @@ import pytorch_lightning as pl
 from prior.model import Model
 from effortless_config import Config
 from os import environ, path
+from rave.core import simple_audio_preprocess
 
-from udls import SimpleDataset, simple_audio_preprocess
+from udls import SimpleDataset
 import numpy as np
 
 import math
@@ -64,7 +65,8 @@ args.N_SIGNAL = max(args.N_SIGNAL, get_n_signal(args, model.synth))
 dataset = SimpleDataset(
     args.PREPROCESSED,
     args.WAV,
-    preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL),
+    preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL, 
+        mono = model.a_n_channels == 1),
     split_set="full",
     transforms=lambda x: x.reshape(1, -1),
 )

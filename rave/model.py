@@ -177,7 +177,8 @@ class Generator(nn.Module):
                  noise_ratios,
                  noise_bands,
                  padding_mode,
-                 bias=False):
+                 bias=False,
+                 a_n_channels=1):
         super().__init__()
         net = [
             wn(
@@ -200,7 +201,7 @@ class Generator(nn.Module):
 
         wave_gen = wn(
             Conv1d(out_dim,
-                   data_size,
+                   data_size * a_n_channels,
                    7,
                    padding=get_padding(7, mode=padding_mode),
                    bias=bias))
@@ -220,7 +221,7 @@ class Generator(nn.Module):
         if use_noise:
             noise_gen = NoiseGenerator(
                 out_dim,
-                data_size,
+                data_size * a_n_channels,
                 noise_ratios,
                 noise_bands,
                 padding_mode=padding_mode,
@@ -258,10 +259,11 @@ class Encoder(nn.Module):
                  latent_size,
                  ratios,
                  padding_mode,
-                 bias=False):
+                 bias=False,
+                 a_n_channels=1):
         super().__init__()
         net = [
-            Conv1d(data_size,
+            Conv1d(data_size * a_n_channels,
                    capacity,
                    7,
                    padding=get_padding(7, mode=padding_mode),
@@ -373,27 +375,30 @@ class RAVE(pl.LightningModule):
                  warmup,
                  mode,
                  no_latency=False,
-                 sr=24000):
+                 sr=24000,
+                 a_n_channels=1):
         super().__init__()
         self.save_hyperparameters()
+
+        self.a_n_channels = a_n_channels
 
         if data_size == 1:
             self.pqmf = None
         else:
-            self.pqmf = PQMF(40 if no_latency else 100, data_size)
+            self.pqmf = PQMF(a_n_channels, 40 if no_latency else 100, data_size)
 
-        self.loudness = Loudness(sr, 512)
+        self.loudness = Loudness(sr, 512, a_n_channels)
 
         self.encoder = Encoder(data_size, capacity, latent_size, ratios,
-                               "causal" if no_latency else "centered", bias)
+                               "causal" if no_latency else "centered", bias, a_n_channels)
         self.decoder = Generator(latent_size, capacity, data_size, ratios,
                                  loud_stride, use_noise, noise_ratios,
                                  noise_bands,
-                                 "causal" if no_latency else "centered", bias)
+                                 "causal" if no_latency else "centered", bias, a_n_channels)
 
         self.discriminator = StackDiscriminators(
             3,
-            in_size=1,
+            in_size=a_n_channels,
             capacity=d_capacity,
             multiplier=d_multiplier,
             n_layers=d_n_layers,
@@ -464,13 +469,12 @@ class RAVE(pl.LightningModule):
             raise NotImplementedError
         return loss_dis, loss_gen
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, x, batch_idx):
         p = Profiler()
         step = len(self.train_dataloader()) * self.current_epoch + batch_idx
         self.step = step
 
         gen_opt, dis_opt = self.optimizers()
-        x = batch.unsqueeze(1)
 
         if self.pqmf is not None:  # MULTIBAND DECOMPOSITION
             x = self.pqmf(x)
@@ -586,9 +590,7 @@ class RAVE(pl.LightningModule):
             y = self.pqmf.inverse(y)
         return y
 
-    def validation_step(self, batch, batch_idx):
-        x = batch.unsqueeze(1)
-
+    def validation_step(self, x, batch_idx):
         if self.pqmf is not None:
             x = self.pqmf(x)
 

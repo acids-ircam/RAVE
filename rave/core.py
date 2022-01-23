@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.fft as fft
 from einops import rearrange
 import numpy as np
-from random import random
+from random import random, randint
 from scipy.signal import lfilter
 from pytorch_lightning.callbacks import ModelCheckpoint
+from udls.transforms import Transform
 import librosa as li
 import math
 from os import path
@@ -61,10 +62,60 @@ def pole_to_z_filter(omega, amplitude=.9):
     return b, a
 
 
-def random_phase_mangle(x, min_f, max_f, amp, sr):
+def random_phase_mangle(x, min_f, max_f, amp, sr, axis=-1):
     angle = random_angle(min_f, max_f, sr)
     b, a = pole_to_z_filter(angle, amp)
-    return lfilter(b, a, x)
+    return lfilter(b, a, x, axis)
+
+def simple_audio_preprocess(sampling_rate, N, mono=True):
+    def preprocess(name):
+        try:
+            x, sr = li.load(name, sr=sampling_rate, mono=mono)
+        except KeyboardInterrupt:
+            exit()
+        except Exception as e:
+            print(e)
+            return None
+
+        if mono:
+            pad = (N - (len(x) % N)) % N
+            x = np.pad(x, (0, pad))
+
+            x = x.reshape(-1, N)
+
+            x = np.expand_dims(x, axis=1)
+        else:
+            pad = (N - (x.shape[1] % N)) % N
+            x = np.pad(x, ((0, 0), (0, pad)))
+            x = np.expand_dims(x, axis=0)
+            x = np.split(x, x.shape[2] / N, axis=2)
+            x = np.concatenate(x, axis=0)
+
+        return x.astype(np.float32)
+
+    return preprocess
+
+class RandomCrop(Transform):
+    """
+    Randomly crops signal to fit n_signal samples
+    """
+
+    def __init__(self, n_signal):
+        self.n_signal = n_signal
+
+    def __call__(self, x: np.ndarray):
+        in_point = randint(0, x.shape[-1] - self.n_signal)
+        x = x[:, in_point:in_point + self.n_signal]
+        return x
+
+
+class Dequantize(Transform):
+    def __init__(self, bit_depth):
+        self.bit_depth = bit_depth
+
+    def __call__(self, x: np.ndarray):
+        x += np.random.rand(x.size).reshape(x.shape) / 2**self.bit_depth
+        return x
 
 
 class EMAModelCheckPoint(ModelCheckpoint):
@@ -105,11 +156,12 @@ class EMAModelCheckPoint(ModelCheckpoint):
 
 
 class Loudness(nn.Module):
-    def __init__(self, sr, block_size, n_fft=2048):
+    def __init__(self, sr, block_size, n_fft=2048, a_n_channels=1):
         super().__init__()
         self.sr = sr
         self.block_size = block_size
         self.n_fft = n_fft
+        self.a_n_channels = a_n_channels
 
         f = li.fft_frequencies(sr, n_fft) + 1e-7
         a_weight = li.A_weighting(f).reshape(-1, 1)
@@ -118,6 +170,11 @@ class Loudness(nn.Module):
         self.register_buffer("window", torch.hann_window(self.n_fft))
 
     def forward(self, x):
+        batch_size = x.size(0)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, 1, dim=1), dim=0)
+
         x = torch.stft(
             x.squeeze(1),
             self.n_fft,
@@ -127,8 +184,14 @@ class Loudness(nn.Module):
             window=self.window,
             return_complex=True,
         ).abs()
+
+        x = x.unsqueeze(1)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, batch_size, dim=0), dim=1)
+
         x = torch.log(x + 1e-7) + self.a_weight
-        return torch.mean(x, 1, keepdim=True)
+        return torch.mean(x, 2, keepdim=True)
 
 
 def amp_to_impulse_response(amp, target_size):
