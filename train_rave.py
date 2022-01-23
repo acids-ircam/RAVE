@@ -83,7 +83,7 @@ if __name__ == "__main__":
                                                     mono=args.MONO),
         split_set="full",
         transforms=Compose([
-            RandomCrop(args.N_SIGNAL, multichannel=True),
+            RandomCrop(args.N_SIGNAL),
             RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR, axis=0),
                 p=.8,
