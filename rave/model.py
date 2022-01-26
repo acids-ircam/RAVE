@@ -4,17 +4,15 @@ import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, Loudness, mod_sigmoid
-from .core import amp_to_impulse_response, fft_convolve
+from .core import amp_to_impulse_response, fft_convolve, get_beta_kl_cyclic_annealed
 from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-import math
-
 from time import time
 
 from cached_conv import USE_BUFFER_CONV, get_padding
-from cached_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, CachedPadding1d, AlignBranches, CachedSequential
+from cached_conv import CachedConv1d, CachedConvTranspose1d, Conv1d, AlignBranches, CachedSequential
 
 Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose1d
@@ -307,30 +305,32 @@ class Discriminator(nn.Module):
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
-        net = [nn.Conv1d(in_size, capacity, 15, padding=7)]
+        net = [wn(Conv1d(in_size, capacity, 15, padding=get_padding(15)))]
         net.append(nn.LeakyReLU(.2))
 
         for i in range(n_layers):
             net.append(
-                Conv1d(
-                    capacity * multiplier**i,
-                    min(1024, capacity * multiplier**(i + 1)),
-                    41,
-                    stride=multiplier,
-                    padding=get_padding(41, multiplier),
-                    groups=multiplier**(i + 1),
-                ))
+                wn(
+                    Conv1d(
+                        capacity * multiplier**i,
+                        min(1024, capacity * multiplier**(i + 1)),
+                        41,
+                        stride=multiplier,
+                        padding=get_padding(41, multiplier),
+                        groups=multiplier**(i + 1),
+                    )))
             net.append(nn.LeakyReLU(.2))
 
         net.append(
-            Conv1d(
-                min(1024, capacity * multiplier**(i + 1)),
-                min(1024, capacity * multiplier**(i + 1)),
-                5,
-                padding=get_padding(5),
-            ))
+            wn(
+                Conv1d(
+                    min(1024, capacity * multiplier**(i + 1)),
+                    min(1024, capacity * multiplier**(i + 1)),
+                    5,
+                    padding=get_padding(5),
+                )))
         net.append(nn.LeakyReLU(.2))
-        net.append(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1))
+        net.append(wn(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1)))
         self.net = nn.ModuleList(net)
 
     def forward(self, x):
@@ -380,7 +380,7 @@ class RAVE(pl.LightningModule):
         if data_size == 1:
             self.pqmf = None
         else:
-            self.pqmf = PQMF(40 if no_latency else 100, data_size)
+            self.pqmf = PQMF(70 if no_latency else 100, data_size)
 
         self.loudness = Loudness(sr, 512)
 
@@ -545,7 +545,14 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        loss_gen = distance + feature_matching_distance + loss_adv + 1e-1 * kl
+        beta = get_beta_kl_cyclic_annealed(
+            step=step,
+            cycle_size=5e4,
+            warmup=self.warmup // 2,
+            min_beta=1e-4,
+            max_beta=5e-1,
+        )
+        loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
 
         # OPTIMIZATION
@@ -567,6 +574,7 @@ class RAVE(pl.LightningModule):
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
         self.log("distance", distance)
+        self.log("beta", beta)
         self.log("feature_matching", feature_matching_distance)
         p.tick("log")
 
@@ -608,6 +616,7 @@ class RAVE(pl.LightningModule):
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
+        step = len(self.train_dataloader()) * self.current_epoch
         audio, z = list(zip(*out))
 
         # LATENT SPACE ANALYSIS
@@ -633,7 +642,7 @@ class RAVE(pl.LightningModule):
             for p in var_percent:
                 self.log(f"{p}%_manifold", np.argmax(var > p))
 
-        if self.step > self.warmup:
+        if step > self.warmup:
             self.warmed_up = True
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
