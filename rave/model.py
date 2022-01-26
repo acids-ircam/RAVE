@@ -550,7 +550,7 @@ class RAVE(pl.LightningModule):
             cycle_size=5e4,
             warmup=self.warmup // 2,
             min_beta=1e-4,
-            max_beta=1e-1,
+            max_beta=5e-1,
         )
         loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
