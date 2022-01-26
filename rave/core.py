@@ -250,3 +250,21 @@ def search_for_run(run_path):
         run_path = glob(run_path)
         run_path = list(filter(lambda e: "last" in e, run_path))[-1]
     return run_path
+
+
+def get_beta_kl(step, warmup, min_beta, max_beta):
+    if step > warmup: return max_beta
+    t = step / warmup
+    min_beta_log = np.log(min_beta)
+    max_beta_log = np.log(max_beta)
+    beta_log = t * (max_beta_log - min_beta_log) + min_beta_log
+    return np.exp(beta_log)
+
+
+def get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta):
+    return get_beta_kl(step % cycle_size, cycle_size // 2, min_beta, max_beta)
+
+
+def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
+    min_beta = get_beta_kl(step, warmup, min_beta, max_beta)
+    return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
