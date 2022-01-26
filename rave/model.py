@@ -616,6 +616,7 @@ class RAVE(pl.LightningModule):
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
+        step = len(self.train_dataloader()) * self.current_epoch
         audio, z = list(zip(*out))
 
         # LATENT SPACE ANALYSIS
@@ -641,7 +642,7 @@ class RAVE(pl.LightningModule):
             for p in var_percent:
                 self.log(f"{p}%_manifold", np.argmax(var > p))
 
-        if self.step > self.warmup:
+        if step > self.warmup:
             self.warmed_up = True
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
