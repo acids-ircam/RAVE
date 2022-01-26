@@ -10,10 +10,11 @@ from cached_conv import CachedConv1d, get_padding
 
 
 class Resampling(nn.Module):
-    def __init__(self, target_sr, source_sr):
+    def __init__(self, target_sr, source_sr, a_n_channels = 1):
         super().__init__()
         self.source_sr = source_sr
         self.taget_sr = target_sr
+        self.a_n_channels = a_n_channels
 
         ratio = target_sr // source_sr
         assert int(ratio) == ratio
@@ -61,8 +62,28 @@ class Resampling(nn.Module):
         self.ratio = ratio
 
     def from_target_sampling_rate(self, x):
-        return self.downsample(x)
+        batch_size = x.size(0)
+        
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+        
+        x = self.downsample(x)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, batch_size, dim=0), dim=1)
+
+        return x
 
     def to_target_sampling_rate(self, x):
-        x = self.upsample(x)
+        batch_size = x.size(0)
+        
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+        
+        x = self.upsample(x)  # B x 2 x T
+        x = x.permute(0, 2, 1).reshape(x.shape[0], -1).unsqueeze(1)
+
+        if self.a_n_channels > 1:
+            x = torch.cat(torch.split(x, batch_size, dim=0), dim=1)
+
         return x

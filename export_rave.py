@@ -200,7 +200,7 @@ else:
     target_sr = sr
 
 logging.info("build resampling model")
-resample = Resampling(target_sr, sr)
+resample = Resampling(target_sr, sr, model.a_n_channels)
 x = torch.zeros(1, model.a_n_channels, 2**14)
 resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
 
