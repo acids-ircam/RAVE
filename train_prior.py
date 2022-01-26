@@ -67,8 +67,7 @@ dataset = SimpleDataset(
     args.WAV,
     preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL, 
         mono = model.a_n_channels == 1),
-    split_set="full",
-    transforms=lambda x: x.reshape(1, -1),
+    split_set="full"
 )
 
 val = (2 * len(dataset)) // 100

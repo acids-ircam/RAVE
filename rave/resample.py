@@ -65,7 +65,7 @@ class Resampling(nn.Module):
         batch_size = x.size(0)
         
         if self.a_n_channels > 1:
-            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+            x = torch.cat(torch.split(x, int(x.size(1) / self.a_n_channels), dim=1), dim=0)
         
         x = self.downsample(x)
 
@@ -78,7 +78,7 @@ class Resampling(nn.Module):
         batch_size = x.size(0)
         
         if self.a_n_channels > 1:
-            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+            x = torch.cat(torch.split(x, int(x.size(1) / self.a_n_channels), dim=1), dim=0)
         
         x = self.upsample(x)  # B x 2 x T
         x = x.permute(0, 2, 1).reshape(x.shape[0], -1).unsqueeze(1)

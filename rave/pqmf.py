@@ -285,7 +285,7 @@ class CachedPQMF(PQMF):
         batch_size = x.size(0)
 
         if self.a_n_channels > 1:
-            x = torch.cat(torch.split(x, int(x.size(1) / 2), dim=1), dim=0)
+            x = torch.cat(torch.split(x, int(x.size(1) / self.a_n_channels), dim=1), dim=0)
 
         x = reverse_half(x)
         m = self.hk.shape[0]
