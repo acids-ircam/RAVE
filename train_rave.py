@@ -1,3 +1,4 @@
+from ast import arg
 import torch
 from torch.utils.data import DataLoader, random_split
 
@@ -23,6 +24,10 @@ if __name__ == "__main__":
         RATIOS = [4, 4, 4, 2]
         BIAS = True
         NO_LATENCY = False
+
+        MIN_KL = 1e-4
+        MAX_KL = 5e-1
+        CROPPED_LATENT_SIZE = 0
 
         LOUD_STRIDE = 1
 
@@ -68,6 +73,9 @@ if __name__ == "__main__":
         mode=args.MODE,
         no_latency=args.NO_LATENCY,
         sr=args.SR,
+        min_kl=args.MIN_KL,
+        max_kl=args.MAX_KL,
+        cropped_latent_size=args.CROPPED_LATENT_SIZE,
     )
 
     x = torch.zeros(args.BATCH, 2**14)

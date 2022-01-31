@@ -54,9 +54,12 @@ class TraceModel(nn.Module):
             torch.tensor(self.resample.taget_sr),
         )
 
-        latent_size = np.argmax(pretrained.fidelity.numpy() > fidelity)
-        latent_size = 2**math.ceil(math.log2(latent_size))
-        self.cropped_latent_size = latent_size
+        if pretrained.cropped_latent_size:
+            self.cropped_latent_size = pretrained.cropped_latent_size
+        else:
+            latent_size = np.argmax(pretrained.fidelity.numpy() > fidelity)
+            latent_size = 2**math.ceil(math.log2(latent_size))
+            self.cropped_latent_size = latent_size
 
         x = torch.zeros(1, 1, 2**14)
         z = self.encode(x)
