@@ -1,6 +1,5 @@
-import shutil
-import math
 from os import path
+import shutil
 
 
 class Print:
