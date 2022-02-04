@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import random_split, DataLoader
 import pytorch_lightning as pl
 
+from rave.core import search_for_run
+
 from prior.model import Model
 from effortless_config import Config
 from os import environ, path
@@ -107,7 +109,7 @@ trainer = pl.Trainer(
                                         name="prior"),
     gpus=use_gpu,
     callbacks=[validation_checkpoint, last_checkpoint],
-    resume_from_checkpoint=args.CKPT,
+    resume_from_checkpoint=search_for_run(args.CKPT),
     max_epochs=100000,
     **val_check,
 )

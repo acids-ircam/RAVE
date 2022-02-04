@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader, random_split
 
 from rave.model import RAVE
 from rave.core import random_phase_mangle, EMAModelCheckPoint
+from rave.core import search_for_run
 
 from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config
@@ -132,7 +133,7 @@ if __name__ == "__main__":
         gpus=use_gpu,
         callbacks=[validation_checkpoint,
                    last_checkpoint],  #, ema_checkpoint],
-        resume_from_checkpoint=args.CKPT,
+        resume_from_checkpoint=search_for_run(args.CKPT),
         max_epochs=100000,
         **val_check,
     )
