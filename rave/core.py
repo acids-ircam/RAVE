@@ -169,6 +169,9 @@ def fft_convolve(signal, kernel):
 
 
 def search_for_run(run_path):
+    if run_path is None:
+        return None
+        
     if ".ckpt" in run_path:
         pass
     elif "checkpoints" in run_path:
