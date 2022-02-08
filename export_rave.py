@@ -20,6 +20,7 @@ class args(Config):
     CACHED = False
     FIDELITY = .95
     NAME = "vae"
+    STEREO = False
 
 
 args.parse_args()
@@ -29,6 +30,7 @@ from rave.model import RAVE
 from cached_conv import CachedConv1d, CachedConvTranspose1d, AlignBranches
 from rave.resample import Resampling
 from rave.pqmf import CachedPQMF
+
 from rave.core import search_for_run
 
 import numpy as np
@@ -64,13 +66,25 @@ class TraceModel(nn.Module):
 
         self.register_buffer(
             "encode_params",
-            torch.tensor([1, 1, self.cropped_latent_size, ratio]))
+            torch.tensor([
+                1,
+                1,
+                self.cropped_latent_size,
+                ratio,
+            ]))
 
         self.register_buffer(
             "decode_params",
-            torch.tensor([self.cropped_latent_size, ratio, 1, 1]))
+            torch.tensor([
+                self.cropped_latent_size,
+                ratio,
+                2 if args.STEREO else 1,
+                1,
+            ]))
 
         self.register_buffer("forward_params", torch.tensor([1, 1, 1, 1]))
+
+        self.stereo = args.STEREO
 
     def post_process_distribution(self, mean, scale):
         std = nn.functional.softplus(scale) + 1e-4
@@ -126,8 +140,11 @@ class TraceModel(nn.Module):
         return mean, std
 
     @torch.jit.export
-    def decode(self, z):
-        pad_size = self.latent_size.item() - self.cropped_latent_size
+    def decode(self, z: torch.Tensor):
+        if self.stereo and z.shape[0] == 1:
+            z = z.expand(2, z.shape[1], z.shape[2])
+
+        pad_size = self.latent_size.item() - z.shape[1]
         z = torch.cat([
             z,
             torch.randn(
@@ -146,6 +163,9 @@ class TraceModel(nn.Module):
             x = self.pqmf.inverse(x)
 
         x = self.resample.to_target_sampling_rate(x)
+
+        if self.stereo:
+            x = x.permute(1, 0, 2)
         return x
 
     def forward(self, x):
@@ -168,6 +188,10 @@ x = torch.zeros(1, 1, 2**14)
 if model.pqmf is not None:
     x = model.pqmf(x)
 mean, scale = model.encoder(x)
+
+if args.STEREO:
+    mean = mean.expand(2, *mean.shape[1:])
+
 y = model.decoder(mean)
 if model.pqmf is not None:
     y = model.pqmf.inverse(y)
