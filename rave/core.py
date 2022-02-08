@@ -111,7 +111,7 @@ class Loudness(nn.Module):
         self.block_size = block_size
         self.n_fft = n_fft
 
-        f = li.fft_frequencies(sr, n_fft) + 1e-7
+        f = np.linspace(0, sr / 2, n_fft // 2 + 1) + 1e-7
         a_weight = li.A_weighting(f).reshape(-1, 1)
 
         self.register_buffer("a_weight", torch.from_numpy(a_weight).float())
@@ -171,7 +171,7 @@ def fft_convolve(signal, kernel):
 def search_for_run(run_path):
     if run_path is None:
         return None
-        
+
     if ".ckpt" in run_path:
         pass
     elif "checkpoints" in run_path:
