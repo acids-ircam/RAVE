@@ -109,7 +109,11 @@ if __name__ == "__main__":
                                         monitor="validation")
 
     CUDA = gpu.getAvailable(maxMemory=.05)
-    if len(CUDA):
+    VISIBLE_DEVICES = environ["CUDA_VISIBLE_DEVICES"]
+
+    if VISIBLE_DEVICES:
+        use_gpu = (int(VISIBLE_DEVICES) >= 0)
+    elif len(CUDA):
         environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
         use_gpu = 1
     elif torch.cuda.is_available():
