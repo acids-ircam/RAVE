@@ -89,7 +89,7 @@ CUDA = gpu.getAvailable(maxMemory=.05)
 VISIBLE_DEVICES = environ["CUDA_VISIBLE_DEVICES"]
 
 if VISIBLE_DEVICES:
-    use_gpu = (int(VISIBLE_DEVICES) >= 0)
+    use_gpu = int(int(VISIBLE_DEVICES) >= 0)
 elif len(CUDA):
     environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
     use_gpu = 1
