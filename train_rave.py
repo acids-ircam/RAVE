@@ -117,7 +117,7 @@ if __name__ == "__main__":
                                         monitor="validation")
 
     CUDA = gpu.getAvailable(maxMemory=.05)
-    VISIBLE_DEVICES = environ["CUDA_VISIBLE_DEVICES"]
+    VISIBLE_DEVICES = environ.get("CUDA_VISIBLE_DEVICES", "")
 
     if VISIBLE_DEVICES:
         use_gpu = int(int(VISIBLE_DEVICES) >= 0)
