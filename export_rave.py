@@ -37,6 +37,7 @@ class TraceModel(nn.Module):
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
+
         latent_size = pretrained.latent_size
         self.resample = resample
 
@@ -52,7 +53,9 @@ class TraceModel(nn.Module):
             torch.tensor(self.resample.taget_sr),
         )
 
-        if pretrained.cropped_latent_size:
+        self.trained_cropped = bool(pretrained.cropped_latent_size)
+
+        if self.trained_cropped:
             self.cropped_latent_size = pretrained.cropped_latent_size
         else:
             latent_size = np.argmax(pretrained.fidelity.numpy() > fidelity)
@@ -128,6 +131,11 @@ class TraceModel(nn.Module):
 
     @torch.jit.export
     def decode(self, z):
+        if self.trained_cropped:
+            z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+            z = z + self.latent_mean.unsqueeze(-1)
+
+        # PAD WITH SAMPLES FROM PRIOR
         pad_size = self.latent_size.item() - self.cropped_latent_size
         z = torch.cat([
             z,
@@ -139,8 +147,10 @@ class TraceModel(nn.Module):
             )
         ], 1)
 
-        z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
-        z = z + self.latent_mean.unsqueeze(-1)
+        if not self.trained_cropped:
+            z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+            z = z + self.latent_mean.unsqueeze(-1)
+
         x = self.decoder(z)
 
         if self.pqmf is not None:
@@ -168,8 +178,8 @@ logging.info("warmup forward pass")
 x = torch.zeros(1, 1, 2**14)
 if model.pqmf is not None:
     x = model.pqmf(x)
-mean, scale = model.encoder(x)
-y = model.decoder(mean)
+z, _ = model.reparametrize(*model.encoder(x))
+y = model.decoder(z)
 if model.pqmf is not None:
     y = model.pqmf.inverse(y)
 
