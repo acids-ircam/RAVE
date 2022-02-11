@@ -86,7 +86,8 @@ class TraceModel(nn.Module):
                 1,
             ]))
 
-        self.register_buffer("forward_params", torch.tensor([1, 1, 1, 1]))
+        self.register_buffer("forward_params",
+                             torch.tensor([1, 1, 2 if args.STEREO else 1, 1]))
 
         self.stereo = args.STEREO
 
