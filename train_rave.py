@@ -27,7 +27,7 @@ if __name__ == "__main__":
         NO_LATENCY = False
 
         MIN_KL = 1e-4
-        MAX_KL = 5e-1
+        MAX_KL = 1e-1
         CROPPED_LATENT_SIZE = 0
 
         LOUD_STRIDE = 1
