@@ -1,6 +1,6 @@
 function cleanup(){
-    rm job_*.sh
-    rm jobs.input
+    rm job_*.sh > /dev/null 2>&1
+    rm jobs.input > /dev/null 2>&1
 }
 
 
