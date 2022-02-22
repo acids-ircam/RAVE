@@ -97,33 +97,31 @@ class ModulationLayer(nn.Module):
 
 
 class ModulatedGenerator(nn.Module):
-    def __init__(self, main, modulation) -> None:
+    def __init__(self, main, modulation, latent_size,
+                 noise_dimensions) -> None:
         super().__init__()
         assert len(main) == len(modulation)
         self.main = main
         self.modulation = modulation
+        self.constant = nn.Parameter(torch.zeros(latent_size))
+        self.noise_scale = nn.ParameterList(
+            [torch.zeros(n) for n in noise_dimensions])
 
     def forward(self, z):
-        latent_size = z.shape[1]
-        noise = torch.randn_like(z)
+        x = self.constant.reshape(1, -1, 1).expand_as(z)
 
-        for i, (main_layer,
-                modulation_layer) in enumerate(zip(self.main,
-                                                   self.modulation)):
-            if i:
-                noise = torch.cat([
-                    noise,
-                    torch.randn(
-                        noise.shape[0],
-                        latent_size,
-                        noise.shape[-1],
-                    ).to(noise)
-                ], 1)
-
+        for main_layer, modulation_layer, noise_scale in zip(
+                self.main,
+                self.modulation,
+                self.noise_scale,
+        ):
+            noise_scale = torch.nn.functional.softplus(
+                noise_scale) / math.sqrt(2)
+            x = x + noise_scale.unsqueeze(-1) * torch.randn_like(x)
             z, mean, scale = modulation_layer(z)
-            noise = main_layer(noise) * scale + mean
+            x = main_layer(x) * scale + mean
 
-        return noise
+        return x
 
 
 class UpsampleLayer(nn.Module):
@@ -222,6 +220,7 @@ class Generator(nn.Module):
                 ))
         ]
 
+        noise_dimensions = [latent_size]
         modulation_net = [
             ModulationLayer(latent_size, 2**len(ratios) * capacity, 1)
         ]
@@ -236,12 +235,14 @@ class Generator(nn.Module):
                                   padding_mode),
                     ResidualStack(out_dim, 3, padding_mode),
                 ))
+            noise_dimensions.append(in_dim)
             modulation_net.append(ModulationLayer(in_dim, out_dim, r))
 
         main_net = nn.ModuleList(main_net)
         modulation_net = nn.ModuleList(modulation_net)
 
-        self.net = ModulatedGenerator(main_net, modulation_net)
+        self.net = ModulatedGenerator(main_net, modulation_net, latent_size,
+                                      noise_dimensions)
 
         wave_gen = wn(
             Conv1d(out_dim,
