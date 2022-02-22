@@ -14,6 +14,7 @@ ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose
 
 
 class Residual(nn.Module):
+
     def __init__(self, module):
         super().__init__()
         future = module.future_compensation
@@ -30,6 +31,7 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
+
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
         super().__init__()
         net = []
@@ -71,6 +73,7 @@ class ResidualStack(nn.Module):
 
 
 class ModulationLayer(nn.Module):
+
     def __init__(self, in_size, out_size, stride) -> None:
         super().__init__()
         self.net = nn.Sequential(
@@ -97,6 +100,7 @@ class ModulationLayer(nn.Module):
 
 
 class ModulatedGenerator(nn.Module):
+
     def __init__(self, main, modulation, latent_size,
                  noise_dimensions) -> None:
         super().__init__()
@@ -105,7 +109,7 @@ class ModulatedGenerator(nn.Module):
         self.modulation = modulation
         self.constant = nn.Parameter(torch.zeros(latent_size))
         self.noise_scale = nn.ParameterList(
-            [torch.zeros(n) for n in noise_dimensions])
+            [nn.Parameter(torch.zeros(n)) for n in noise_dimensions])
 
     def forward(self, z):
         x = self.constant.reshape(1, -1, 1).expand_as(z)
@@ -125,6 +129,7 @@ class ModulatedGenerator(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
+
     def __init__(self, in_dim, out_dim, ratio, padding_mode, bias=False):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
@@ -158,6 +163,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
+
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -197,6 +203,7 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+
     def __init__(self,
                  latent_size,
                  capacity,
@@ -231,8 +238,7 @@ class Generator(nn.Module):
 
             main_net.append(
                 nn.Sequential(
-                    UpsampleLayer(in_dim + latent_size, out_dim, r,
-                                  padding_mode),
+                    UpsampleLayer(in_dim, out_dim, r, padding_mode),
                     ResidualStack(out_dim, 3, padding_mode),
                 ))
             noise_dimensions.append(in_dim)
@@ -298,6 +304,7 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -350,6 +357,7 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
+
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -391,6 +399,7 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
+
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(
