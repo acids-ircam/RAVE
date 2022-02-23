@@ -1,8 +1,10 @@
+from ast import arg
 import torch
 from torch.utils.data import DataLoader, random_split
 
 from rave.model import RAVE
 from rave.core import random_phase_mangle, simple_audio_preprocess, EMAModelCheckPoint, RandomCrop, Dequantize
+from rave.core import search_for_run
 
 from udls import SimpleDataset
 from effortless_config import Config
@@ -24,6 +26,10 @@ if __name__ == "__main__":
         BIAS = True
         NO_LATENCY = False
 
+        MIN_KL = 1e-4
+        MAX_KL = 1e-1
+        CROPPED_LATENT_SIZE = 0
+
         LOUD_STRIDE = 1
 
         USE_NOISE = True
@@ -43,6 +49,7 @@ if __name__ == "__main__":
         SR = 48000
         N_SIGNAL = 65536
         MONO = True
+        MAX_STEPS = 2000000
 
         BATCH = 8
 
@@ -70,6 +77,9 @@ if __name__ == "__main__":
         no_latency=args.NO_LATENCY,
         sr=args.SR,
         a_n_channels = 1 if args.MONO else 2
+        min_kl=args.MIN_KL,
+        max_kl=args.MAX_KL,
+        cropped_latent_size=args.CROPPED_LATENT_SIZE,
     )
 
     x = torch.zeros(args.BATCH, model.a_n_channels, 2**14)
@@ -111,7 +121,11 @@ if __name__ == "__main__":
                                         monitor="validation")
 
     CUDA = gpu.getAvailable(maxMemory=.05)
-    if len(CUDA):
+    VISIBLE_DEVICES = environ.get("CUDA_VISIBLE_DEVICES", "")
+
+    if VISIBLE_DEVICES:
+        use_gpu = int(int(VISIBLE_DEVICES) >= 0)
+    elif len(CUDA):
         environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
         use_gpu = 1
     elif torch.cuda.is_available():
@@ -135,8 +149,9 @@ if __name__ == "__main__":
         gpus=use_gpu,
         callbacks=[validation_checkpoint,
                    last_checkpoint],  #, ema_checkpoint],
-        resume_from_checkpoint=args.CKPT,
+        resume_from_checkpoint=search_for_run(args.CKPT),
         max_epochs=100000,
+        max_steps=args.MAX_STEPS,
         **val_check,
     )
     trainer.fit(model, train, val)

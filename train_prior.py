@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import random_split, DataLoader
 import pytorch_lightning as pl
 
+from rave.core import search_for_run
+
 from prior.model import Model
 from effortless_config import Config
 from os import environ, path
@@ -31,6 +33,7 @@ class args(Config):
 
     BATCH = 8
     CKPT = None
+    MAX_STEPS = 1000000
 
     NAME = None
 
@@ -85,7 +88,11 @@ validation_checkpoint = pl.callbacks.ModelCheckpoint(
 last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
 
 CUDA = gpu.getAvailable(maxMemory=.05)
-if len(CUDA):
+VISIBLE_DEVICES = environ.get("CUDA_VISIBLE_DEVICES", "")
+
+if VISIBLE_DEVICES:
+    use_gpu = int(int(VISIBLE_DEVICES) >= 0)
+elif len(CUDA):
     environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
     use_gpu = 1
 elif torch.cuda.is_available():
@@ -108,8 +115,9 @@ trainer = pl.Trainer(
                                         name="prior"),
     gpus=use_gpu,
     callbacks=[validation_checkpoint, last_checkpoint],
-    resume_from_checkpoint=args.CKPT,
+    resume_from_checkpoint=search_for_run(args.CKPT),
     max_epochs=100000,
+    max_steps=args.MAX_STEPS,
     **val_check,
 )
 trainer.fit(model, train, val)

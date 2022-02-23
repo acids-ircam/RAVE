@@ -1,6 +1,5 @@
-import shutil
-import math
 from os import path
+import shutil
 
 
 class Print:
@@ -59,6 +58,9 @@ if __name__ == "__main__":
     fidelity = input("reconstruction fidelity (defaults to 0.95): ")
     no_latency = input("latency compensation (defaults to false): ")
     mono = input("mono (defaults to true): ")
+    latent_size = input("latent size (learned if left blank): ")
+    pressure = input("regularization strength (defaults to 0.1): ")
+
 
     header(f"{name}: training instructions")
     subsection("train rave")
@@ -86,6 +88,10 @@ if __name__ == "__main__":
         cmd += f"--no-latency {no_latency.lower()} "
     if mono:
         cmd += f"--mono {mono.lower()} "
+    if latent_size:
+        cmd += f"--cropped-latent-size {int(latent_size)} "
+    if pressure:
+        cmd += f"--max-kl {pressure} "
 
     p(cmd)
     p("")
