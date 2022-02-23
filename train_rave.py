@@ -76,7 +76,7 @@ if __name__ == "__main__":
         mode=args.MODE,
         no_latency=args.NO_LATENCY,
         sr=args.SR,
-        a_n_channels = 1 if args.MONO else 2
+        a_n_channels = 1 if args.MONO else 2,
         min_kl=args.MIN_KL,
         max_kl=args.MAX_KL,
         cropped_latent_size=args.CROPPED_LATENT_SIZE,
