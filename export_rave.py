@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
 from effortless_config import Config
-from glob import glob
-from os import path
 import logging
 from termcolor import colored
 import cached_conv
@@ -41,6 +39,7 @@ class TraceModel(nn.Module):
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
+
         latent_size = pretrained.latent_size
         self.resample = resample
 
@@ -56,9 +55,14 @@ class TraceModel(nn.Module):
             torch.tensor(self.resample.taget_sr),
         )
 
-        latent_size = np.argmax(pretrained.fidelity.numpy() > fidelity)
-        latent_size = 2**math.ceil(math.log2(latent_size))
-        self.cropped_latent_size = latent_size
+        self.trained_cropped = bool(pretrained.cropped_latent_size)
+
+        if self.trained_cropped:
+            self.cropped_latent_size = pretrained.cropped_latent_size
+        else:
+            latent_size = np.argmax(pretrained.fidelity.numpy() > fidelity)
+            latent_size = 2**math.ceil(math.log2(latent_size))
+            self.cropped_latent_size = latent_size
 
         x = torch.zeros(1, 1, 2**14)
         z = self.encode(x)
@@ -82,7 +86,8 @@ class TraceModel(nn.Module):
                 1,
             ]))
 
-        self.register_buffer("forward_params", torch.tensor([1, 1, 1, 1]))
+        self.register_buffer("forward_params",
+                             torch.tensor([1, 1, 2 if args.STEREO else 1, 1]))
 
         self.stereo = args.STEREO
 
@@ -140,11 +145,16 @@ class TraceModel(nn.Module):
         return mean, std
 
     @torch.jit.export
-    def decode(self, z: torch.Tensor):
-        if self.stereo and z.shape[0] == 1:
+    def decode(self, z):
+        if self.trained_cropped:  # PERFORM PCA BEFORE PADDING
+            z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+            z = z + self.latent_mean.unsqueeze(-1)
+
+        if self.stereo and z.shape[0] == 1:  # DUPLICATE LATENT PATH
             z = z.expand(2, z.shape[1], z.shape[2])
 
-        pad_size = self.latent_size.item() - z.shape[1]
+        # CAT WITH SAMPLES FROM PRIOR DISTRIBUTION
+        pad_size = self.latent_size.item() - self.cropped_latent_size
         z = torch.cat([
             z,
             torch.randn(
@@ -155,8 +165,10 @@ class TraceModel(nn.Module):
             )
         ], 1)
 
-        z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
-        z = z + self.latent_mean.unsqueeze(-1)
+        if not self.trained_cropped:  # PERFORM PCA AFTER PADDING
+            z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+            z = z + self.latent_mean.unsqueeze(-1)
+
         x = self.decoder(z)
 
         if self.pqmf is not None:
@@ -187,12 +199,14 @@ logging.info("warmup forward pass")
 x = torch.zeros(1, 1, 2**14)
 if model.pqmf is not None:
     x = model.pqmf(x)
-mean, scale = model.encoder(x)
+
+z, _ = model.reparametrize(*model.encoder(x))
 
 if args.STEREO:
-    mean = mean.expand(2, *mean.shape[1:])
+    z = z.expand(2, *z.shape[1:])
 
-y = model.decoder(mean)
+y = model.decoder(z)
+
 if model.pqmf is not None:
     y = model.pqmf.inverse(y)
 

@@ -55,6 +55,9 @@ class RAVE(pl.LightningModule):
                  warmup,
                  mode,
                  no_latency=False,
+                 min_kl=1e-4,
+                 max_kl=5e-1,
+                 cropped_latent_size=0,
                  sr=24000):
         super().__init__()
         self.save_hyperparameters()
@@ -66,12 +69,28 @@ class RAVE(pl.LightningModule):
 
         self.loudness = Loudness(sr, 512)
 
-        self.encoder = Encoder(data_size, capacity, latent_size, ratios,
-                               "causal" if no_latency else "centered", bias)
-        self.decoder = Generator(latent_size, capacity, data_size, ratios,
-                                 loud_stride, use_noise, noise_ratios,
-                                 noise_bands,
-                                 "causal" if no_latency else "centered", bias)
+        encoder_out_size = cropped_latent_size if cropped_latent_size else latent_size
+
+        self.encoder = Encoder(
+            data_size,
+            capacity,
+            encoder_out_size,
+            ratios,
+            "causal" if no_latency else "centered",
+            bias,
+        )
+        self.decoder = Generator(
+            latent_size,
+            capacity,
+            data_size,
+            ratios,
+            loud_stride,
+            use_noise,
+            noise_ratios,
+            noise_bands,
+            "causal" if no_latency else "centered",
+            bias,
+        )
 
         self.discriminator = StackDiscriminators(
             3,
@@ -83,9 +102,9 @@ class RAVE(pl.LightningModule):
 
         self.idx = 0
 
-        self.register_buffer("latent_pca", torch.eye(latent_size))
-        self.register_buffer("latent_mean", torch.zeros(latent_size))
-        self.register_buffer("fidelity", torch.zeros(latent_size))
+        self.register_buffer("latent_pca", torch.eye(encoder_out_size))
+        self.register_buffer("latent_mean", torch.zeros(encoder_out_size))
+        self.register_buffer("fidelity", torch.zeros(encoder_out_size))
 
         self.latent_size = latent_size
 
@@ -96,6 +115,10 @@ class RAVE(pl.LightningModule):
         self.sr = sr
         self.mode = mode
         self.step = 0
+
+        self.min_kl = min_kl
+        self.max_kl = max_kl
+        self.cropped_latent_size = cropped_latent_size
 
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
@@ -129,8 +152,16 @@ class RAVE(pl.LightningModule):
         logvar = torch.log(var)
 
         z = torch.randn_like(mean) * std + mean
+
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
+        if self.cropped_latent_size:
+            noise = torch.randn(
+                z.shape[0],
+                self.latent_size - self.cropped_latent_size,
+                z.shape[-1],
+            ).to(z.device)
+            z = torch.cat([z, noise], 1)
         return z, kl
 
     def adversarial_combine(self, score_real, score_fake, mode="hinge"):
@@ -231,8 +262,8 @@ class RAVE(pl.LightningModule):
             step=step,
             cycle_size=5e4,
             warmup=self.warmup // 2,
-            min_beta=1e-4,
-            max_beta=1e-1,
+            min_beta=self.min_kl,
+            max_beta=self.max_kl,
         )
         loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
@@ -309,7 +340,7 @@ class RAVE(pl.LightningModule):
             self.latent_mean.copy_(z.mean(0))
             z = z - self.latent_mean
 
-            pca = PCA(self.latent_size).fit(z.cpu().numpy())
+            pca = PCA(z.shape[-1]).fit(z.cpu().numpy())
 
             components = pca.components_
             components = torch.from_numpy(components).to(z)
