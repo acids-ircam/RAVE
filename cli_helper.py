@@ -3,6 +3,7 @@ import shutil
 
 
 class Print:
+
     def __init__(self):
         self.msg = ""
 
@@ -54,11 +55,23 @@ if __name__ == "__main__":
     n_signal = input("training example duration (defaults to 65536 samples): ")
     capacity = input("model capacity (defaults to 6): ")
     warmup = input("number of steps for stage 1 (defaults to 1000000): ")
-    prior_resolution = input("prior resolution (defaults to 32): ")
-    fidelity = input("reconstruction fidelity (defaults to 0.95): ")
-    no_latency = input("latency compensation (defaults to false): ")
     latent_size = input("latent size (learned if left blank): ")
+
+    if not latent_size:
+        fidelity = input("reconstruction fidelity (defaults to 0.95): ")
+    else:
+        fidelity = ""
+
+    no_latency = input("latency compensation (defaults to false): ")
     pressure = input("regularization strength (defaults to 0.1): ")
+
+    use_prior = input("enable prior generation (defaults to true): ")
+    use_prior = use_prior == "" or use_prior.lower() == "true"
+
+    if use_prior:
+        prior_resolution = input("prior resolution (defaults to 32): ")
+    else:
+        prior_resolution = ""
 
     header(f"{name}: training instructions")
     subsection("train rave")
@@ -98,50 +111,54 @@ if __name__ == "__main__":
     p("")
     p("Once the training has reached a satisfactory state, kill it (ctrl + C)")
 
-    subsection("train prior")
+    if use_prior:
+        subsection("train prior")
 
-    p(
-        f"Export the latent space trained on {name}.",
-        end="\n\n",
-    )
+        p(
+            f"Export the latent space trained on {name}.",
+            end="\n\n",
+        )
 
-    cmd = "python export_rave.py "
+        cmd = "python export_rave.py "
 
-    run = path.join("runs", name, "rave")
-    cmd += f"--run {run} "
-    cmd += f"--cached false "
-    if fidelity:
-        cmd += f"--fidelity {fidelity} "
-    cmd += f"--name {name}"
+        run = path.join("runs", name, "rave")
+        cmd += f"--run {run} "
+        cmd += f"--cached false "
+        if fidelity:
+            cmd += f"--fidelity {fidelity} "
+        cmd += f"--name {name}"
 
-    p(cmd)
-    p("")
+        p(cmd)
 
-    p(
-        f"Train the prior model.",
-        end="\n\n",
-    )
+        p("")
 
-    cmd = "python train_prior.py "
+        p(
+            f"Train the prior model.",
+            end="\n\n",
+        )
 
-    if prior_resolution:
-        cmd += f"--resolution {prior_resolution} "
+        cmd = "python train_prior.py "
 
-    cmd += f"--pretrained-vae rave_{name}.ts "
-    prep_prior = path.join(preprocessed, name, "prior")
-    cmd += f"--preprocessed {prep_prior} "
-    cmd += f"--wav {data} "
+        if prior_resolution:
+            cmd += f"--resolution {prior_resolution} "
 
-    if n_signal:
-        cmd += f"--n-signal {n_signal} "
+        cmd += f"--pretrained-vae rave_{name}.ts "
+        prep_prior = path.join(preprocessed, name, "prior")
+        cmd += f"--preprocessed {prep_prior} "
+        cmd += f"--wav {data} "
 
-    cmd += f"--name {name}"
+        if n_signal:
+            cmd += f"--n-signal {n_signal} "
 
-    p(cmd)
-    p("")
-    p("Once the training has reached a satisfactory state, kill it (ctrl + C)")
+        cmd += f"--name {name}"
 
-    p("")
+        p(cmd)
+        p("")
+        p("Once the training has reached a satisfactory state, kill it (ctrl + C)"
+          )
+
+        p("")
+
     header("export to max msp (coming soon)")
 
     p("In order to use both **rave** and the **prior** model inside max/msp, we have to export them using **cached convolutions**."
@@ -157,20 +174,22 @@ if __name__ == "__main__":
         cmd += f"--fidelity {fidelity} "
     cmd += f"--name {name}_rt"
     p(cmd)
-    cmd = "python export_prior.py "
 
-    run = path.join("runs", name, "prior")
-    cmd += f"--run {run} "
-    cmd += f"--name {name}_rt"
+    if use_prior:
+        cmd = "python export_prior.py "
 
-    p(cmd)
+        run = path.join("runs", name, "prior")
+        cmd += f"--run {run} "
+        cmd += f"--name {name}_rt"
 
-    cmd = "python combine_models.py "
-    cmd += f"--prior prior_{name}_rt.ts "
-    cmd += f"--rave rave_{name}_rt.ts "
-    cmd += f"--name {name}"
+        p(cmd)
 
-    p(cmd)
+        cmd = "python combine_models.py "
+        cmd += f"--prior prior_{name}_rt.ts "
+        cmd += f"--rave rave_{name}_rt.ts "
+        cmd += f"--name {name}"
+
+        p(cmd)
 
     with open(f"instruction_{name}.txt", "w") as out:
         out.write(p.msg)
