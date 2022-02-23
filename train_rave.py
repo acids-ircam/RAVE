@@ -1,6 +1,8 @@
 import torch
 from torch.utils.data import DataLoader, random_split
 
+import math
+
 from rave.model import RAVE
 from rave.core import random_phase_mangle, EMAModelCheckPoint
 from rave.core import search_for_run
@@ -10,6 +12,7 @@ from effortless_config import Config
 import pytorch_lightning as pl
 from os import environ, path
 import numpy as np
+from random import random
 
 import GPUtil as gpu
 
@@ -88,6 +91,7 @@ if __name__ == "__main__":
             ),
             Dequantize(16),
             lambda x: x.astype(np.float32),
+            lambda x: 10**(-6 * random() / 20) * x,
         ]),
     )
 

@@ -20,6 +20,7 @@ ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose
 
 
 class Profiler:
+
     def __init__(self):
         self.ticks = [[time(), None]]
 
@@ -37,6 +38,7 @@ class Profiler:
 
 
 class RAVE(pl.LightningModule):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -230,7 +232,7 @@ class RAVE(pl.LightningModule):
             cycle_size=5e4,
             warmup=self.warmup // 2,
             min_beta=1e-4,
-            max_beta=5e-1,
+            max_beta=1e-1,
         )
         loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
         p.tick("gen loss compose")
@@ -327,4 +329,13 @@ class RAVE(pl.LightningModule):
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
+
+        for n, p in self.named_parameters():
+            if "noise_scale" in n or "constant" in n:
+                self.logger.experiment.add_histogram(
+                    n,
+                    p.reshape(-1).data.detach(),
+                    self.idx,
+                )
+
         self.idx += 1

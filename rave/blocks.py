@@ -120,7 +120,7 @@ class ModulatedGenerator(nn.Module):
                 self.noise_scale,
         ):
             noise_scale = torch.nn.functional.softplus(
-                noise_scale) / math.sqrt(2)
+                noise_scale) / math.log(2)
             x = x + noise_scale.unsqueeze(-1) * torch.randn_like(x)
             z, mean, scale = modulation_layer(z)
             x = main_layer(x) * scale + mean
