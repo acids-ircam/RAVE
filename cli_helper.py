@@ -58,6 +58,7 @@ if __name__ == "__main__":
     prior_resolution = input("prior resolution (defaults to 32): ")
     fidelity = input("reconstruction fidelity (defaults to 0.95): ")
     no_latency = input("latency compensation (defaults to false): ")
+    mono = input("mono (defaults to true): ")
 
     header(f"{name}: training instructions")
     subsection("train rave")
@@ -83,6 +84,8 @@ if __name__ == "__main__":
         cmd += f"--warmup {warmup} "
     if no_latency:
         cmd += f"--no-latency {no_latency.lower()} "
+    if mono:
+        cmd += f"--mono {mono.lower()} "
 
     p(cmd)
     p("")
