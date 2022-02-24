@@ -30,6 +30,16 @@ class Residual(nn.Module):
         return x_net + x_res
 
 
+class AlignBranchesSplit(AlignBranches):
+
+    def forward(self, inputs):
+        outs = []
+        for x, branch, pad in zip(inputs, self.branches, self.paddings):
+            delayed_x = pad(x)
+            outs.append(branch(delayed_x))
+        return outs
+
+
 class ResidualStack(nn.Module):
 
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
@@ -74,22 +84,26 @@ class ResidualStack(nn.Module):
 
 class ModulationLayer(nn.Module):
 
-    def __init__(self, in_size, out_size, stride) -> None:
+    def __init__(self, in_size, out_size, stride, padding_mode) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(in_size, in_size, 3, padding=1),
+        self.net = CachedSequential(
+            Conv1d(in_size, in_size, 3, padding=1),
             nn.BatchNorm1d(in_size),
-            UpsampleLayer(in_size,
-                          out_size,
-                          stride,
-                          padding_mode="centered",
-                          bias=True),
+            UpsampleLayer(
+                in_size,
+                out_size,
+                stride,
+                padding_mode=padding_mode,
+                bias=True,
+            ),
         )
 
         self.proj = nn.Sequential(
             nn.LeakyReLU(.2),
             nn.Conv1d(out_size, 2 * out_size, 1),
         )
+
+        self.future_compensation = self.net.future_compensation
 
     def forward(self, x):
         x = self.net(x)
@@ -105,8 +119,10 @@ class ModulatedGenerator(nn.Module):
                  noise_dimensions) -> None:
         super().__init__()
         assert len(main) == len(modulation)
-        self.main = main
-        self.modulation = modulation
+
+        self.blocks = nn.ModuleList(
+            [AlignBranchesSplit(m1, m2) for m1, m2 in zip(main, modulation)])
+
         self.constant = nn.Parameter(torch.zeros(latent_size))
         self.noise_scale = nn.ParameterList(
             [nn.Parameter(torch.zeros(n)) for n in noise_dimensions])
@@ -114,17 +130,15 @@ class ModulatedGenerator(nn.Module):
     def forward(self, z):
         x = self.constant.reshape(1, -1, 1).expand_as(z)
 
-        for main_layer, modulation_layer, noise_scale in zip(
-                self.main,
-                self.modulation,
+        for block, noise_scale in zip(
+                self.blocks,
                 self.noise_scale,
         ):
-            noise_scale = torch.nn.functional.softplus(
-                noise_scale) / math.log(2)
+            noise_scale = torch.nn.functional.softplus(noise_scale) / math.log(
+                2)
             x = x + noise_scale.unsqueeze(-1) * torch.randn_like(x)
-            z, mean, scale = modulation_layer(z)
-            x = main_layer(x) * scale + mean
-
+            x, (z, mean, scale) = block(x, z)
+            x = x * scale + mean
         return x
 
 
@@ -237,15 +251,13 @@ class Generator(nn.Module):
             out_dim = 2**(len(ratios) - i - 1) * capacity
 
             main_net.append(
-                nn.Sequential(
+                CachedSequential(
                     UpsampleLayer(in_dim, out_dim, r, padding_mode),
                     ResidualStack(out_dim, 3, padding_mode),
                 ))
             noise_dimensions.append(in_dim)
-            modulation_net.append(ModulationLayer(in_dim, out_dim, r))
-
-        main_net = nn.ModuleList(main_net)
-        modulation_net = nn.ModuleList(modulation_net)
+            modulation_net.append(
+                ModulationLayer(in_dim, out_dim, r, padding_mode))
 
         self.net = ModulatedGenerator(main_net, modulation_net, latent_size,
                                       noise_dimensions)
