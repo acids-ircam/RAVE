@@ -87,7 +87,7 @@ class ModulationLayer(nn.Module):
     def __init__(self, in_size, out_size, stride, padding_mode) -> None:
         super().__init__()
         self.net = CachedSequential(
-            Conv1d(in_size, in_size, 3, padding=1),
+            Conv1d(in_size, in_size, 3, padding=get_padding(3)),
             nn.BatchNorm1d(in_size),
             UpsampleLayer(
                 in_size,
@@ -137,7 +137,7 @@ class ModulatedGenerator(nn.Module):
             noise_scale = torch.nn.functional.softplus(noise_scale) / math.log(
                 2)
             x = x + noise_scale.unsqueeze(-1) * torch.randn_like(x)
-            x, (z, mean, scale) = block(x, z)
+            x, (z, mean, scale) = block((x, z))
             x = x * scale + mean
         return x
 
@@ -243,7 +243,8 @@ class Generator(nn.Module):
 
         noise_dimensions = [latent_size]
         modulation_net = [
-            ModulationLayer(latent_size, 2**len(ratios) * capacity, 1)
+            ModulationLayer(latent_size, 2**len(ratios) * capacity, 1,
+                            padding_mode)
         ]
 
         for i, r in enumerate(ratios):
@@ -337,16 +338,27 @@ class Encoder(nn.Module):
             in_dim = 2**i * capacity
             out_dim = 2**(i + 1) * capacity
 
-            net.append(nn.BatchNorm1d(in_dim))
-            net.append(nn.LeakyReLU(.2))
             net.append(
-                Conv1d(
-                    in_dim,
-                    out_dim,
-                    2 * r + 1,
-                    padding=get_padding(2 * r + 1, r, mode=padding_mode),
-                    stride=r,
-                    bias=bias,
+                CachedSequential(
+                    nn.BatchNorm1d(in_dim),
+                    nn.LeakyReLU(.2),
+                    Conv1d(
+                        in_dim,
+                        out_dim,
+                        2 * r + 1,
+                        padding=get_padding(2 * r + 1, r, mode=padding_mode),
+                        stride=r,
+                        bias=bias,
+                    ),
+                    nn.BatchNorm1d(out_dim),
+                    nn.LeakyReLU(.2),
+                    Conv1d(
+                        out_dim,
+                        out_dim,
+                        3,
+                        padding=get_padding(3, 1, mode=padding_mode),
+                        bias=bias,
+                    ),
                 ))
 
         net.append(nn.LeakyReLU(.2))
