@@ -142,7 +142,7 @@ if __name__ == "__main__":
         if prior_resolution:
             cmd += f"--resolution {prior_resolution} "
 
-        cmd += f"--pretrained-vae rave_{name}.ts "
+        cmd += f"--pretrained-vae {run}/rave_{name}.ts "
         prep_prior = path.join(preprocessed, name, "prior")
         cmd += f"--preprocessed {prep_prior} "
         cmd += f"--wav {data} "
@@ -185,8 +185,8 @@ if __name__ == "__main__":
         p(cmd)
 
         cmd = "python combine_models.py "
-        cmd += f"--prior prior_{name}_rt.ts "
-        cmd += f"--rave rave_{name}_rt.ts "
+        cmd += f"--prior {run}/prior_{name}_rt.ts "
+        cmd += f"--rave {run}/rave_{name}_rt.ts "
         cmd += f"--name {name}"
 
         p(cmd)

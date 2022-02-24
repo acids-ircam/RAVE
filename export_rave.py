@@ -4,6 +4,7 @@ from effortless_config import Config
 import logging
 from termcolor import colored
 import cached_conv
+import os
 
 logging.basicConfig(level=logging.INFO,
                     format=colored("[%(relativeCreated).2f] ", "green") +
@@ -36,6 +37,7 @@ import math
 
 
 class TraceModel(nn.Module):
+
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
@@ -252,4 +254,5 @@ model(x)
 
 model = torch.jit.script(model)
 logging.info(f"save rave_{args.NAME}.ts")
-model.save(f"rave_{args.NAME}.ts")
+out_path = "/".join(RUN.split("/")[:-3])
+model.save(os.path.join(out_path, f"rave_{args.NAME}.ts"))

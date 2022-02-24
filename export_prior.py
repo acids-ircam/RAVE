@@ -3,8 +3,7 @@ import torch
 torch.set_grad_enabled(False)
 import torch.nn as nn
 from effortless_config import Config
-from glob import glob
-from os import path
+import os
 import logging
 from termcolor import colored
 
@@ -33,6 +32,7 @@ from rave.core import search_for_run
 
 
 class TraceModel(nn.Module):
+
     def __init__(self, pretrained: Model):
         super().__init__()
         data_size = pretrained.data_size
@@ -125,4 +125,5 @@ model = TraceModel(model)
 model = torch.jit.script(model)
 
 logging.info("save model")
-model.save(f"prior_{args.NAME}.ts")
+out_path = "/".join(RUN.split("/")[:-3])
+model.save(os.path.join(out_path, f"prior_{args.NAME}.ts"))
