@@ -100,7 +100,7 @@ if __name__ == "__main__":
             ),
             Dequantize(16),
             lambda x: x.astype(np.float32),
-            lambda x: 10**(-6 * random() / 20) * x,
+            lambda x: 10**(-3 * random() / 20) * x,
         ]),
     )
 
