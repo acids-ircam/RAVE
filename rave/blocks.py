@@ -30,16 +30,6 @@ class Residual(nn.Module):
         return x_net + x_res
 
 
-class AlignBranchesSplit(AlignBranches):
-
-    def forward(self, inputs):
-        outs = []
-        for x, branch, pad in zip(inputs, self.branches, self.paddings):
-            delayed_x = pad(x)
-            outs.append(branch(delayed_x))
-        return outs
-
-
 class ResidualStack(nn.Module):
 
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
@@ -82,6 +72,17 @@ class ResidualStack(nn.Module):
         return self.net(x)
 
 
+class AlignModulation(AlignBranches):
+
+    def forward(self, x, z):
+        delayed_x = self.paddings[0](x)
+        delayed_z = self.paddings[1](z)
+        x = self.branches[0](delayed_x)
+        z, mean, scale = self.branches[1](delayed_z)
+
+        return x, z, mean, scale
+
+
 class ModulationLayer(nn.Module):
 
     def __init__(self, in_size, out_size, stride, padding_mode) -> None:
@@ -113,6 +114,17 @@ class ModulationLayer(nn.Module):
         return x, mean, scale
 
 
+class NoiseLayer(nn.Module):
+
+    def __init__(self, dim) -> None:
+        super().__init__()
+        self.scale = nn.Parameter(torch.zeros(dim))
+
+    def forward(self, x):
+        scale = torch.nn.functional.softplus(self.scale) / math.log(2)
+        return x + scale.unsqueeze(-1) * torch.randn_like(x)
+
+
 class ModulatedGenerator(nn.Module):
 
     def __init__(self, main, modulation, latent_size,
@@ -121,23 +133,18 @@ class ModulatedGenerator(nn.Module):
         assert len(main) == len(modulation)
 
         self.blocks = nn.ModuleList(
-            [AlignBranchesSplit(m1, m2) for m1, m2 in zip(main, modulation)])
+            [AlignModulation(m1, m2) for m1, m2 in zip(main, modulation)])
+
+        self.noise = nn.ModuleList([NoiseLayer(d) for d in noise_dimensions])
 
         self.constant = nn.Parameter(torch.zeros(latent_size))
-        self.noise_scale = nn.ParameterList(
-            [nn.Parameter(torch.zeros(n)) for n in noise_dimensions])
 
     def forward(self, z):
         x = self.constant.reshape(1, -1, 1).expand_as(z)
 
-        for block, noise_scale in zip(
-                self.blocks,
-                self.noise_scale,
-        ):
-            noise_scale = torch.nn.functional.softplus(noise_scale) / math.log(
-                2)
-            x = x + noise_scale.unsqueeze(-1) * torch.randn_like(x)
-            x, (z, mean, scale) = block((x, z))
+        for block, noise in zip(self.blocks, self.noise):
+            x = noise(x)
+            x, z, mean, scale = block(x, z)
             x = x * scale + mean
         return x
 
