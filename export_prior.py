@@ -124,6 +124,6 @@ logging.info("script model")
 model = TraceModel(model)
 model = torch.jit.script(model)
 
-logging.info("save model")
 out_path = "/".join(RUN.split("/")[:-3])
+logging.info(f"save prior_{args.NAME}.ts to {out_path}")
 model.save(os.path.join(out_path, f"prior_{args.NAME}.ts"))

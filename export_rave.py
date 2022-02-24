@@ -253,6 +253,6 @@ model = TraceModel(model, resample, args.FIDELITY)
 model(x)
 
 model = torch.jit.script(model)
-logging.info(f"save rave_{args.NAME}.ts")
 out_path = "/".join(RUN.split("/")[:-3])
+logging.info(f"save rave_{args.NAME}.ts to {out_path}")
 model.save(os.path.join(out_path, f"rave_{args.NAME}.ts"))
