@@ -14,7 +14,6 @@ ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose
 
 
 class Residual(nn.Module):
-
     def __init__(self, module):
         super().__init__()
         future = module.future_compensation
@@ -31,7 +30,6 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
-
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
         super().__init__()
         net = []
@@ -73,16 +71,22 @@ class ResidualStack(nn.Module):
 
 
 class AlignModulation(AlignBranches):
+    def __init__(self, *branches, futures=None):
+        super().__init__(*branches, futures=futures)
 
     def forward(self, x, z):
-        x = self.branches[0](self.paddings[0](x))
-        z, mean, scale = self.branches[1](self.paddings[1](z))
+        x = self.branches[0](x)
+        x = self.paddings[0](x)
+
+        z = self.branches[1](z)
+        z = self.paddings[1](z)
+
+        z, mean, scale = torch.split(z, z.shape[1] // 3, 1)
 
         return x, z, mean, scale
 
 
 class ModulationLayer(nn.Module):
-
     def __init__(self, in_size, out_size, stride, padding_mode) -> None:
         super().__init__()
         self.net = CachedSequential(
@@ -102,18 +106,18 @@ class ModulationLayer(nn.Module):
             nn.Conv1d(out_size, 2 * out_size, 1),
         )
 
-        self.future_compensation = self.net.future_compensation
+        self.future_compensation = stride if USE_BUFFER_CONV else 0
 
     def forward(self, x):
         x = self.net(x)
         mod = self.proj(x)
         mean, scale = torch.split(mod, mod.shape[1] // 2, 1)
         scale = torch.nn.functional.softplus(scale) / math.log(2)
-        return x, mean, scale
+
+        return torch.cat([x, mean, scale], 1)
 
 
 class NoiseLayer(nn.Module):
-
     def __init__(self, dim) -> None:
         super().__init__()
         self.scale = nn.Parameter(torch.zeros(dim))
@@ -124,7 +128,6 @@ class NoiseLayer(nn.Module):
 
 
 class ModulatedGenerator(nn.Module):
-
     def __init__(self, main, modulation, latent_size,
                  noise_dimensions) -> None:
         super().__init__()
@@ -144,11 +147,11 @@ class ModulatedGenerator(nn.Module):
             x = noise(x)
             x, z, mean, scale = block(x, z)
             x = x * scale + mean
+
         return x
 
 
 class UpsampleLayer(nn.Module):
-
     def __init__(self, in_dim, out_dim, ratio, padding_mode, bias=False):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
@@ -182,7 +185,6 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
-
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -222,7 +224,6 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
-
     def __init__(self,
                  latent_size,
                  capacity,
@@ -322,7 +323,6 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
-
     def __init__(self,
                  data_size,
                  capacity,
@@ -386,7 +386,6 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
-
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -428,7 +427,6 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
-
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(
