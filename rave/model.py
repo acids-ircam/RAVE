@@ -362,7 +362,7 @@ class RAVE(pl.LightningModule):
         self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
 
         for n, p in self.named_parameters():
-            if "noise_scale" in n or "constant" in n:
+            if "scale" in n or "constant" in n:
                 self.logger.experiment.add_histogram(
                     n,
                     p.reshape(-1).data.detach(),

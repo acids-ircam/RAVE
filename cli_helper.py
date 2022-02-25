@@ -102,6 +102,8 @@ if __name__ == "__main__":
     if pressure:
         cmd += f"--max-kl {pressure} "
 
+    cmd += f"--ckpt runs/{name}/rave "
+
     p(cmd)
     p("")
 
@@ -150,7 +152,9 @@ if __name__ == "__main__":
         if n_signal:
             cmd += f"--n-signal {n_signal} "
 
-        cmd += f"--name {name}"
+        cmd += f"--name {name} "
+
+        cmd += f"--ckpt runs/{name}/prior"
 
         p(cmd)
         p("")
