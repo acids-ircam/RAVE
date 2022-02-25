@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         cmd = "python combine_models.py "
         cmd += f"--prior {run}/prior_{name}_rt.ts "
-        cmd += f"--rave {run}/rave_{name}_rt.ts "
+        cmd += f"--rave runs/{name}/name/rave_{name}_rt.ts "
         cmd += f"--name {name}"
 
         p(cmd)

@@ -13,6 +13,7 @@ args.parse_args()
 
 
 class Combined(nn.Module):
+
     def __init__(self, prior, rave):
         super().__init__()
         self._prior = torch.jit.load(prior)
@@ -41,4 +42,4 @@ class Combined(nn.Module):
 
 
 model = torch.jit.script(Combined(args.PRIOR, args.RAVE))
-torch.jit.save(model, f"{args.NAME}.ts")
+torch.jit.save(model, f"runs/{args.NAME}/{args.NAME}.ts")
