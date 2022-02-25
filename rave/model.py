@@ -56,7 +56,7 @@ class RAVE(pl.LightningModule):
                  mode,
                  no_latency=False,
                  min_kl=1e-4,
-                 max_kl=5e-1,
+                 max_kl=1e-1,
                  cropped_latent_size=0,
                  sr=24000):
         super().__init__()

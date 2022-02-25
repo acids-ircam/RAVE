@@ -75,10 +75,8 @@ class ResidualStack(nn.Module):
 class AlignModulation(AlignBranches):
 
     def forward(self, x, z):
-        delayed_x = self.paddings[0](x)
-        delayed_z = self.paddings[1](z)
-        x = self.branches[0](delayed_x)
-        z, mean, scale = self.branches[1](delayed_z)
+        x = self.branches[0](self.paddings[0](x))
+        z, mean, scale = self.branches[1](self.paddings[1](z))
 
         return x, z, mean, scale
 
