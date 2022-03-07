@@ -27,6 +27,7 @@ class Model(pl.LightningModule):
         self.synth = torch.jit.load(pretrained_vae)
         self.sr = self.synth.sampling_rate.item()
         data_size = self.synth.cropped_latent_size
+        self.a_n_channels = self.synth.a_n_channels
 
         self.pre_net = nn.Sequential(
             Conv1d(

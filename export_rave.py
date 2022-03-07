@@ -46,6 +46,7 @@ class TraceModel(nn.Module):
         self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
+        self.a_n_channels = pretrained.a_n_channels
 
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
@@ -64,7 +65,7 @@ class TraceModel(nn.Module):
             latent_size = 2**math.ceil(math.log2(latent_size))
             self.cropped_latent_size = latent_size
 
-        x = torch.zeros(1, 1, 2**14)
+        x = torch.zeros(1, pretrained.a_n_channels, 2**14)
         z = self.encode(x)
         ratio = x.shape[-1] // z.shape[-1]
 
@@ -196,7 +197,7 @@ for m in model.modules():
         nn.utils.remove_weight_norm(m)
 
 logging.info("warmup forward pass")
-x = torch.zeros(1, 1, 2**14)
+x = torch.zeros(1, model.a_n_channels, 2**14)
 if model.pqmf is not None:
     x = model.pqmf(x)
 
@@ -238,8 +239,8 @@ else:
     target_sr = sr
 
 logging.info("build resampling model")
-resample = Resampling(target_sr, sr)
-x = torch.zeros(1, 1, 2**14)
+resample = Resampling(target_sr, sr, model.a_n_channels)
+x = torch.zeros(1, model.a_n_channels, 2**14)
 resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
 
 if not resample.identity and args.CACHED:
