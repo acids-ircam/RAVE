@@ -68,6 +68,7 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 
 class EMAModelCheckPoint(ModelCheckpoint):
+
     def __init__(self, model: torch.nn.Module, alpha=.999, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -105,6 +106,7 @@ class EMAModelCheckPoint(ModelCheckpoint):
 
 
 class Loudness(nn.Module):
+
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr

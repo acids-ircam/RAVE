@@ -16,6 +16,7 @@ Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 
 
 class Model(pl.LightningModule):
+
     def __init__(self, resolution, res_size, skp_size, kernel_size, cycle_size,
                  n_layers, pretrained_vae):
         super().__init__()

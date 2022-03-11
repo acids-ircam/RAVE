@@ -6,6 +6,7 @@ Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
 
 
 class ResidualBlock(nn.Module):
+
     def __init__(self, res_size, skp_size, kernel_size, dilation):
         super().__init__()
         fks = (kernel_size - 1) * dilation + 1

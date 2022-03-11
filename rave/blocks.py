@@ -14,6 +14,7 @@ ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose
 
 
 class Residual(nn.Module):
+
     def __init__(self, module):
         super().__init__()
         future = module.future_compensation
@@ -30,6 +31,7 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
+
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
         super().__init__()
         net = []
@@ -71,6 +73,7 @@ class ResidualStack(nn.Module):
 
 
 class AlignModulation(AlignBranches):
+
     def __init__(self, *branches, futures=None):
         super().__init__(*branches, futures=futures)
 
@@ -87,6 +90,7 @@ class AlignModulation(AlignBranches):
 
 
 class ModulationLayer(nn.Module):
+
     def __init__(self, in_size, out_size, stride, padding_mode) -> None:
         super().__init__()
         self.net = CachedSequential(
@@ -118,6 +122,7 @@ class ModulationLayer(nn.Module):
 
 
 class NoiseLayer(nn.Module):
+
     def __init__(self, dim) -> None:
         super().__init__()
         self.scale = nn.Parameter(torch.zeros(dim))
@@ -128,6 +133,7 @@ class NoiseLayer(nn.Module):
 
 
 class ModulatedGenerator(nn.Module):
+
     def __init__(self, main, modulation, latent_size,
                  noise_dimensions) -> None:
         super().__init__()
@@ -152,6 +158,7 @@ class ModulatedGenerator(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
+
     def __init__(self, in_dim, out_dim, ratio, padding_mode, bias=False):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
@@ -185,6 +192,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
+
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -224,6 +232,7 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+
     def __init__(self,
                  latent_size,
                  capacity,
@@ -323,6 +332,7 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -386,6 +396,7 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
+
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -427,6 +438,7 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
+
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(

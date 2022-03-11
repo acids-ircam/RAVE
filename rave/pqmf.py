@@ -189,6 +189,7 @@ class PQMF(nn.Module):
         Number of bands, must be a power of 2 if the polyphase implementation
         is needed
     """
+
     def __init__(self, attenuation, n_band, polyphase=True):
         super().__init__()
         h = get_prototype(attenuation, n_band)
@@ -233,6 +234,7 @@ class PQMF(nn.Module):
 
 
 class CachedPQMF(PQMF):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

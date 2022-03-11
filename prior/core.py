@@ -4,6 +4,7 @@ import torch.nn as nn
 
 
 class QuantizedNormal(nn.Module):
+
     def __init__(self, resolution, dither=True):
         super().__init__()
         self.resolution = resolution
@@ -42,6 +43,7 @@ class QuantizedNormal(nn.Module):
 
 
 class DiagonalShift(nn.Module):
+
     def __init__(self, groups=1):
         super().__init__()
         assert isinstance(groups, int)

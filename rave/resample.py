@@ -10,6 +10,7 @@ from cached_conv import CachedConv1d, get_padding
 
 
 class Resampling(nn.Module):
+
     def __init__(self, target_sr, source_sr):
         super().__init__()
         self.source_sr = source_sr
