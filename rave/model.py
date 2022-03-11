@@ -173,6 +173,12 @@ class RAVE(pl.LightningModule):
             loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
             loss_dis = loss_dis.mean()
             loss_gen = (score_fake - 1).pow(2).mean()
+        elif mode == "nonsaturating":
+            score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
+            score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
+            loss_dis = -(torch.log(score_real) +
+                         torch.log(1 - score_fake)).mean()
+            loss_gen = -torch.log(score_fake).mean()
         else:
             raise NotImplementedError
         return loss_dis, loss_gen
@@ -265,7 +271,9 @@ class RAVE(pl.LightningModule):
             min_beta=self.min_kl,
             max_beta=self.max_kl,
         )
-        loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
+        # loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
+
+        loss_gen = loss_adv
         p.tick("gen loss compose")
 
         # OPTIMIZATION

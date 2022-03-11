@@ -72,6 +72,12 @@ class ResidualStack(nn.Module):
         return self.net(x)
 
 
+class MinibatchStdDev(nn.Module):
+
+    def forward(self, x):
+        return x.std(0).mean().reshape(len(x.shape) * [1])
+
+
 class AlignModulation(AlignBranches):
 
     def __init__(self, *branches, futures=None):
@@ -152,7 +158,7 @@ class ModulatedGenerator(nn.Module):
         for block, noise in zip(self.blocks, self.noise):
             x = noise(x)
             x, z, mean, scale = block(x, z)
-            x = x * scale + mean
+            # x = x * scale + mean
 
         return x
 
@@ -400,11 +406,13 @@ class Discriminator(nn.Module):
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
-        net = [wn(Conv1d(in_size, capacity, 15, padding=get_padding(15)))]
-        net.append(nn.LeakyReLU(.2))
+        net1 = [wn(Conv1d(in_size, capacity, 15, padding=get_padding(15)))]
+        net1.append(nn.LeakyReLU(.2))
+
+        self.minibatch_stddev = MinibatchStdDev()
 
         for i in range(n_layers):
-            net.append(
+            net1.append(
                 wn(
                     Conv1d(
                         capacity * multiplier**i,
@@ -414,26 +422,40 @@ class Discriminator(nn.Module):
                         padding=get_padding(41, multiplier),
                         groups=multiplier**(i + 1),
                     )))
-            net.append(nn.LeakyReLU(.2))
+            net1.append(nn.LeakyReLU(.2))
 
-        net.append(
+        net2 = []
+        net2.append(
             wn(
                 Conv1d(
-                    min(1024, capacity * multiplier**(i + 1)),
+                    min(1024, capacity * multiplier**(i + 1)) + 1,
                     min(1024, capacity * multiplier**(i + 1)),
                     5,
                     padding=get_padding(5),
                 )))
-        net.append(nn.LeakyReLU(.2))
-        net.append(wn(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1, 1)))
-        self.net = nn.ModuleList(net)
+        net2.append(nn.LeakyReLU(.2))
+        net2.append(wn(Conv1d(min(1024, capacity * multiplier**(i + 1)), 1,
+                              1)))
+
+        self.net1 = nn.ModuleList(net1)
+        self.net2 = nn.ModuleList(net2)
 
     def forward(self, x):
         feature = []
-        for layer in self.net:
+        std = self.minibatch_stddev(x)
+        for layer in self.net1:
             x = layer(x)
             if isinstance(layer, Conv1d):
                 feature.append(x)
+
+        std = std.expand(x.shape[0], 1, *x.shape[2:])
+        x = torch.cat([x, std], 1)
+
+        for layer in self.net2:
+            x = layer(x)
+            if isinstance(layer, Conv1d):
+                feature.append(x)
+
         return feature
 
 
