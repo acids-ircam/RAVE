@@ -162,6 +162,9 @@ class RAVE(pl.LightningModule):
                 z.shape[-1],
             ).to(z.device)
             z = torch.cat([z, noise], 1)
+
+        z = torch.randn_like(z)
+        z = z / torch.norm(z, p=2, dim=1, keepdim=True)
         return z, kl
 
     def adversarial_combine(self, score_real, score_fake, mode="hinge"):
@@ -334,7 +337,8 @@ class RAVE(pl.LightningModule):
         if self.trainer is not None:
             self.log("validation", distance)
 
-        return torch.cat([x, y], -1), mean
+        # return torch.cat([x, y], -1), mean
+        return torch.cat([y], -1), mean
 
     def validation_epoch_end(self, out):
         step = len(self.train_dataloader()) * self.current_epoch

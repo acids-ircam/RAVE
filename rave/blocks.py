@@ -158,7 +158,7 @@ class ModulatedGenerator(nn.Module):
         for block, noise in zip(self.blocks, self.noise):
             x = noise(x)
             x, z, mean, scale = block(x, z)
-            # x = x * scale + mean
+            x = x * scale + mean
 
         return x
 
