@@ -103,7 +103,11 @@ if __name__ == "__main__":
 
     val = (2 * len(dataset)) // 100
     train = len(dataset) - val
-    train, val = random_split(dataset, [train, val])
+    train, val = random_split(
+        dataset,
+        [train, val],
+        generator=torch.Generator().manual_seed(42),
+    )
 
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
     val = DataLoader(val, args.BATCH, False, num_workers=8)
