@@ -29,6 +29,7 @@ if __name__ == "__main__":
         MIN_KL = 1e-4
         MAX_KL = 1e-1
         CROPPED_LATENT_SIZE = 0
+        FEATURE_MATCH = True
 
         LOUD_STRIDE = 1
 
@@ -57,7 +58,6 @@ if __name__ == "__main__":
     args.parse_args()
 
     assert args.NAME is not None
-
     model = RAVE(
         data_size=args.DATA_SIZE,
         capacity=args.CAPACITY,
@@ -78,6 +78,7 @@ if __name__ == "__main__":
         min_kl=args.MIN_KL,
         max_kl=args.MAX_KL,
         cropped_latent_size=args.CROPPED_LATENT_SIZE,
+        feature_match=args.FEATURE_MATCH,
     )
 
     x = torch.zeros(args.BATCH, 2**14)

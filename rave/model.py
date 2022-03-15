@@ -19,6 +19,7 @@ ConvTranspose1d = CachedConvTranspose1d if USE_BUFFER_CONV else nn.ConvTranspose
 
 
 class Profiler:
+
     def __init__(self):
         self.ticks = [[time(), None]]
 
@@ -36,6 +37,7 @@ class Profiler:
 
 
 class Residual(nn.Module):
+
     def __init__(self, module):
         super().__init__()
         future = module.future_compensation
@@ -52,6 +54,7 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
+
     def __init__(self, dim, kernel_size, padding_mode, bias=False):
         super().__init__()
         net = []
@@ -93,6 +96,7 @@ class ResidualStack(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
+
     def __init__(self, in_dim, out_dim, ratio, padding_mode, bias=False):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
@@ -126,6 +130,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
+
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -165,6 +170,7 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+
     def __init__(self,
                  latent_size,
                  capacity,
@@ -250,6 +256,7 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -302,6 +309,7 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
+
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -343,6 +351,7 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
+
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(
@@ -357,6 +366,7 @@ class StackDiscriminators(nn.Module):
 
 
 class RAVE(pl.LightningModule):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -376,6 +386,7 @@ class RAVE(pl.LightningModule):
                  min_kl=1e-4,
                  max_kl=5e-1,
                  cropped_latent_size=0,
+                 feature_match=True,
                  sr=24000):
         super().__init__()
         self.save_hyperparameters()
@@ -438,6 +449,8 @@ class RAVE(pl.LightningModule):
         self.max_kl = max_kl
         self.cropped_latent_size = cropped_latent_size
 
+        self.feature_match = feature_match
+
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
         gen_p += list(self.decoder.parameters())
@@ -491,6 +504,12 @@ class RAVE(pl.LightningModule):
             loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
             loss_dis = loss_dis.mean()
             loss_gen = (score_fake - 1).pow(2).mean()
+        elif mode == "nonsaturating":
+            score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
+            score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
+            loss_dis = -(torch.log(score_real) +
+                         torch.log(1 - score_fake)).mean()
+            loss_gen = -torch.log(score_fake).mean()
         else:
             raise NotImplementedError
         return loss_dis, loss_gen
@@ -583,7 +602,9 @@ class RAVE(pl.LightningModule):
             min_beta=self.min_kl,
             max_beta=self.max_kl,
         )
-        loss_gen = distance + feature_matching_distance + loss_adv + beta * kl
+        loss_gen = distance + loss_adv + beta * kl
+        if self.feature_match:
+            loss_gen = loss_gen + feature_matching_distance
         p.tick("gen loss compose")
 
         # OPTIMIZATION
