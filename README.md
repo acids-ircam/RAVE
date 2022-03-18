@@ -32,11 +32,15 @@ python reconstruct.py --ckpt /path/to/checkpoint --wav-folder /path/to/wav/folde
 
 You can also export RAVE to a `torchscript` file using `export_rave.py` and use the `encode` and `decode` methods on tensors.
 
-## MAX / MSP - PureData usage
+## Realtime usage
 
-**[NOT AVAILABLE YET]**
+**AVAILABLE ON APRIL 2nd**
 
-RAVE and the prior model can be used in realtime inside [max/msp](https://cycling74.com/), allowing creative interactions with both models. Code and details about this part of the project are not available yet, we are currently working on the corresponding article !
+RAVE and the prior model can be used in realtime on live audio streams, allowing creative interactions with both models. **Realtime export is not available yet**, but models trained today **will** be compatible with the realtime interfaces.
+
+### [nn~](https://github.com/acids-ircam/nn_tilde)
+
+RAVE is compatible with the **nn~** max/msp and PureData external.
 
 ![max_msp_screenshot](docs/maxmsp_screenshot.png)
 
