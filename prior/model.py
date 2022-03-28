@@ -3,19 +3,14 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from tqdm import tqdm
 
-from torch.distributions import Categorical
-
-import matplotlib.pyplot as plt
-
 from .residual_block import ResidualBlock
 from .core import DiagonalShift, QuantizedNormal
 
-from cached_conv import Conv1d, CachedConv1d, USE_BUFFER_CONV
-
-Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
+import cached_conv as cc
 
 
 class Model(pl.LightningModule):
+
     def __init__(self, resolution, res_size, skp_size, kernel_size, cycle_size,
                  n_layers, pretrained_vae):
         super().__init__()
@@ -29,11 +24,11 @@ class Model(pl.LightningModule):
         data_size = self.synth.cropped_latent_size
 
         self.pre_net = nn.Sequential(
-            Conv1d(
+            cc.Conv1d(
                 resolution * data_size,
                 res_size,
                 kernel_size,
-                padding=(kernel_size - 1, 0),
+                padding=cc.get_padding(kernel_size, mode="causal"),
                 groups=data_size,
             ),
             nn.LeakyReLU(.2),
@@ -49,9 +44,9 @@ class Model(pl.LightningModule):
         ])
 
         self.post_net = nn.Sequential(
-            nn.Conv1d(skp_size, skp_size, 1),
+            cc.Conv1d(skp_size, skp_size, 1),
             nn.LeakyReLU(.2),
-            nn.Conv1d(
+            cc.Conv1d(
                 skp_size,
                 resolution * data_size,
                 1,
@@ -91,14 +86,14 @@ class Model(pl.LightningModule):
     @torch.no_grad()
     def generate(self, x, argmax: bool = False):
         for i in tqdm(range(x.shape[-1] - 1)):
-            if USE_BUFFER_CONV:
+            if cc.USE_BUFFER_CONV:
                 start = i
             else:
                 start = None
 
             pred = self.forward(x[..., start:i + 1])
 
-            if not USE_BUFFER_CONV:
+            if not cc.USE_BUFFER_CONV:
                 pred = pred[..., -1:]
 
             pred = self.post_process_prediction(pred, argmax=argmax)

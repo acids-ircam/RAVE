@@ -1,16 +1,15 @@
 import torch
 import torch.nn as nn
-from cached_conv import Conv1d, CachedConv1d, USE_BUFFER_CONV
-
-Conv1d = CachedConv1d if USE_BUFFER_CONV else Conv1d
+import cached_conv as cc
 
 
 class ResidualBlock(nn.Module):
+
     def __init__(self, res_size, skp_size, kernel_size, dilation):
         super().__init__()
         fks = (kernel_size - 1) * dilation + 1
 
-        self.dconv = Conv1d(
+        self.dconv = cc.Conv1d(
             res_size,
             2 * res_size,
             kernel_size,

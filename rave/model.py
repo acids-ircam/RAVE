@@ -40,7 +40,7 @@ class Residual(nn.Module):
         self.aligned = cc.AlignBranches(
             module,
             nn.Identity(),
-            futures=[delay, 0],
+            delays=[delay, 0],
         )
         self.cumulative_delay = delay + cumulative_delay
 
@@ -87,7 +87,7 @@ class ResidualStack(nn.Module):
                               padding=cc.get_padding(kernel_size,
                                                      mode=padding_mode),
                               bias=bias,
-                              cumulative_delay=seq[-1].cumulative_delay)))
+                              cumulative_delay=seq[-2].cumulative_delay)))
 
             net.append(
                 Residual(cc.CachedSequential(*seq),
@@ -715,6 +715,9 @@ class RAVE(pl.LightningModule):
         step = len(self.train_dataloader()) * self.current_epoch
         audio, z = list(zip(*out))
 
+        if step > self.warmup:
+            self.warmed_up = True
+
         # LATENT SPACE ANALYSIS
         if not self.warmed_up:
             z = torch.cat(z, 0)
@@ -737,9 +740,6 @@ class RAVE(pl.LightningModule):
             var_percent = [.8, .9, .95, .99]
             for p in var_percent:
                 self.log(f"{p}%_manifold", np.argmax(var > p))
-
-        if step > self.warmup:
-            self.warmed_up = True
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)

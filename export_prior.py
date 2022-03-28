@@ -25,12 +25,13 @@ class args(Config):
 args.parse_args()
 use_buffer_conv(True)
 
-from cached_conv import *
+import cached_conv as cc
 from prior.model import Model
 from rave.core import search_for_run
 
 
 class TraceModel(nn.Module):
+
     def __init__(self, pretrained: Model):
         super().__init__()
         data_size = pretrained.data_size
@@ -55,7 +56,7 @@ class TraceModel(nn.Module):
                 torch.zeros(1, data_size, 1)),
         )
 
-        self.pre_diag_cache = CachedPadding1d(data_size - 1)
+        self.pre_diag_cache = cc.CachedPadding1d(data_size - 1)
         self.pre_diag_cache(z)
         self.pre_diag_cache = torch.jit.script(self.pre_diag_cache)
 
@@ -93,6 +94,7 @@ logging.info("loading model from checkpoint")
 
 RUN = search_for_run(args.RUN)
 logging.info(f"using {RUN}")
+
 model = Model.load_from_checkpoint(RUN, strict=False).eval()
 
 logging.info("warmup forward pass")
@@ -108,7 +110,7 @@ logging.info("scripting cached modules")
 n_cache = 0
 
 cached_modules = [
-    CachedConv1d,
+    cc.CachedConv1d,
 ]
 
 for n, m in model.named_modules():
