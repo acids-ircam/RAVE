@@ -15,7 +15,6 @@ import cached_conv as cc
 
 
 class Profiler:
-
     def __init__(self):
         self.ticks = [[time(), None]]
 
@@ -33,16 +32,15 @@ class Profiler:
 
 
 class Residual(nn.Module):
-
     def __init__(self, module, cumulative_delay=0):
         super().__init__()
-        delay = module.cumulative_delay
+        additional_delay = module.cumulative_delay
         self.aligned = cc.AlignBranches(
             module,
             nn.Identity(),
-            delays=[delay, 0],
+            delays=[additional_delay, 0],
         )
-        self.cumulative_delay = delay + cumulative_delay
+        self.cumulative_delay = additional_delay + cumulative_delay
 
     def forward(self, x):
         x_net, x_res = self.aligned(x)
@@ -50,7 +48,6 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
-
     def __init__(self,
                  dim,
                  kernel_size,
@@ -67,31 +64,34 @@ class ResidualStack(nn.Module):
             seq = [nn.LeakyReLU(.2)]
             seq.append(
                 wn(
-                    cc.Conv1d(dim,
-                              dim,
-                              kernel_size,
-                              padding=cc.get_padding(
-                                  kernel_size,
-                                  dilation=3**i,
-                                  mode=padding_mode,
-                              ),
-                              dilation=3**i,
-                              bias=bias)))
+                    cc.Conv1d(
+                        dim,
+                        dim,
+                        kernel_size,
+                        padding=cc.get_padding(
+                            kernel_size,
+                            dilation=3**i,
+                            mode=padding_mode,
+                        ),
+                        dilation=3**i,
+                        bias=bias,
+                    )))
 
             seq.append(nn.LeakyReLU(.2))
             seq.append(
                 wn(
-                    cc.Conv1d(dim,
-                              dim,
-                              kernel_size,
-                              padding=cc.get_padding(kernel_size,
-                                                     mode=padding_mode),
-                              bias=bias,
-                              cumulative_delay=seq[-2].cumulative_delay)))
+                    cc.Conv1d(
+                        dim,
+                        dim,
+                        kernel_size,
+                        padding=cc.get_padding(kernel_size, mode=padding_mode),
+                        bias=bias,
+                        cumulative_delay=seq[-2].cumulative_delay,
+                    )))
 
-            net.append(
-                Residual(cc.CachedSequential(*seq),
-                         cumulative_delay=res_cum_delay))
+            res_net = cc.CachedSequential(*seq)
+
+            net.append(Residual(res_net, cumulative_delay=res_cum_delay))
             res_cum_delay = net[-1].cumulative_delay
 
         self.net = cc.CachedSequential(*net)
@@ -102,7 +102,6 @@ class ResidualStack(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
-
     def __init__(self,
                  in_dim,
                  out_dim,
@@ -142,7 +141,6 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
-
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -186,7 +184,6 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
-
     def __init__(self,
                  latent_size,
                  capacity,
@@ -295,7 +292,6 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
-
     def __init__(self,
                  data_size,
                  capacity,
@@ -350,7 +346,6 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
-
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -395,7 +390,6 @@ class Discriminator(nn.Module):
 
 
 class StackDiscriminators(nn.Module):
-
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(
@@ -410,7 +404,6 @@ class StackDiscriminators(nn.Module):
 
 
 class RAVE(pl.LightningModule):
-
     def __init__(self,
                  data_size,
                  capacity,
