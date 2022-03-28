@@ -3,8 +3,6 @@ import torch
 torch.set_grad_enabled(False)
 import torch.nn as nn
 from effortless_config import Config
-from glob import glob
-from os import path
 import logging
 from termcolor import colored
 
