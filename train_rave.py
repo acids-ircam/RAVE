@@ -1,4 +1,3 @@
-from ast import arg
 import torch
 from torch.utils.data import DataLoader, random_split
 
@@ -149,8 +148,7 @@ if __name__ == "__main__":
         logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
                                             name="rave"),
         gpus=use_gpu,
-        callbacks=[validation_checkpoint,
-                   last_checkpoint],  #, ema_checkpoint],
+        callbacks=[validation_checkpoint, last_checkpoint, ema_checkpoint],
         resume_from_checkpoint=search_for_run(args.CKPT),
         max_epochs=100000,
         max_steps=args.MAX_STEPS,

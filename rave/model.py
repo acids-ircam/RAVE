@@ -15,6 +15,7 @@ import cached_conv as cc
 
 
 class Profiler:
+
     def __init__(self):
         self.ticks = [[time(), None]]
 
@@ -32,6 +33,7 @@ class Profiler:
 
 
 class Residual(nn.Module):
+
     def __init__(self, module, cumulative_delay=0):
         super().__init__()
         delay = module.cumulative_delay
@@ -48,6 +50,7 @@ class Residual(nn.Module):
 
 
 class ResidualStack(nn.Module):
+
     def __init__(self,
                  dim,
                  kernel_size,
@@ -99,6 +102,7 @@ class ResidualStack(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
+
     def __init__(self,
                  in_dim,
                  out_dim,
@@ -138,6 +142,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
+
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -181,6 +186,7 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+
     def __init__(self,
                  latent_size,
                  capacity,
@@ -289,6 +295,7 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -343,6 +350,7 @@ class Encoder(nn.Module):
 
 
 class Discriminator(nn.Module):
+
     def __init__(self, in_size, capacity, multiplier, n_layers):
         super().__init__()
 
@@ -381,12 +389,13 @@ class Discriminator(nn.Module):
         feature = []
         for layer in self.net:
             x = layer(x)
-            if isinstance(layer, cc.Conv1d):
+            if isinstance(layer, nn.Conv1d):
                 feature.append(x)
         return feature
 
 
 class StackDiscriminators(nn.Module):
+
     def __init__(self, n_dis, *args, **kwargs):
         super().__init__()
         self.discriminators = nn.ModuleList(
@@ -401,6 +410,7 @@ class StackDiscriminators(nn.Module):
 
 
 class RAVE(pl.LightningModule):
+
     def __init__(self,
                  data_size,
                  capacity,
