@@ -345,7 +345,7 @@ class Discriminator(nn.Module):
         feature = []
         for layer in self.net:
             x = layer(x)
-            if isinstance(layer, Conv1d):
+            if isinstance(layer, nn.Conv1d):
                 feature.append(x)
         return feature
 

@@ -36,6 +36,7 @@ import math
 
 
 class TraceModel(nn.Module):
+
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
@@ -222,11 +223,11 @@ cached_modules = [
 
 model.discriminator = None
 
-for n, m in model.named_modules():
-    if any(list(map(lambda c: isinstance(m, c),
-                    cached_modules))) and args.CACHED:
-        m.script_cache()
-        n_cache += 1
+# for n, m in model.named_modules():
+#     if any(list(map(lambda c: isinstance(m, c),
+#                     cached_modules))) and args.CACHED:
+#         m.script_cache()
+#         n_cache += 1
 
 logging.info(f"{n_cache} cached modules found and scripted")
 
