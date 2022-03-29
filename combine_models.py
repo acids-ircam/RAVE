@@ -28,6 +28,10 @@ class Combined(nn.Module):
         return self._rave.encode(x)
 
     @torch.jit.export
+    def encode_amortized(self, x):
+        return self._rave.encode_amortized(x)
+
+    @torch.jit.export
     def decode(self, x):
         return self._rave.decode(x)
 
