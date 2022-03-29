@@ -32,7 +32,7 @@ class args(Config):
 
     BATCH = 8
     CKPT = None
-    MAX_STEPS = 1000000
+    MAX_STEPS = 10000000
 
     NAME = None
 
