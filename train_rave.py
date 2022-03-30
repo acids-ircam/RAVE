@@ -117,9 +117,6 @@ if __name__ == "__main__":
         filename="best",
     )
     last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
-    ema_checkpoint = EMAModelCheckPoint(model,
-                                        filename="ema",
-                                        monitor="validation")
 
     CUDA = gpu.getAvailable(maxMemory=.05)
     VISIBLE_DEVICES = environ.get("CUDA_VISIBLE_DEVICES", "")
@@ -148,7 +145,7 @@ if __name__ == "__main__":
         logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
                                             name="rave"),
         gpus=use_gpu,
-        callbacks=[validation_checkpoint, last_checkpoint, ema_checkpoint],
+        callbacks=[validation_checkpoint, last_checkpoint],
         resume_from_checkpoint=search_for_run(args.CKPT),
         max_epochs=100000,
         max_steps=args.MAX_STEPS,
