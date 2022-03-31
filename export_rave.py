@@ -159,7 +159,7 @@ class TraceModel(nn.Module):
             z = z.expand(2, z.shape[1], z.shape[2])
 
         # CAT WITH SAMPLES FROM PRIOR DISTRIBUTION
-        pad_size = self.latent_size.item() - self.cropped_latent_size
+        pad_size = self.latent_size.item() - z.shape[1]
 
         if self.deterministic:
             pad_latent = torch.zeros(
