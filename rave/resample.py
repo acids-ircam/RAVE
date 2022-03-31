@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from .pqmf import kaiser_filter
 
-from cached_conv import CachedConv1d, get_padding
+import cached_conv as cc
 
 
 class Resampling(nn.Module):
@@ -28,12 +28,12 @@ class Resampling(nn.Module):
         filt = kaiser_filter(wc, 140)
         filt = torch.from_numpy(filt).float()
 
-        self.downsample = CachedConv1d(
+        self.downsample = cc.Conv1d(
             1,
             1,
             len(filt),
             stride=ratio,
-            padding=get_padding(len(filt), ratio),
+            padding=cc.get_padding(len(filt), ratio),
         )
 
         self.downsample.weight.data.copy_(filt.reshape(1, 1, -1))
@@ -47,12 +47,12 @@ class Resampling(nn.Module):
         pad = (filt.shape[-1] + 1) % 2
         filt = nn.functional.pad(filt, (pad, 0)).unsqueeze(1)
 
-        self.upsample = CachedConv1d(
+        self.upsample = cc.Conv1d(
             1,
             2,
             filt.shape[-1],
             stride=1,
-            padding=get_padding(filt.shape[-1]),
+            padding=cc.get_padding(filt.shape[-1]),
         )
 
         self.upsample.weight.data.copy_(filt)

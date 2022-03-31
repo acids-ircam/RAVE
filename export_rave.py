@@ -19,6 +19,7 @@ class args(Config):
     FIDELITY = .95
     NAME = "vae"
     STEREO = False
+    DETERMINISTIC = False
 
 
 args.parse_args()
@@ -36,7 +37,6 @@ import math
 
 
 class TraceModel(nn.Module):
-
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
@@ -57,6 +57,7 @@ class TraceModel(nn.Module):
         )
 
         self.trained_cropped = bool(pretrained.cropped_latent_size)
+        self.deterministic = args.DETERMINISTIC
 
         if self.trained_cropped:
             self.cropped_latent_size = pretrained.cropped_latent_size
@@ -115,7 +116,10 @@ class TraceModel(nn.Module):
         mean, scale = self.encoder(x)
         mean, std = self.post_process_distribution(mean, scale)
 
-        z = self.reparametrize(mean, std)[0]
+        if self.deterministic:
+            z = mean
+        else:
+            z = self.reparametrize(mean, std)[0]
 
         z = z - self.latent_mean.unsqueeze(-1)
         z = nn.functional.conv1d(z, self.latent_pca.unsqueeze(-1))
@@ -156,21 +160,29 @@ class TraceModel(nn.Module):
 
         # CAT WITH SAMPLES FROM PRIOR DISTRIBUTION
         pad_size = self.latent_size.item() - self.cropped_latent_size
-        z = torch.cat([
-            z,
-            torch.randn(
+
+        if self.deterministic:
+            pad_latent = torch.zeros(
                 z.shape[0],
                 pad_size,
                 z.shape[-1],
                 device=z.device,
             )
-        ], 1)
+        else:
+            pad_latent = torch.randn(
+                z.shape[0],
+                pad_size,
+                z.shape[-1],
+                device=z.device,
+            )
+
+        z = torch.cat([z, pad_latent], 1)
 
         if not self.trained_cropped:  # PERFORM PCA AFTER PADDING
             z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
             z = z + self.latent_mean.unsqueeze(-1)
 
-        x = self.decoder(z)
+        x = self.decoder(z, add_noise=not self.deterministic)
 
         if self.pqmf is not None:
             x = self.pqmf.inverse(x)
