@@ -14,6 +14,10 @@ RAVE needs `python 3.9`. Install the dependencies using
 pip install -r requirements.txt
 ```
 
+## Preprocessing
+
+RAVE comes with two command line utilities, `resample` and `duration`. `resample` allows to pre-process (silence removal, loudness normalization) and augment (compression) an entire directory of audio files (.mp3, .aiff, .opus, .wav, .aac). `duration` prints out the total duration of a .wav folder.
+
 ## Training
 
 Both RAVE and the prior model are available in this repo. For most users we recommand to use the `cli_helper.py` script, since it will generate a set of instructions allowing the training and export of both RAVE and the prior model on a specific dataset.
