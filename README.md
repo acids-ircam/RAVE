@@ -57,3 +57,7 @@ RAVE is compatible with the **nn~** max/msp and PureData external.
 ![max_msp_screenshot](docs/maxmsp_screenshot.png)
 
 An audio example of the prior sampling patch is available in the `docs/` folder.
+
+## Discussion
+
+If you have questions, want to share your experience with RAVE or share musical pieces done with the model, you can use the [Discussion tab](https://github.com/acids-ircam/RAVE/discussions) !
