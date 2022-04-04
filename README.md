@@ -2,7 +2,9 @@
 
 # RAVE: Realtime Audio Variational autoEncoder
 
-Official implementation of _RAVE: A variational autoencoder for fast and high-quality neural audio synthesis_ ([article link](https://arxiv.org/abs/2111.05011))
+Official implementation of _RAVE: A variational autoencoder for fast and high-quality neural audio synthesis_ ([article link](https://arxiv.org/abs/2111.05011)) by Antoine Caillon and Philippe Esling.
+
+If you use RAVE as a part of a music performance or installation, be sure to cite either this repository or the article ! 
 
 ## Installation
 
@@ -11,6 +13,10 @@ RAVE needs `python 3.9`. Install the dependencies using
 ```bash
 pip install -r requirements.txt
 ```
+
+## Preprocessing
+
+RAVE comes with two command line utilities, `resample` and `duration`. `resample` allows to pre-process (silence removal, loudness normalization) and augment (compression) an entire directory of audio files (.mp3, .aiff, .opus, .wav, .aac). `duration` prints out the total duration of a .wav folder.
 
 ## Training
 
@@ -34,7 +40,7 @@ You can also export RAVE to a `torchscript` file using `export_rave.py` and use 
 
 ## Realtime usage
 
-**AVAILABLE ON APRIL 2nd**
+**AVAILABLE ON APRIL 4th**
 
 RAVE and the prior model can be used in realtime on live audio streams, allowing creative interactions with both models. **Realtime export is not available yet**, but models trained today **will** be compatible with the realtime interfaces.
 
