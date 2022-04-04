@@ -48,7 +48,7 @@ If you want to use the realtime mode, you should update your dependencies !
 pip install -r requirements.txt
 ```
 
-RAVE and the prior model can be used in realtime on live audio streams, allowing creative interactions with both models. **Realtime export is not available yet**, but models trained today **will** be compatible with the realtime interfaces.
+RAVE and the prior model can be used in realtime on live audio streams, allowing creative interactions with both models.
 
 ### [nn~](https://github.com/acids-ircam/nn_tilde)
 
