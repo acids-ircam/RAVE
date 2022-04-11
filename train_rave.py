@@ -48,7 +48,7 @@ if __name__ == "__main__":
         WAV = None
         SR = 48000
         N_SIGNAL = 65536
-        MAX_STEPS = 2000000
+        MAX_STEPS = 3000000
 
         BATCH = 8
 
