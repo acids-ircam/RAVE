@@ -25,7 +25,7 @@ if __name__ == "__main__":
         BIAS = True
         NO_LATENCY = False
 
-        MIN_KL = 1e-4
+        MIN_KL = 1e-1
         MAX_KL = 1e-1
         CROPPED_LATENT_SIZE = 0
         FEATURE_MATCH = True
