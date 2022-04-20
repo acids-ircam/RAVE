@@ -14,6 +14,8 @@ RAVE needs `python 3.9`. Install the dependencies using
 pip install -r requirements.txt
 ```
 
+Detailed instructions to setup a training station for this project are available [here](docs/training_setup.md).
+
 ## Preprocessing
 
 RAVE comes with two command line utilities, `resample` and `duration`. `resample` allows to pre-process (silence removal, loudness normalization) and augment (compression) an entire directory of audio files (.mp3, .aiff, .opus, .wav, .aac). `duration` prints out the total duration of a .wav folder.
@@ -57,6 +59,12 @@ RAVE is compatible with the **nn~** max/msp and PureData external.
 ![max_msp_screenshot](docs/maxmsp_screenshot.png)
 
 An audio example of the prior sampling patch is available in the `docs/` folder.
+
+### [RAVE vst](https://github.com/acids-ircam/rave_vst)
+
+You can also use RAVE as a VST audio plugin using the RAVE vst !
+
+![plugin_screenshot](https://github.com/acids-ircam/rave_vst/blob/main/assets/rave_screenshot_audio_panel.png?raw=true)
 
 ## Discussion
 
