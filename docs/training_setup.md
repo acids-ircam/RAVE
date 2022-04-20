@@ -5,6 +5,7 @@
 1. You should train on a _CUDA-enabled_ machine (i.e with an nvidia-card)
    - You can use either **Linux** or **Windows**
    - However we advise to use **Linux** if available
+   - Training RAVE without a hardware accelerator (GPU, TPU) will take ages, and is not recommended
 2. Make sure that you have CUDA enabled
    - Go to a terminal an enter `nvidia-smi`
    - If a message appears with the name of your graphic card and the available memory, it's all good !
