@@ -3,7 +3,7 @@ import torch.nn as nn
 from effortless_config import Config
 import logging
 from termcolor import colored
-import cached_conv
+import cached_conv as cc
 
 logging.basicConfig(level=logging.INFO,
                     format=colored("[%(relativeCreated).2f] ", "green") +
@@ -23,13 +23,10 @@ class args(Config):
 
 
 args.parse_args()
-cached_conv.use_buffer_conv(args.CACHED)
+cc.use_buffer_conv(args.CACHED)
 
 from rave.model import RAVE
-from cached_conv import CachedConv1d, CachedConvTranspose1d, AlignBranches
 from rave.resample import Resampling
-from rave.pqmf import CachedPQMF
-
 from rave.core import search_for_run
 
 import numpy as np
@@ -55,6 +52,7 @@ class TraceModel(nn.Module):
             "sampling_rate",
             torch.tensor(self.resample.taget_sr),
         )
+        self.register_buffer("max_batch_size", torch.tensor(cc.MAX_BATCH_SIZE))
 
         self.trained_cropped = bool(pretrained.cropped_latent_size)
         self.deterministic = args.DETERMINISTIC
@@ -223,25 +221,7 @@ y = model.decoder(z)
 if model.pqmf is not None:
     y = model.pqmf.inverse(y)
 
-logging.info("scripting cached modules")
-n_cache = 0
-
-cached_modules = [
-    CachedConv1d,
-    CachedConvTranspose1d,
-    CachedPQMF,
-    AlignBranches,
-]
-
 model.discriminator = None
-
-# for n, m in model.named_modules():
-#     if any(list(map(lambda c: isinstance(m, c),
-#                     cached_modules))) and args.CACHED:
-#         m.script_cache()
-#         n_cache += 1
-
-logging.info(f"{n_cache} cached modules found and scripted")
 
 sr = model.sr
 
@@ -254,10 +234,6 @@ logging.info("build resampling model")
 resample = Resampling(target_sr, sr)
 x = torch.zeros(1, 1, 2**14)
 resample.to_target_sampling_rate(resample.from_target_sampling_rate(x))
-
-if not resample.identity and args.CACHED:
-    resample.upsample.script_cache()
-    resample.downsample.script_cache()
 
 logging.info("script model")
 model = TraceModel(model, resample, args.FIDELITY)
