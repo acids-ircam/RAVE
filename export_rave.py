@@ -52,8 +52,14 @@ class TraceModel(nn.Module):
             "sampling_rate",
             torch.tensor(self.resample.taget_sr),
         )
-        self.register_buffer("max_batch_size", torch.tensor(cc.MAX_BATCH_SIZE))
-
+        try:
+            self.register_buffer("max_batch_size",
+                                 torch.tensor(cc.MAX_BATCH_SIZE))
+        except:
+            print(
+                "You should upgrade cached_conv if you want to use RAVE in batch mode !"
+            )
+            self.register_buffer("max_batch_size", torch.tensor(1))
         self.trained_cropped = bool(pretrained.cropped_latent_size)
         self.deterministic = args.DETERMINISTIC
 
