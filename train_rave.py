@@ -6,7 +6,7 @@ from rave.core import random_phase_mangle, EMAModelCheckPoint
 from rave.core import search_for_run
 
 from udls import SimpleDataset, simple_audio_preprocess
-from effortless_config import Config
+from effortless_config import Config, setting
 import pytorch_lightning as pl
 from os import environ, path
 import numpy as np
@@ -18,12 +18,18 @@ from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
 if __name__ == "__main__":
 
     class args(Config):
+        groups = ["small", "large"]
+
         DATA_SIZE = 16
-        CAPACITY = 64
+        CAPACITY = setting(default=64, small=32, large=64)
         LATENT_SIZE = 128
-        RATIOS = [4, 4, 4, 2]
         BIAS = True
         NO_LATENCY = False
+        RATIOS = setting(
+            default=[4, 4, 4, 2],
+            small=[4, 4, 4, 2],
+            large=[4, 4, 2, 2, 2],
+        )
 
         MIN_KL = 1e-1
         MAX_KL = 1e-1
@@ -40,7 +46,7 @@ if __name__ == "__main__":
         D_MULTIPLIER = 4
         D_N_LAYERS = 4
 
-        WARMUP = 1000000
+        WARMUP = setting(default=1000000, small=1000000, large=3000000)
         MODE = "hinge"
         CKPT = None
 
@@ -48,7 +54,7 @@ if __name__ == "__main__":
         WAV = None
         SR = 48000
         N_SIGNAL = 65536
-        MAX_STEPS = 3000000
+        MAX_STEPS = setting(default=3000000, small=3000000, large=6000000)
 
         BATCH = 8
 
