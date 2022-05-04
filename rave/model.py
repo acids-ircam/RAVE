@@ -487,6 +487,8 @@ class RAVE(pl.LightningModule):
 
         self.feature_match = feature_match
 
+        self.register_buffer("saved_step", torch.tensor(0))
+
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
         gen_p += list(self.decoder.parameters())
@@ -552,6 +554,7 @@ class RAVE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         p = Profiler()
+        self.saved_step += 1
 
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
@@ -704,7 +707,7 @@ class RAVE(pl.LightningModule):
     def validation_epoch_end(self, out):
         audio, z = list(zip(*out))
 
-        if self.global_step > self.warmup:
+        if self.saved_step > self.warmup:
             self.warmed_up = True
 
         # LATENT SPACE ANALYSIS
@@ -728,8 +731,10 @@ class RAVE(pl.LightningModule):
 
             var_percent = [.8, .9, .95, .99]
             for p in var_percent:
-                self.log(f"{p}%_manifold", np.argmax(var > p).astype(np.float32))
+                self.log(f"{p}%_manifold",
+                         np.argmax(var > p).astype(np.float32))
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
-        self.logger.experiment.add_audio("audio_val", y, self.idx, self.sr)
+        self.logger.experiment.add_audio("audio_val", y,
+                                         self.saved_step.item(), self.sr)
         self.idx += 1

@@ -152,9 +152,8 @@ if __name__ == "__main__":
                                             name="rave"),
         gpus=use_gpu,
         callbacks=[validation_checkpoint, last_checkpoint],
-        resume_from_checkpoint=search_for_run(args.CKPT),
         max_epochs=100000,
         max_steps=args.MAX_STEPS,
         **val_check,
     )
-    trainer.fit(model, train, val)
+    trainer.fit(model, train, val, ckpt_path=search_for_run(args.CKPT))
