@@ -106,7 +106,7 @@ if __name__ == "__main__":
         ]),
     )
 
-    val = (2 * len(dataset)) // 100
+    val = max((2 * len(dataset)) // 100, 1)
     train = len(dataset) - val
     train, val = random_split(
         dataset,
