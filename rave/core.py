@@ -173,7 +173,9 @@ def search_for_run(run_path, mode="last"):
     if ".ckpt" in run_path: return run_path
     ckpts = map(str, Path(run_path).rglob("*.ckpt"))
     ckpts = filter(lambda e: mode in e, ckpts)
-    return sorted(ckpts)[-1]
+    ckpts = sorted(ckpts)
+    if len(ckpts): return ckpts[-1]
+    else: return None
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):
