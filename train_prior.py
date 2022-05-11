@@ -72,7 +72,7 @@ dataset = SimpleDataset(
     transforms=lambda x: x.reshape(1, -1),
 )
 
-val = (2 * len(dataset)) // 100
+val = max((2 * len(dataset)) // 100, 1)
 train = len(dataset) - val
 train, val = random_split(dataset, [train, val])
 
