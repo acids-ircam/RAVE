@@ -7,9 +7,7 @@ from random import random
 from scipy.signal import lfilter
 from pytorch_lightning.callbacks import ModelCheckpoint
 import librosa as li
-import math
-from os import path
-from glob import glob
+from pathlib import Path
 
 
 def mod_sigmoid(x):
@@ -68,6 +66,7 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 
 class EMAModelCheckPoint(ModelCheckpoint):
+
     def __init__(self, model: torch.nn.Module, alpha=.999, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -105,6 +104,7 @@ class EMAModelCheckPoint(ModelCheckpoint):
 
 
 class Loudness(nn.Module):
+
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr
@@ -168,31 +168,12 @@ def fft_convolve(signal, kernel):
     return output
 
 
-def search_for_run(run_path):
-    if run_path is None:
-        return None
-
-    if ".ckpt" in run_path:
-        pass
-    elif "checkpoints" in run_path:
-        run_path = path.join(run_path, "*.ckpt")
-        run_path = glob(run_path)
-        run_path = list(filter(lambda e: "last" in e, run_path))[-1]
-    elif "version" in run_path:
-        run_path = path.join(run_path, "checkpoints", "*.ckpt")
-        run_path = glob(run_path)
-        run_path = list(filter(lambda e: "last" in e, run_path))[-1]
-    else:
-        run_path = glob(path.join(run_path, "*"))
-        run_path.sort()
-        if len(run_path):
-            run_path = run_path[-1]
-            run_path = path.join(run_path, "checkpoints", "*.ckpt")
-            run_path = glob(run_path)
-            run_path = list(filter(lambda e: "last" in e, run_path))[-1]
-        else:
-            run_path = None
-    return run_path
+def search_for_run(run_path, mode="last"):
+    if run_path is None: return None
+    if ".ckpt" in run_path: return run_path
+    ckpts = map(str, Path(run_path).rglob("*.ckpt"))
+    ckpts = filter(lambda e: mode in e, ckpts)
+    return sorted(ckpts)[-1]
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):

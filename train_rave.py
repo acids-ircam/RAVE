@@ -156,4 +156,10 @@ if __name__ == "__main__":
         max_steps=args.MAX_STEPS,
         **val_check,
     )
-    trainer.fit(model, train, val, ckpt_path=search_for_run(args.CKPT))
+
+    run = search_for_run(args.CKPT)
+    if run is not None:
+        step = torch.load(run, map_location='cpu')["global_step"]
+        trainer.fit_loop.epoch_loop._batches_that_stepped = step
+
+    trainer.fit(model, train, val, ckpt_path=run)

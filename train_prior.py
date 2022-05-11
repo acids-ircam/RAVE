@@ -114,9 +114,14 @@ trainer = pl.Trainer(
                                         name="prior"),
     gpus=use_gpu,
     callbacks=[validation_checkpoint, last_checkpoint],
-    resume_from_checkpoint=search_for_run(args.CKPT),
     max_epochs=100000,
     max_steps=args.MAX_STEPS,
     **val_check,
 )
-trainer.fit(model, train, val)
+
+run = search_for_run(args.CKPT)
+if run is not None:
+    step = torch.load(run, map_location='cpu')["global_step"]
+    trainer.fit_loop.epoch_loop._batches_that_stepped = step
+
+trainer.fit(model, train, val, ckpt_path=run)
