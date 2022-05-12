@@ -33,6 +33,7 @@ class args(Config):
     BATCH = 8
     CKPT = None
     MAX_STEPS = 10000000
+    VAL_EVERY = 10000
 
     NAME = None
 
@@ -103,10 +104,10 @@ else:
     use_gpu = 0
 
 val_check = {}
-if len(train) >= 10000:
-    val_check["val_check_interval"] = 10000
+if len(train) >= args.VAL_EVERY:
+    val_check["val_check_interval"] = args.VAL_EVERY
 else:
-    nepoch = 10000 // len(train)
+    nepoch = args.VAL_EVERY // len(train)
     val_check["check_val_every_n_epoch"] = nepoch
 
 trainer = pl.Trainer(
