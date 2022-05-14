@@ -90,20 +90,24 @@ if __name__ == "__main__":
     x = torch.zeros(args.BATCH, 2**14)
     model.validation_step(x, 0)
 
+    preprocess = lambda name: simple_audio_preprocess(
+        args.SR,
+        2 * args.N_SIGNAL,
+    )(name).astype(np.float16)
+
     dataset = SimpleDataset(
         args.PREPROCESSED,
         args.WAV,
-        preprocess_function=simple_audio_preprocess(args.SR,
-                                                    2 * args.N_SIGNAL),
+        preprocess_function=preprocess,
         split_set="full",
         transforms=Compose([
+            lambda x: x.astype(np.float32),
             RandomCrop(args.N_SIGNAL),
             RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR),
                 p=.8,
             ),
             Dequantize(16),
-            lambda x: x.astype(np.float32),
         ]),
     )
 
