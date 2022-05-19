@@ -301,6 +301,17 @@ class Encoder(nn.Module):
                     bias=bias,
                     cumulative_delay=net[-3].cumulative_delay,
                 ))
+            net.append(nn.BatchNorm1d(out_dim))
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                cc.Conv1d(
+                    out_dim,
+                    out_dim,
+                    3,
+                    padding=cc.get_padding(3, mode=padding_mode),
+                    bias=bias,
+                    cumulative_delay=net[-3].cumulative_delay,
+                ))
 
         net.append(nn.LeakyReLU(.2))
         net.append(
