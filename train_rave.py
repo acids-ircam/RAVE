@@ -108,6 +108,7 @@ if __name__ == "__main__":
                 p=.8,
             ),
             Dequantize(16),
+            lambda x: x.astype(np.float32),
         ]),
     )
 
