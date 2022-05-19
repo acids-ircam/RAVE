@@ -11,10 +11,12 @@ from einops import rearrange
 
 from time import time
 
-from .blocks import Generator, StackDiscriminators, Encoder
+from .blocks import Generator, Encoder
+from .discriminator import FullDiscriminator
 
 
 class Profiler:
+
     def __init__(self):
         self.ticks = [[time(), None]]
 
@@ -32,6 +34,7 @@ class Profiler:
 
 
 class RAVE(pl.LightningModule):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -86,14 +89,15 @@ class RAVE(pl.LightningModule):
             bias,
         )
 
-        self.discriminator = StackDiscriminators(
-            3,
-            in_size=1,
-            capacity=d_capacity,
-            multiplier=d_multiplier,
-            n_layers=d_n_layers,
+        self.discriminator = FullDiscriminator(
+            capacity,
+            [2, 3, 5, 7, 11],
+            n_scale=3,
+            n_layers=4,
+            scale_kernel_size=15,
+            period_kernel_size=5,
+            stride=4,
         )
-
         self.idx = 0
 
         self.register_buffer("latent_pca", torch.eye(encoder_out_size))
@@ -131,7 +135,7 @@ class RAVE(pl.LightningModule):
         return torch.norm(x - y) / torch.norm(x)
 
     def log_distance(self, x, y):
-        return abs(torch.log(x + 1e-7) - torch.log(y + 1e-7)).mean()
+        return abs(torch.log(x + 1) - torch.log(y + 1)).mean()
 
     def distance(self, x, y):
         scales = [2048, 1024, 512, 256, 128]
@@ -180,6 +184,18 @@ class RAVE(pl.LightningModule):
             raise NotImplementedError
         return loss_dis, loss_gen
 
+    def split_features(self, features):
+        feature_true = []
+        feature_fake = []
+        for scale in features:
+            true, fake = zip(*map(
+                lambda x: torch.split(x, x.shape[0] // 2, 0),
+                scale,
+            ))
+            feature_true.append(true)
+            feature_fake.append(fake)
+        return feature_true, feature_fake
+
     def training_step(self, batch, batch_idx):
         p = Profiler()
         self.saved_step += 1
@@ -224,8 +240,9 @@ class RAVE(pl.LightningModule):
 
         feature_matching_distance = 0.
         if self.warmed_up:  # DISCRIMINATION
-            feature_true = self.discriminator(x)
-            feature_fake = self.discriminator(y)
+            xy = torch.cat([x, y], 0)
+            features = self.discriminator(xy)
+            feature_true, feature_fake = self.split_features(features)
 
             loss_dis = 0
             loss_adv = 0
