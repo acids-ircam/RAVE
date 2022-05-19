@@ -24,58 +24,104 @@ class Residual(nn.Module):
         return x_net + x_res
 
 
-class ResidualStack(nn.Module):
+class ResidualLayer(nn.Module):
     def __init__(self,
                  dim,
                  kernel_size,
+                 dilations,
                  padding_mode,
                  cumulative_delay=0,
                  bias=False):
         super().__init__()
         net = []
-
-        res_cum_delay = 0
-        # SEQUENTIAL RESIDUALS
-        for i in range(3):
-            # RESIDUAL BLOCK
-            seq = [nn.LeakyReLU(.2)]
-            seq.append(
-                wn(
-                    cc.Conv1d(
-                        dim,
-                        dim,
-                        kernel_size,
-                        padding=cc.get_padding(
-                            kernel_size,
-                            dilation=3**i,
-                            mode=padding_mode,
-                        ),
-                        dilation=3**i,
-                        bias=bias,
-                    )))
-
-            seq.append(nn.LeakyReLU(.2))
-            seq.append(
-                wn(
-                    cc.Conv1d(
-                        dim,
-                        dim,
-                        kernel_size,
-                        padding=cc.get_padding(kernel_size, mode=padding_mode),
-                        bias=bias,
-                        cumulative_delay=seq[-2].cumulative_delay,
-                    )))
-
-            res_net = cc.CachedSequential(*seq)
-
-            net.append(Residual(res_net, cumulative_delay=res_cum_delay))
-            res_cum_delay = net[-1].cumulative_delay
-
-        self.net = cc.CachedSequential(*net)
-        self.cumulative_delay = self.net.cumulative_delay + cumulative_delay
+        cd = 0
+        for d in dilations:
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                cc.Conv1d(
+                    dim,
+                    dim,
+                    kernel_size,
+                    dilation=d,
+                    padding=cc.get_padding(kernel_size,
+                                           dilation=d,
+                                           mode=padding_mode),
+                    bias=bias,
+                    cumulative_delay=cd,
+                ))
+            cd = net[-1].cumulative_delay
+        self.net = Residual(
+            cc.CachedSequential(*net),
+            cumulative_delay=cumulative_delay,
+        )
+        self.cumulative_delay = self.net.cumulative_delay
 
     def forward(self, x):
         return self.net(x)
+
+
+class ResidualBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+        kernel_size,
+        dilations_list,
+        padding_mode,
+        cumulative_delay=0,
+        bias=False,
+    ) -> None:
+        super().__init__()
+        layers = []
+        cd = 0
+
+        for dilations in dilations_list:
+            layers.append(
+                ResidualLayer(
+                    dim,
+                    kernel_size,
+                    dilations,
+                    padding_mode,
+                    bias=bias,
+                    cumulative_delay=cd,
+                ))
+            cd = layers[-1].cumulative_delay
+
+        self.net = cc.CachedSequential(
+            *layers,
+            cumulative_delay=cumulative_delay,
+        )
+        self.cumulative_delay = self.net.cumulative_delay
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class ResidualStack(nn.Module):
+    def __init__(
+        self,
+        dim,
+        kernel_sizes,
+        dilations_list,
+        padding_mode,
+        cumulative_delay=0,
+        bias=False,
+    ) -> None:
+        super().__init__()
+        blocks = []
+        for k in kernel_sizes:
+            blocks.append(
+                ResidualBlock(
+                    dim,
+                    k,
+                    dilations_list,
+                    padding_mode,
+                    bias=bias,
+                ))
+        self.net = cc.AlignBranches(*blocks, cumulative_delay=cumulative_delay)
+        self.cumulative_delay = self.net.cumulative_delay
+
+    def forward(self, x):
+        return sum(self.net(x))
 
 
 class UpsampleLayer(nn.Module):
@@ -199,9 +245,11 @@ class Generator(nn.Module):
             net.append(
                 ResidualStack(
                     out_dim,
-                    3,
+                    [3, 5, 7],
+                    [[1, 1], [3, 1], [5, 1]],
                     padding_mode,
                     cumulative_delay=net[-1].cumulative_delay,
+                    bias=bias,
                 ))
 
         self.net = cc.CachedSequential(*net)
