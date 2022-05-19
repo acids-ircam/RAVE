@@ -8,7 +8,7 @@ from termcolor import colored
 
 import math
 
-from cached_conv import use_buffer_conv
+from cached_conv import use_cached_conv
 
 logging.basicConfig(level=logging.INFO,
                     format=colored("[%(relativeCreated).2f] ", "green") +
@@ -23,7 +23,7 @@ class args(Config):
 
 
 args.parse_args()
-use_buffer_conv(True)
+use_cached_conv(True)
 
 import cached_conv as cc
 from prior.model import Model
@@ -31,7 +31,6 @@ from rave.core import search_for_run
 
 
 class TraceModel(nn.Module):
-
     def __init__(self, pretrained: Model):
         super().__init__()
         data_size = pretrained.data_size

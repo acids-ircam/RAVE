@@ -23,7 +23,7 @@ class args(Config):
 
 
 args.parse_args()
-cc.use_buffer_conv(args.CACHED)
+cc.use_cached_conv(args.CACHED)
 
 from rave.model import RAVE
 from rave.resample import Resampling
