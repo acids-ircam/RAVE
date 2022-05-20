@@ -69,3 +69,13 @@ You can also use RAVE as a VST audio plugin using the RAVE vst !
 ## Discussion
 
 If you have questions, want to share your experience with RAVE or share musical pieces done with the model, you can use the [Discussion tab](https://github.com/acids-ircam/RAVE/discussions) !
+
+## Demonstation
+
+### RAVE x nn~
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/dMZs04TzxUI" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+### embedded RAVE
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/jAIRf4nGgYI" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
