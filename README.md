@@ -74,8 +74,13 @@ If you have questions, want to share your experience with RAVE or share musical 
 
 ### RAVE x nn~
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/dMZs04TzxUI" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+Demonstration of what you can do with RAVE and the nn~ external for maxmsp !
+
+[![RAVE x nn~](http://img.youtube.com/vi/dMZs04TzxUI/mqdefault.jpg)](https://www.youtube.com/watch?v=dMZs04TzxUI)
 
 ### embedded RAVE
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/jAIRf4nGgYI" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
+
+
+[![RAVE x nn~](http://img.youtube.com/vi/jAIRf4nGgYI/mqdefault.jpg)](https://www.youtube.com/watch?v=jAIRf4nGgYI)
