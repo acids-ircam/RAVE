@@ -21,7 +21,7 @@ if __name__ == "__main__":
         groups = ["small", "large"]
 
         DATA_SIZE = 16
-        CAPACITY = setting(default=64, small=32, large=64)
+        CAPACITY = setting(default=32, small=16, large=64)
         LATENT_SIZE = 128
         BIAS = True
         NO_LATENCY = False
@@ -35,6 +35,8 @@ if __name__ == "__main__":
         MAX_KL = 1e-1
         CROPPED_LATENT_SIZE = 0
         FEATURE_MATCH = True
+
+        REGULARIZATION = "kl"
 
         LOUD_STRIDE = 1
 
@@ -78,6 +80,7 @@ if __name__ == "__main__":
         max_kl=args.MAX_KL,
         cropped_latent_size=args.CROPPED_LATENT_SIZE,
         feature_match=args.FEATURE_MATCH,
+        regularization=args.REGULARIZATION,
     )
 
     x = torch.zeros(args.BATCH, 2**14)

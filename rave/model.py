@@ -47,14 +47,15 @@ class RAVE(pl.LightningModule):
 
         self.loudness = Loudness(sr, 512)
 
-        encoder_out_size = cropped_latent_size if cropped_latent_size else latent_size
+        if not cropped_latent_size: cropped_latent_size = latent_size
+        encoder_out_size = cropped_latent_size
 
         if regularization == "kl":
-            encoder_out_size *= 2
+            encoder_out_size = 2 * encoder_out_size
 
         self.encoder = Encoder(
             data_size,
-            capacity,
+            2 * capacity,
             encoder_out_size,
             ratios,
             "causal" if no_latency else "centered",
@@ -84,9 +85,9 @@ class RAVE(pl.LightningModule):
         )
         self.idx = 0
 
-        self.register_buffer("latent_pca", torch.eye(encoder_out_size))
-        self.register_buffer("latent_mean", torch.zeros(encoder_out_size))
-        self.register_buffer("fidelity", torch.zeros(encoder_out_size))
+        self.register_buffer("latent_pca", torch.eye(cropped_latent_size))
+        self.register_buffer("latent_mean", torch.zeros(cropped_latent_size))
+        self.register_buffer("fidelity", torch.zeros(cropped_latent_size))
 
         self.latent_size = latent_size
 
@@ -329,9 +330,9 @@ class RAVE(pl.LightningModule):
         if self.pqmf is not None:
             x = self.pqmf(x)
 
+        z = self.encoder(x)
         if self.regularization == "kl":
-            z = self.encoder(x)
-            mean = z.chunk(2, 1)[0]
+            mean = torch.split(z, z.shape[1] // 2, 1)[0]
         else:
             mean = None
 
@@ -346,12 +347,10 @@ class RAVE(pl.LightningModule):
 
         if self.trainer is not None:
             self.log("validation", distance)
-
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
         audio, z = list(zip(*out))
-
         if self.saved_step > self.warmup:
             self.warmed_up = True
 
