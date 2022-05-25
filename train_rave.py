@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader, random_split
 
 from rave.model import RAVE
-from rave.core import random_phase_mangle, EMAModelCheckPoint
+from rave.core import random_phase_mangle
 from rave.core import search_for_run
 
 from udls import SimpleDataset, simple_audio_preprocess
@@ -42,10 +42,6 @@ if __name__ == "__main__":
         NOISE_RATIOS = [4, 4, 4]
         NOISE_BANDS = 5
 
-        D_CAPACITY = 16
-        D_MULTIPLIER = 4
-        D_N_LAYERS = 4
-
         WARMUP = setting(default=1000000, small=1000000, large=3000000)
         MODE = "hinge"
         CKPT = None
@@ -74,9 +70,6 @@ if __name__ == "__main__":
         use_noise=args.USE_NOISE,
         noise_ratios=args.NOISE_RATIOS,
         noise_bands=args.NOISE_BANDS,
-        d_capacity=args.D_CAPACITY,
-        d_multiplier=args.D_MULTIPLIER,
-        d_n_layers=args.D_N_LAYERS,
         warmup=args.WARMUP,
         mode=args.MODE,
         no_latency=args.NO_LATENCY,

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.utils.weight_norm as wn
 import numpy as np
 import pytorch_lightning as pl
 from .core import multiscale_stft, Loudness
@@ -9,28 +8,10 @@ from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-from time import time
+from vector_quantize_pytorch import ResidualVQ
 
 from .blocks import Generator, Encoder
 from .discriminator import FullDiscriminator
-
-
-class Profiler:
-
-    def __init__(self):
-        self.ticks = [[time(), None]]
-
-    def tick(self, msg):
-        self.ticks.append([time(), msg])
-
-    def __repr__(self):
-        rep = 80 * "=" + "\n"
-        for i in range(1, len(self.ticks)):
-            msg = self.ticks[i][1]
-            ellapsed = self.ticks[i][0] - self.ticks[i - 1][0]
-            rep += msg + f": {ellapsed*1000:.2f}ms\n"
-        rep += 80 * "=" + "\n\n\n"
-        return rep
 
 
 class RAVE(pl.LightningModule):
@@ -45,9 +26,6 @@ class RAVE(pl.LightningModule):
                  use_noise,
                  noise_ratios,
                  noise_bands,
-                 d_capacity,
-                 d_multiplier,
-                 d_n_layers,
                  warmup,
                  mode,
                  no_latency=False,
@@ -55,6 +33,9 @@ class RAVE(pl.LightningModule):
                  max_kl=5e-1,
                  cropped_latent_size=0,
                  feature_match=True,
+                 regularization="kl",
+                 num_quantizers=2,
+                 codebook_size=1024,
                  sr=24000):
         super().__init__()
         self.save_hyperparameters()
@@ -67,6 +48,9 @@ class RAVE(pl.LightningModule):
         self.loudness = Loudness(sr, 512)
 
         encoder_out_size = cropped_latent_size if cropped_latent_size else latent_size
+
+        if regularization == "kl":
+            encoder_out_size *= 2
 
         self.encoder = Encoder(
             data_size,
@@ -118,6 +102,16 @@ class RAVE(pl.LightningModule):
         self.cropped_latent_size = cropped_latent_size
 
         self.feature_match = feature_match
+        self.regularization = regularization
+
+        if regularization == "vq":
+            self.rvq = ResidualVQ(
+                dim=encoder_out_size,
+                num_quantizers=num_quantizers,
+                codebook_size=codebook_size,
+            )
+        else:
+            self.rvq = None
 
         self.register_buffer("saved_step", torch.tensor(0))
 
@@ -147,7 +141,8 @@ class RAVE(pl.LightningModule):
 
         return lin + log
 
-    def reparametrize(self, mean, scale):
+    def reparametrize_kl(self, z: torch.Tensor):
+        mean, scale = z.chunk(2, 1)
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
         logvar = torch.log(var)
@@ -164,6 +159,17 @@ class RAVE(pl.LightningModule):
             ).to(z.device)
             z = torch.cat([z, noise], 1)
         return z, kl
+
+    def reparametrize_vq(self, z):
+        q, _, commmitment = self.rvq(z.transpose(-1, -2))
+        q = q.transpose(-1, -2)
+        return q, commmitment.mean()
+
+    def reparametrize(self, z):
+        if self.regularization == "kl":
+            return self.reparametrize_kl(z)
+        else:
+            return self.reparametrize_vq(z)
 
     def adversarial_combine(self, score_real, score_fake, mode="hinge"):
         if mode == "hinge":
@@ -197,7 +203,6 @@ class RAVE(pl.LightningModule):
         return feature_true, feature_fake
 
     def training_step(self, batch, batch_idx):
-        p = Profiler()
         self.saved_step += 1
 
         gen_opt, dis_opt = self.optimizers()
@@ -205,38 +210,34 @@ class RAVE(pl.LightningModule):
 
         if self.pqmf is not None:  # MULTIBAND DECOMPOSITION
             x = self.pqmf(x)
-            p.tick("pqmf")
 
         if self.warmed_up:  # EVAL ENCODER
             self.encoder.eval()
+            if self.rvq is not None:
+                self.rvq.eval()
 
         # ENCODE INPUT
-        z, kl = self.reparametrize(*self.encoder(x))
-        p.tick("encode")
+        z, reg = self.reparametrize(self.encoder(x))
 
         if self.warmed_up:  # FREEZE ENCODER
             z = z.detach()
-            kl = kl.detach()
+            reg = reg.detach()
 
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
-        p.tick("decode")
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distance = self.distance(x, y)
-        p.tick("mb distance")
 
         if self.pqmf is not None:  # FULL BAND RECOMPOSITION
             x = self.pqmf.inverse(x)
             y = self.pqmf.inverse(y)
             distance = distance + self.distance(x, y)
-            p.tick("fb distance")
 
         loud_x = self.loudness(x)
         loud_y = self.loudness(y)
         loud_dist = (loud_x - loud_y).pow(2).mean()
         distance = distance + loud_dist
-        p.tick("loudness distance")
 
         feature_matching_distance = 0.
         if self.warmed_up:  # DISCRIMINATION
@@ -284,13 +285,12 @@ class RAVE(pl.LightningModule):
             min_beta=self.min_kl,
             max_beta=self.max_kl,
         )
-        loss_gen = distance + loss_adv + beta * kl
+        loss_gen = distance + loss_adv + beta * reg
         if self.feature_match:
             loss_gen = loss_gen + feature_matching_distance
-        p.tick("gen loss compose")
 
         # OPTIMIZATION
-        if self.global_step % 2 and self.warmed_up:
+        if self.saved_step % 2 and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
@@ -298,28 +298,23 @@ class RAVE(pl.LightningModule):
             gen_opt.zero_grad()
             loss_gen.backward()
             gen_opt.step()
-        p.tick("optimization")
 
         # LOGGING
         self.log("loss_dis", loss_dis)
         self.log("loss_gen", loss_gen)
         self.log("loud_dist", loud_dist)
-        self.log("regularization", kl)
+        self.log("regularization", reg)
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
         self.log("distance", distance)
         self.log("beta", beta)
         self.log("feature_matching", feature_matching_distance)
-        p.tick("log")
-
-        # print(p)
 
     def encode(self, x):
         if self.pqmf is not None:
             x = self.pqmf(x)
 
-        mean, scale = self.encoder(x)
-        z, _ = self.reparametrize(mean, scale)
+        z, _ = self.reparametrize(self.encoder(x))
         return z
 
     def decode(self, z):
@@ -334,8 +329,13 @@ class RAVE(pl.LightningModule):
         if self.pqmf is not None:
             x = self.pqmf(x)
 
-        mean, scale = self.encoder(x)
-        z, _ = self.reparametrize(mean, scale)
+        if self.regularization == "kl":
+            z = self.encoder(x)
+            mean = z.chunk(2, 1)[0]
+        else:
+            mean = None
+
+        z, _ = self.reparametrize(z)
         y = self.decoder(z, add_noise=self.warmed_up)
 
         if self.pqmf is not None:
@@ -356,7 +356,7 @@ class RAVE(pl.LightningModule):
             self.warmed_up = True
 
         # LATENT SPACE ANALYSIS
-        if not self.warmed_up:
+        if not self.warmed_up and self.regularization == "kl":
             z = torch.cat(z, 0)
             z = rearrange(z, "b c t -> (b t) c")
 
@@ -376,8 +376,10 @@ class RAVE(pl.LightningModule):
 
             var_percent = [.8, .9, .95, .99]
             for p in var_percent:
-                self.log(f"{p}%_manifold",
-                         np.argmax(var > p).astype(np.float32))
+                self.log(
+                    f"fidelity_{p}",
+                    np.argmax(var > p).astype(np.float32),
+                )
 
         y = torch.cat(audio, 0)[:64].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y,

@@ -9,6 +9,7 @@ import cached_conv as cc
 
 
 class Residual(nn.Module):
+
     def __init__(self, module, cumulative_delay=0):
         super().__init__()
         additional_delay = module.cumulative_delay
@@ -25,6 +26,7 @@ class Residual(nn.Module):
 
 
 class ResidualLayer(nn.Module):
+
     def __init__(self,
                  dim,
                  kernel_size,
@@ -61,6 +63,7 @@ class ResidualLayer(nn.Module):
 
 
 class ResidualBlock(nn.Module):
+
     def __init__(
         self,
         dim,
@@ -97,6 +100,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResidualStack(nn.Module):
+
     def __init__(
         self,
         dim,
@@ -125,6 +129,7 @@ class ResidualStack(nn.Module):
 
 
 class UpsampleLayer(nn.Module):
+
     def __init__(self,
                  in_dim,
                  out_dim,
@@ -164,6 +169,7 @@ class UpsampleLayer(nn.Module):
 
 
 class NoiseGenerator(nn.Module):
+
     def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
         super().__init__()
         net = []
@@ -207,6 +213,7 @@ class NoiseGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+
     def __init__(self,
                  latent_size,
                  capacity,
@@ -317,6 +324,7 @@ class Generator(nn.Module):
 
 
 class Encoder(nn.Module):
+
     def __init__(self,
                  data_size,
                  capacity,
@@ -365,7 +373,7 @@ class Encoder(nn.Module):
         net.append(
             cc.Conv1d(
                 out_dim,
-                2 * latent_size,
+                latent_size,
                 5,
                 padding=cc.get_padding(5, mode=padding_mode),
                 groups=2,
@@ -378,4 +386,4 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         z = self.net(x)
-        return torch.split(z, z.shape[1] // 2, 1)
+        return z

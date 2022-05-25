@@ -1,18 +1,12 @@
-# %%
-from rave.blocks import ResidualStack
-import torch
-import cached_conv as cc
+#%%
+from rave.core import leaf_apply
 
-rs = ResidualStack(16, [3, 5, 7], [[1, 1], [3, 1], [5, 1]], "centered")
 
-x = torch.randn(1, 16, 128)
-rs(x).shape
+def fun(x):
+    return 2 * x
 
-cc.test_equal(
-    lambda: ResidualStack(16, [3, 5, 7], [[1, 1], [3, 1], [5, 1]], "centered"),
-    x,
-)
 
-# %%
-ResidualStack(16, [3, 5, 7], [[1, 1], [3, 1], [5, 1]], "centered")
+tree = [1, [2, 3], [[[3, 4, 5], 5]]]
+
+leaf_apply(fun, tree)
 # %%
