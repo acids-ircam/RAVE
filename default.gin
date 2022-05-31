@@ -1,3 +1,5 @@
+# RAVE CONFIGURATION
+
 sampling_rate = 44100
 capacity = 64
 n_band = 16
@@ -5,9 +7,40 @@ latent_size = 128
 ratios = [4, 4, 4, 2]
 phase_1_duration = 1000000
 
+# GENERAL CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
 cc.get_padding.mode = "centered"
+
+# PQMF
+CachedPQMF.attenuation = 100
+CachedPQMF.n_band = %n_band
+
+# ENCODER
+ResidualVQ.dim = %latent_size
+ResidualVQ.num_quantizers = 2
+ResidualVQ.codebook_size = 1024
+
+Encoder.data_size = %n_band
+Encoder.capacity = %capacity
+Encoder.latent_size = %latent_size
+Encoder.ratios = %ratios
+variational/Encoder.n_out = 2
+discrete/Encoder.n_out = 1
+
+VariationalEncoder.encoder = @variational/Encoder
+VariationalEncoder.beta = .1
+
+DiscreteEncoder.encoder = @discrete/Encoder
+DiscreteEncoder.beta = .1
+
+# GENERATOR
+Generator.latent_size = %latent_size
+Generator.capacity = %capacity
+Generator.data_size = %n_band
+Generator.ratios = %ratios
+Generator.loud_stride = 1
+Generator.use_noise = True
 
 ResidualStack.kernel_sizes = [3, 5, 7]
 ResidualStack.dilations_list = [[1, 1], [3, 1], [5, 1]]
@@ -28,6 +61,9 @@ ConvNet.out_size = 1
 ConvNet.capacity = %capacity
 ConvNet.n_layers = 4
 ConvNet.stride = 4
+scales/ConvNet.conv = @torch.nn.Conv1d
+periods/ConvNet.conv = @torch.nn.Conv2d
+
 scales/ConvNet.kernel_size = 15
 periods/ConvNet.kernel_size = 5
 
@@ -37,33 +73,7 @@ MultiScaleDiscriminator.convnet = @scales/ConvNet
 MultiPeriodDiscriminator.periods = [2, 3, 5, 7, 11]
 MultiPeriodDiscriminator.convnet = @periods/ConvNet
 
-CachedPQMF.attenuation = 100
-CachedPQMF.n_band = %n_band
-
-ResidualVQ.dim = %latent_size
-ResidualVQ.num_quantizers = 2
-ResidualVQ.codebook_size = 1024
-
-Generator.latent_size = %latent_size
-Generator.capacity = %capacity
-Generator.data_size = %n_band
-Generator.ratios = %ratios
-Generator.loud_stride = 1
-Generator.use_noise = True
-
-Encoder.data_size = %n_band
-Encoder.capacity = %capacity
-Encoder.latent_size = %latent_size
-Encoder.ratios = %ratios
-variational/Encoder.n_out = 2
-discrete/Encoder.n_out = 1
-
-VariationalEncoder.encoder = @variational/Encoder
-VariationalEncoder.beta = .1
-
-DiscreteEncoder.encoder = @discrete/Encoder
-DiscreteEncoder.beta = .1
-
+# RAVE
 RAVE.latent_size = %latent_size
 RAVE.pqmf = @CachedPQMF
 RAVE.sampling_rate = %sampling_rate
