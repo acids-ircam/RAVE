@@ -1,3 +1,5 @@
+sampling_rate = 44100
+
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
 cc.get_padding.mode = "centered"
@@ -7,3 +9,11 @@ ResidualStack.dilations_list = [[1, 1], [3, 1], [5, 1]]
 
 NoiseGenerator.ratios = [4, 4, 4]
 NoiseGenerator.noise_bands = 5
+
+multiscale_stft.scales = [2048, 1024, 512, 256, 128]
+multiscale_stft.overlap = .75
+
+Loudness.sr = %sampling_rate
+Loudness.block_size = 512
+Loudness.n_fft = 2048
+

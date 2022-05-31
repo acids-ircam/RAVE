@@ -1,4 +1,3 @@
-from functools import partial
 import torch
 import torch.nn as nn
 import torch.fft as fft
@@ -9,12 +8,14 @@ from scipy.signal import lfilter
 from pytorch_lightning.callbacks import ModelCheckpoint
 import librosa as li
 from pathlib import Path
+import gin
 
 
 def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
 
+@gin.configurable
 def multiscale_stft(signal, scales, overlap):
     """
     Compute a stft on several scales, with a constant overlap value.
@@ -104,6 +105,7 @@ class EMAModelCheckPoint(ModelCheckpoint):
         self.swap()
 
 
+@gin.configurable
 class Loudness(nn.Module):
 
     def __init__(self, sr, block_size, n_fft=2048):
