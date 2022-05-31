@@ -2,6 +2,8 @@ sampling_rate = 44100
 capacity = 64
 n_band = 16
 latent_size = 128
+ratios = [4, 4, 4, 2]
+phase_1_duration = 1000000
 
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
@@ -20,28 +22,20 @@ Loudness.sr = %sampling_rate
 Loudness.block_size = 512
 Loudness.n_fft = 2048
 
-ConvNet1d.in_size = 1
-ConvNet1d.out_size = 1
-ConvNet1d.capacity = %capacity
-ConvNet1d.n_layers = 4
-ConvNet1d.kernel_size = 15
-ConvNet1d.stride = 4
-
-ConvNet2d.in_size = 1
-ConvNet2d.out_size = 1
-ConvNet2d.capacity = %capacity
-ConvNet2d.n_layers = 4
-ConvNet2d.kernel_size = 5
-ConvNet2d.stride = 4
+# DISCRIMINATOR
+ConvNet.in_size = 1
+ConvNet.out_size = 1
+ConvNet.capacity = %capacity
+ConvNet.n_layers = 4
+ConvNet.stride = 4
+scales/ConvNet.kernel_size = 15
+periods/ConvNet.kernel_size = 5
 
 MultiScaleDiscriminator.n_discriminators = 3
-MultiScaleDiscriminator.convnet = @discriminator.ConvNet1d
+MultiScaleDiscriminator.convnet = @scales/ConvNet
 
 MultiPeriodDiscriminator.periods = [2, 3, 5, 7, 11]
-MultiPeriodDiscriminator.convnet = @discriminator.ConvNet2d
-
-FullDiscriminator.mpd = @MultiPeriodDiscriminator
-FullDiscriminator.msd = @MultiScaleDiscriminator
+MultiPeriodDiscriminator.convnet = @periods/ConvNet
 
 CachedPQMF.attenuation = 100
 CachedPQMF.n_band = %n_band
@@ -49,3 +43,33 @@ CachedPQMF.n_band = %n_band
 ResidualVQ.dim = %latent_size
 ResidualVQ.num_quantizers = 2
 ResidualVQ.codebook_size = 1024
+
+Generator.latent_size = %latent_size
+Generator.capacity = %capacity
+Generator.data_size = %n_band
+Generator.ratios = %ratios
+Generator.loud_stride = 1
+Generator.use_noise = True
+
+Encoder.data_size = %n_band
+Encoder.capacity = %capacity
+Encoder.latent_size = %latent_size
+Encoder.ratios = %ratios
+variational/Encoder.n_out = 2
+discrete/Encoder.n_out = 1
+
+VariationalEncoder.encoder = @variational/Encoder
+VariationalEncoder.beta = .1
+
+DiscreteEncoder.encoder = @discrete/Encoder
+DiscreteEncoder.beta = .1
+
+RAVE.latent_size = %latent_size
+RAVE.pqmf = @CachedPQMF
+RAVE.sampling_rate = %sampling_rate
+RAVE.loudness = @Loudness
+RAVE.encoder = @VariationalEncoder
+RAVE.decoder = @Generator
+RAVE.discriminator = @FullDiscriminator
+RAVE.phase_1_duration = %phase_1_duration
+RAVE.gan_loss = @nonsaturating_gan

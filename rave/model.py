@@ -1,15 +1,11 @@
 import torch
-import torch.nn as nn
 import numpy as np
 import pytorch_lightning as pl
-from .core import multiscale_stft, Loudness
-from .core import get_beta_kl_cyclic_annealed
-from .pqmf import CachedPQMF as PQMF
+from .core import multiscale_stft
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-from .blocks import Generator, Encoder
-from .discriminator import FullDiscriminator
+from .blocks import VariationalEncoder, DiscreteEncoder
 
 import gin
 
@@ -18,7 +14,7 @@ import gin
 class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
-                 decoder, discriminator, phase_1_duration):
+                 decoder, discriminator, phase_1_duration, gan_loss):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -26,6 +22,8 @@ class RAVE(pl.LightningModule):
         self.encoder = encoder()
         self.decoder = decoder()
         self.discriminator = discriminator()
+
+        self.gan_loss = gan_loss
 
         self.idx = 0
 
@@ -60,39 +58,13 @@ class RAVE(pl.LightningModule):
         return abs(torch.log(x + 1) - torch.log(y + 1)).mean()
 
     def distance(self, x, y):
-        scales = [2048, 1024, 512, 256, 128]
-        x = multiscale_stft(x, scales, .75)
-        y = multiscale_stft(y, scales, .75)
+        x = multiscale_stft(x)
+        y = multiscale_stft(y)
 
         lin = sum(list(map(self.lin_distance, x, y)))
         log = sum(list(map(self.log_distance, x, y)))
 
         return lin + log
-
-    def reparametrize(self, z):
-        if self.regularization == "kl":
-            return self.reparametrize_kl(z)
-        else:
-            return self.reparametrize_vq(z)
-
-    def adversarial_combine(self, score_real, score_fake, mode="hinge"):
-        if mode == "hinge":
-            loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
-            loss_dis = loss_dis.mean()
-            loss_gen = -score_fake.mean()
-        elif mode == "square":
-            loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
-            loss_dis = loss_dis.mean()
-            loss_gen = (score_fake - 1).pow(2).mean()
-        elif mode == "nonsaturating":
-            score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
-            score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
-            loss_dis = -(torch.log(score_real) +
-                         torch.log(1 - score_fake)).mean()
-            loss_gen = -torch.log(score_fake).mean()
-        else:
-            raise NotImplementedError
-        return loss_dis, loss_gen
 
     def split_features(self, features):
         feature_true = []
@@ -113,20 +85,11 @@ class RAVE(pl.LightningModule):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
 
-        if self.pqmf is not None:  # MULTIBAND DECOMPOSITION
-            x = self.pqmf(x)
-
         if self.warmed_up:  # EVAL ENCODER
-            self.encoder.eval()
-            if self.rvq is not None:
-                self.rvq.eval()
+            self.encoder.set_warmed_up(True)
 
         # ENCODE INPUT
-        z, reg = self.reparametrize(self.encoder(x))
-
-        # if self.warmed_up:  # FREEZE ENCODER
-        #     z = z.detach()
-        #     reg = reg.detach()
+        z, reg = self.encoder.reparametrize(self.encoder(x))[:2]
 
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
@@ -164,11 +127,7 @@ class RAVE(pl.LightningModule):
                         scale_fake,
                     )) / len(scale_true)
 
-                _dis, _adv = self.adversarial_combine(
-                    scale_true[-1],
-                    scale_fake[-1],
-                    mode=self.mode,
-                )
+                _dis, _adv = self.gan_loss(scale_true[-1], scale_fake[-1])
 
                 pred_true = pred_true + scale_true[-1].mean()
                 pred_fake = pred_fake + scale_fake[-1].mean()
@@ -183,14 +142,8 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        beta = get_beta_kl_cyclic_annealed(
-            step=self.global_step,
-            cycle_size=5e4,
-            warmup=self.warmup // 2,
-            min_beta=self.min_kl,
-            max_beta=self.max_kl,
-        )
-        loss_gen = distance + loss_adv + beta * reg
+        loss_gen = distance + loss_adv + reg
+
         if self.feature_match:
             loss_gen = loss_gen + feature_matching_distance
 
@@ -212,40 +165,33 @@ class RAVE(pl.LightningModule):
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
         self.log("distance", distance)
-        self.log("beta", beta)
         self.log("feature_matching", feature_matching_distance)
 
     def encode(self, x):
-        if self.pqmf is not None:
-            x = self.pqmf(x)
-
-        z, _ = self.reparametrize(self.encoder(x))
+        x = self.pqmf(x)
+        z, _ = self.encoder.reparametrize(self.encoder(x))[:2]
         return z
 
     def decode(self, z):
         y = self.decoder(z, add_noise=True)
-        if self.pqmf is not None:
-            y = self.pqmf.inverse(y)
+        y = self.pqmf.inverse(y)
         return y
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)
-
-        if self.pqmf is not None:
-            x = self.pqmf(x)
-
+        x = self.pqmf(x)
         z = self.encoder(x)
-        if self.regularization == "kl":
+
+        if isinstance(self.encoder, VariationalEncoder):
             mean = torch.split(z, z.shape[1] // 2, 1)[0]
         else:
             mean = None
 
-        z, _ = self.reparametrize(z)
+        z = self.reparametrize(z)[0]
         y = self.decoder(z, add_noise=self.warmed_up)
 
-        if self.pqmf is not None:
-            x = self.pqmf.inverse(x)
-            y = self.pqmf.inverse(y)
+        x = self.pqmf.inverse(x)
+        y = self.pqmf.inverse(y)
 
         distance = self.distance(x, y)
 
@@ -260,7 +206,7 @@ class RAVE(pl.LightningModule):
             self.warmed_up = True
 
         # LATENT SPACE ANALYSIS
-        if not self.warmed_up and self.regularization == "kl":
+        if not self.warmed_up and isinstance(self.encoder, VariationalEncoder):
             z = torch.cat(z, 0)
             z = rearrange(z, "b c t -> (b t) c")
 

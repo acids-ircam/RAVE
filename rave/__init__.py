@@ -6,3 +6,6 @@ cc.Conv1d = gin.external_configurable(cc.Conv1d, module="cc")
 cc.ConvTranspose1d = gin.external_configurable(cc.ConvTranspose1d, module="cc")
 
 from .model import RAVE
+from .blocks import *
+from .discriminator import *
+from .pqmf import *

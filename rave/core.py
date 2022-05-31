@@ -197,3 +197,28 @@ def get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta):
 def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
     min_beta = get_beta_kl(step, warmup, min_beta, max_beta)
     return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
+
+
+@gin.register
+def hinge_gan(score_real, score_fake):
+    loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
+    loss_dis = loss_dis.mean()
+    loss_gen = -score_fake.mean()
+    return loss_dis, loss_gen
+
+
+@gin.register
+def ls_gan(score_real, score_fake):
+    loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
+    loss_dis = loss_dis.mean()
+    loss_gen = (score_fake - 1).pow(2).mean()
+    return loss_dis, loss_gen
+
+
+@gin.register
+def nonsaturating_gan(score_real, score_fake):
+    score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
+    score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
+    loss_dis = -(torch.log(score_real) + torch.log(1 - score_fake)).mean()
+    loss_gen = -torch.log(score_fake).mean()
+    return loss_dis, loss_gen

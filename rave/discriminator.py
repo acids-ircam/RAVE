@@ -5,14 +5,11 @@ import cached_conv as cc
 import gin
 
 
-class ConvNetNd(nn.Module):
-
-    @property
-    def ConvNd(self) -> nn.modules.conv._ConvNd.__class__:
-        raise NotImplementedError
+@gin.register
+class ConvNet(nn.Module):
 
     def __init__(self, in_size, out_size, capacity, n_layers, kernel_size,
-                 stride) -> None:
+                 stride, conv) -> None:
         super().__init__()
         channels = [in_size]
         channels += list(capacity * 2**np.arange(n_layers))
@@ -32,7 +29,7 @@ class ConvNetNd(nn.Module):
                                      mode="centered")[0]
                 s = stride[i]
             net.append(
-                self.ConvNd(
+                conv(
                     channels[i],
                     channels[i + 1],
                     kernel_size,
@@ -40,7 +37,7 @@ class ConvNetNd(nn.Module):
                     padding=pad,
                 ))
             net.append(nn.LeakyReLU(.2))
-        net.append(self.ConvNd(channels[-1], out_size, 1))
+        net.append(conv(channels[-1], out_size, 1))
 
         self.net = nn.Sequential(*net)
 
@@ -53,23 +50,7 @@ class ConvNetNd(nn.Module):
         return features
 
 
-@gin.register
-class ConvNet1d(ConvNetNd):
-
-    @property
-    def ConvNd(self) -> nn.modules.conv._ConvNd.__class__:
-        return nn.Conv1d
-
-
-@gin.register
-class ConvNet2d(ConvNetNd):
-
-    @property
-    def ConvNd(self) -> nn.modules.conv._ConvNd.__class__:
-        return nn.Conv2d
-
-
-@gin.register
+@gin.configurable
 class MultiScaleDiscriminator(nn.Module):
 
     def __init__(self, n_discriminators, convnet) -> None:
@@ -87,7 +68,7 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-@gin.register
+@gin.configurable
 class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(self, periods, convnet) -> None:
@@ -112,13 +93,13 @@ class MultiPeriodDiscriminator(nn.Module):
         return x.reshape(*x.shape[:2], -1, n)
 
 
-@gin.configurable
+@gin.register
 class FullDiscriminator(nn.Module):
 
-    def __init__(self, mpd, msd) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.mpd = mpd()
-        self.msd = msd()
+        self.mpd = MultiPeriodDiscriminator()
+        self.msd = MultiScaleDiscriminator()
 
     def forward(self, x):
         features = []

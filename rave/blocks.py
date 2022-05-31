@@ -257,9 +257,10 @@ class Generator(nn.Module):
         return waveform
 
 
+@gin.register
 class Encoder(nn.Module):
 
-    def __init__(self, data_size, capacity, latent_size, ratios):
+    def __init__(self, data_size, capacity, latent_size, ratios, n_out):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
@@ -293,10 +294,10 @@ class Encoder(nn.Module):
         net.append(
             cc.Conv1d(
                 out_dim,
-                latent_size,
+                latent_size * n_out,
                 5,
                 padding=cc.get_padding(5),
-                groups=2,
+                groups=n_out,
                 cumulative_delay=net[-2].cumulative_delay,
             ))
 
@@ -311,34 +312,51 @@ class Encoder(nn.Module):
 @gin.register
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder):
+    def __init__(self, encoder, beta):
         super().__init__()
         self.encoder = encoder()
+        self.warmup = False
+        self.beta = beta
 
-    def forward(self, x: torch.Tensor):
-        z = self.encoder(x)
+    def reparametrize(self, z):
         mean, scale = z.chunk(2, 1)
         std = nn.functional.softplus(scale) + 1e-4
         var = std * std
         logvar = torch.log(var)
 
         z = torch.randn_like(mean) * std + mean
-
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
-        return z, kl
+        if self.warmup:
+            z = z.detach()
+            kl = kl.detach()
+        return z, self.beta * kl
+
+    def set_warmed_up(self, value):
+        self.warmup = value
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        return z
 
 
 @gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder):
+    def __init__(self, encoder, beta):
         super().__init__()
         self.encoder = encoder()
         self.rvq = ResidualVQ()
+        self.beta = beta
+
+    def reparametrize(self, z):
+        q, index, commmitment = self.rvq(z.transpose(-1, -2))
+        q = q.transpose(-1, -2)
+        return q, self.beta * commmitment.mean(), index
+
+    def set_warmed_up(self, value):
+        self.warmup = value
 
     def forward(self, x):
         z = self.encoder(x)
-        q, _, commmitment = self.rvq(z.transpose(-1, -2))
-        q = q.transpose(-1, -2)
-        return q, commmitment.mean()
+        return z
