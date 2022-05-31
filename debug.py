@@ -1,12 +1,10 @@
-#%%
-from rave.core import leaf_apply
+from rave.blocks import Generator, Encoder
+import gin
 
+gin.parse_config_file("default.gin")
 
-def fun(x):
-    return 2 * x
+g = Generator(16, 64, 16, [4, 4, 4, 2], 1, True)
+print(g)
 
-
-tree = [1, [2, 3], [[[3, 4, 5], 5]]]
-
-leaf_apply(fun, tree)
-# %%
+e = Encoder(16, 64, 16, [4, 4, 4, 2])
+print(e)

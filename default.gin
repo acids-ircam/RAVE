@@ -1,0 +1,9 @@
+cc.Conv1d.bias = False
+cc.ConvTranspose1d.bias = False
+cc.get_padding.mode = "centered"
+
+ResidualStack.kernel_sizes = [3, 5, 7]
+ResidualStack.dilations_list = [[1, 1], [3, 1], [5, 1]]
+
+NoiseGenerator.ratios = [4, 4, 4]
+NoiseGenerator.noise_bands = 5

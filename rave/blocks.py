@@ -5,7 +5,12 @@ import numpy as np
 from .core import mod_sigmoid
 from .core import amp_to_impulse_response, fft_convolve
 
+import gin
 import cached_conv as cc
+
+cc.get_padding = gin.external_configurable(cc.get_padding, module="cc")
+cc.Conv1d = gin.external_configurable(cc.Conv1d, module="cc")
+cc.ConvTranspose1d = gin.external_configurable(cc.ConvTranspose1d, module="cc")
 
 
 class Residual(nn.Module):
@@ -27,13 +32,7 @@ class Residual(nn.Module):
 
 class ResidualLayer(nn.Module):
 
-    def __init__(self,
-                 dim,
-                 kernel_size,
-                 dilations,
-                 padding_mode,
-                 cumulative_delay=0,
-                 bias=False):
+    def __init__(self, dim, kernel_size, dilations, cumulative_delay=0):
         super().__init__()
         net = []
         cd = 0
@@ -45,10 +44,7 @@ class ResidualLayer(nn.Module):
                     dim,
                     kernel_size,
                     dilation=d,
-                    padding=cc.get_padding(kernel_size,
-                                           dilation=d,
-                                           mode=padding_mode),
-                    bias=bias,
+                    padding=cc.get_padding(kernel_size, dilation=d),
                     cumulative_delay=cd,
                 ))
             cd = net[-1].cumulative_delay
@@ -64,15 +60,11 @@ class ResidualLayer(nn.Module):
 
 class ResidualBlock(nn.Module):
 
-    def __init__(
-        self,
-        dim,
-        kernel_size,
-        dilations_list,
-        padding_mode,
-        cumulative_delay=0,
-        bias=False,
-    ) -> None:
+    def __init__(self,
+                 dim,
+                 kernel_size,
+                 dilations_list,
+                 cumulative_delay=0) -> None:
         super().__init__()
         layers = []
         cd = 0
@@ -83,8 +75,6 @@ class ResidualBlock(nn.Module):
                     dim,
                     kernel_size,
                     dilations,
-                    padding_mode,
-                    bias=bias,
                     cumulative_delay=cd,
                 ))
             cd = layers[-1].cumulative_delay
@@ -99,28 +89,18 @@ class ResidualBlock(nn.Module):
         return self.net(x)
 
 
+@gin.configurable
 class ResidualStack(nn.Module):
 
-    def __init__(
-        self,
-        dim,
-        kernel_sizes,
-        dilations_list,
-        padding_mode,
-        cumulative_delay=0,
-        bias=False,
-    ) -> None:
+    def __init__(self,
+                 dim,
+                 kernel_sizes,
+                 dilations_list,
+                 cumulative_delay=0) -> None:
         super().__init__()
         blocks = []
         for k in kernel_sizes:
-            blocks.append(
-                ResidualBlock(
-                    dim,
-                    k,
-                    dilations_list,
-                    padding_mode,
-                    bias=bias,
-                ))
+            blocks.append(ResidualBlock(dim, k, dilations_list))
         self.net = cc.AlignBranches(*blocks, cumulative_delay=cumulative_delay)
         self.cumulative_delay = self.net.cumulative_delay
 
@@ -130,36 +110,20 @@ class ResidualStack(nn.Module):
 
 class UpsampleLayer(nn.Module):
 
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 ratio,
-                 padding_mode,
-                 cumulative_delay=0,
-                 bias=False):
+    def __init__(self, in_dim, out_dim, ratio, cumulative_delay=0):
         super().__init__()
         net = [nn.LeakyReLU(.2)]
         if ratio > 1:
             net.append(
                 wn(
-                    cc.ConvTranspose1d(
-                        in_dim,
-                        out_dim,
-                        2 * ratio,
-                        stride=ratio,
-                        padding=ratio // 2,
-                        bias=bias,
-                    )))
+                    cc.ConvTranspose1d(in_dim,
+                                       out_dim,
+                                       2 * ratio,
+                                       stride=ratio,
+                                       padding=ratio // 2)))
         else:
             net.append(
-                wn(
-                    cc.Conv1d(
-                        in_dim,
-                        out_dim,
-                        3,
-                        padding=cc.get_padding(3, mode=padding_mode),
-                        bias=bias,
-                    )))
+                wn(cc.Conv1d(in_dim, out_dim, 3, padding=cc.get_padding(3))))
 
         self.net = cc.CachedSequential(*net)
         self.cumulative_delay = self.net.cumulative_delay + cumulative_delay * ratio
@@ -168,9 +132,10 @@ class UpsampleLayer(nn.Module):
         return self.net(x)
 
 
+@gin.configurable
 class NoiseGenerator(nn.Module):
 
-    def __init__(self, in_size, data_size, ratios, noise_bands, padding_mode):
+    def __init__(self, in_size, data_size, ratios, noise_bands):
         super().__init__()
         net = []
         channels = [in_size] * len(ratios) + [data_size * noise_bands]
@@ -181,7 +146,7 @@ class NoiseGenerator(nn.Module):
                     channels[i],
                     channels[i + 1],
                     3,
-                    padding=cc.get_padding(3, r, mode=padding_mode),
+                    padding=cc.get_padding(3, r),
                     stride=r,
                     cumulative_delay=cum_delay,
                 ))
@@ -214,17 +179,8 @@ class NoiseGenerator(nn.Module):
 
 class Generator(nn.Module):
 
-    def __init__(self,
-                 latent_size,
-                 capacity,
-                 data_size,
-                 ratios,
-                 loud_stride,
-                 use_noise,
-                 noise_ratios,
-                 noise_bands,
-                 padding_mode,
-                 bias=False):
+    def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
+                 use_noise):
         super().__init__()
         net = [
             wn(
@@ -232,8 +188,7 @@ class Generator(nn.Module):
                     latent_size,
                     2**len(ratios) * capacity,
                     7,
-                    padding=cc.get_padding(7, mode=padding_mode),
-                    bias=bias,
+                    padding=cc.get_padding(7),
                 ))
         ]
 
@@ -246,29 +201,16 @@ class Generator(nn.Module):
                     in_dim,
                     out_dim,
                     r,
-                    padding_mode,
                     cumulative_delay=net[-1].cumulative_delay,
                 ))
             net.append(
-                ResidualStack(
-                    out_dim,
-                    [3, 5, 7],
-                    [[1, 1], [3, 1], [5, 1]],
-                    padding_mode,
-                    cumulative_delay=net[-1].cumulative_delay,
-                    bias=bias,
-                ))
+                ResidualStack(out_dim,
+                              cumulative_delay=net[-1].cumulative_delay))
 
         self.net = cc.CachedSequential(*net)
 
         wave_gen = wn(
-            cc.Conv1d(
-                out_dim,
-                data_size,
-                7,
-                padding=cc.get_padding(7, mode=padding_mode),
-                bias=bias,
-            ))
+            cc.Conv1d(out_dim, data_size, 7, padding=cc.get_padding(7)))
 
         loud_gen = wn(
             cc.Conv1d(
@@ -276,22 +218,13 @@ class Generator(nn.Module):
                 1,
                 2 * loud_stride + 1,
                 stride=loud_stride,
-                padding=cc.get_padding(2 * loud_stride + 1,
-                                       loud_stride,
-                                       mode=padding_mode),
-                bias=bias,
+                padding=cc.get_padding(2 * loud_stride + 1, loud_stride),
             ))
 
         branches = [wave_gen, loud_gen]
 
         if use_noise:
-            noise_gen = NoiseGenerator(
-                out_dim,
-                data_size,
-                noise_ratios,
-                noise_bands,
-                padding_mode=padding_mode,
-            )
+            noise_gen = NoiseGenerator(out_dim, data_size)
             branches.append(noise_gen)
 
         self.synth = cc.AlignBranches(
@@ -325,21 +258,9 @@ class Generator(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self,
-                 data_size,
-                 capacity,
-                 latent_size,
-                 ratios,
-                 padding_mode,
-                 bias=False):
+    def __init__(self, data_size, capacity, latent_size, ratios):
         super().__init__()
-        net = [
-            cc.Conv1d(data_size,
-                      capacity,
-                      7,
-                      padding=cc.get_padding(7, mode=padding_mode),
-                      bias=bias)
-        ]
+        net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
         for i, r in enumerate(ratios):
             in_dim = 2**i * capacity
@@ -352,9 +273,8 @@ class Encoder(nn.Module):
                     in_dim,
                     out_dim,
                     2 * r + 1,
-                    padding=cc.get_padding(2 * r + 1, r, mode=padding_mode),
+                    padding=cc.get_padding(2 * r + 1, r),
                     stride=r,
-                    bias=bias,
                     cumulative_delay=net[-3].cumulative_delay,
                 ))
             net.append(nn.BatchNorm1d(out_dim))
@@ -364,8 +284,7 @@ class Encoder(nn.Module):
                     out_dim,
                     out_dim,
                     3,
-                    padding=cc.get_padding(3, mode=padding_mode),
-                    bias=bias,
+                    padding=cc.get_padding(3),
                     cumulative_delay=net[-3].cumulative_delay,
                 ))
 
@@ -375,9 +294,8 @@ class Encoder(nn.Module):
                 out_dim,
                 latent_size,
                 5,
-                padding=cc.get_padding(5, mode=padding_mode),
+                padding=cc.get_padding(5),
                 groups=2,
-                bias=bias,
                 cumulative_delay=net[-2].cumulative_delay,
             ))
 
