@@ -205,6 +205,7 @@ class RAVE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         self.saved_step += 1
+        self.warmed_up = True
 
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
@@ -220,9 +221,9 @@ class RAVE(pl.LightningModule):
         # ENCODE INPUT
         z, reg = self.reparametrize(self.encoder(x))
 
-        if self.warmed_up:  # FREEZE ENCODER
-            z = z.detach()
-            reg = reg.detach()
+        # if self.warmed_up:  # FREEZE ENCODER
+        #     z = z.detach()
+        #     reg = reg.detach()
 
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
@@ -350,6 +351,7 @@ class RAVE(pl.LightningModule):
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
+        if not len(out): return
         audio, z = list(zip(*out))
         if self.saved_step > self.warmup:
             self.warmed_up = True
