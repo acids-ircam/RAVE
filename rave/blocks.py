@@ -5,8 +5,12 @@ import numpy as np
 from .core import mod_sigmoid
 from .core import amp_to_impulse_response, fft_convolve
 
+from vector_quantize_pytorch import ResidualVQ
+
 import gin
 import cached_conv as cc
+
+ResidualVQ = gin.external_configurable(ResidualVQ)
 
 
 class Residual(nn.Module):
@@ -253,7 +257,6 @@ class Generator(nn.Module):
         return waveform
 
 
-@gin.register
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios):
@@ -303,3 +306,39 @@ class Encoder(nn.Module):
     def forward(self, x):
         z = self.net(x)
         return z
+
+
+@gin.register
+class VariationalEncoder(nn.Module):
+
+    def __init__(self, encoder):
+        super().__init__()
+        self.encoder = encoder()
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        mean, scale = z.chunk(2, 1)
+        std = nn.functional.softplus(scale) + 1e-4
+        var = std * std
+        logvar = torch.log(var)
+
+        z = torch.randn_like(mean) * std + mean
+
+        kl = (mean * mean + var - logvar - 1).sum(1).mean()
+
+        return z, kl
+
+
+@gin.register
+class DiscreteEncoder(nn.Module):
+
+    def __init__(self, encoder):
+        super().__init__()
+        self.encoder = encoder()
+        self.rvq = ResidualVQ()
+
+    def forward(self, x):
+        z = self.encoder(x)
+        q, _, commmitment = self.rvq(z.transpose(-1, -2))
+        q = q.transpose(-1, -2)
+        return q, commmitment.mean()

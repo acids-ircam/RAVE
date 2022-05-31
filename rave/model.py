@@ -8,111 +8,38 @@ from .pqmf import CachedPQMF as PQMF
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-from vector_quantize_pytorch import ResidualVQ
-
 from .blocks import Generator, Encoder
 from .discriminator import FullDiscriminator
 
+import gin
 
+
+@gin.configurable
 class RAVE(pl.LightningModule):
 
-    def __init__(self,
-                 data_size,
-                 capacity,
-                 latent_size,
-                 ratios,
-                 bias,
-                 loud_stride,
-                 use_noise,
-                 noise_ratios,
-                 noise_bands,
-                 warmup,
-                 mode,
-                 no_latency=False,
-                 min_kl=1e-4,
-                 max_kl=5e-1,
-                 cropped_latent_size=0,
-                 feature_match=True,
-                 regularization="kl",
-                 num_quantizers=2,
-                 codebook_size=1024,
-                 sr=24000):
+    def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
+                 decoder, discriminator, phase_1_duration):
         super().__init__()
-        self.save_hyperparameters()
 
-        if data_size == 1:
-            self.pqmf = None
-        else:
-            self.pqmf = PQMF(70 if no_latency else 100, data_size)
+        self.pqmf = pqmf()
+        self.loudness = loudness()
+        self.encoder = encoder()
+        self.decoder = decoder()
+        self.discriminator = discriminator()
 
-        self.loudness = Loudness(sr, 512)
-
-        if not cropped_latent_size: cropped_latent_size = latent_size
-        encoder_out_size = cropped_latent_size
-
-        if regularization == "kl":
-            encoder_out_size = 2 * encoder_out_size
-
-        self.encoder = Encoder(
-            data_size,
-            2 * capacity,
-            encoder_out_size,
-            ratios,
-            "causal" if no_latency else "centered",
-            bias,
-        )
-        self.decoder = Generator(
-            latent_size,
-            capacity,
-            data_size,
-            ratios,
-            loud_stride,
-            use_noise,
-            noise_ratios,
-            noise_bands,
-            "causal" if no_latency else "centered",
-            bias,
-        )
-
-        self.discriminator = FullDiscriminator(
-            capacity,
-            [2, 3, 5, 7, 11],
-            n_scale=3,
-            n_layers=4,
-            scale_kernel_size=15,
-            period_kernel_size=5,
-            stride=4,
-        )
         self.idx = 0
 
-        self.register_buffer("latent_pca", torch.eye(cropped_latent_size))
-        self.register_buffer("latent_mean", torch.zeros(cropped_latent_size))
-        self.register_buffer("fidelity", torch.zeros(cropped_latent_size))
+        self.register_buffer("latent_pca", torch.eye(latent_size))
+        self.register_buffer("latent_mean", torch.zeros(latent_size))
+        self.register_buffer("fidelity", torch.zeros(latent_size))
 
         self.latent_size = latent_size
 
         self.automatic_optimization = False
 
-        self.warmup = warmup
+        self.warmup = phase_1_duration
         self.warmed_up = False
-        self.sr = sr
-        self.mode = mode
-
-        self.min_kl = min_kl
-        self.max_kl = max_kl
-        self.cropped_latent_size = cropped_latent_size
-
-        self.feature_match = feature_match
-        self.regularization = regularization
-
-        if regularization == "vq":
-            self.rvq = ResidualVQ(
-                dim=encoder_out_size,
-                num_quantizers=num_quantizers,
-                codebook_size=codebook_size,
-            )
-        else:
-            self.rvq = None
+        self.sr = sampling_rate
 
         self.register_buffer("saved_step", torch.tensor(0))
 
@@ -141,30 +68,6 @@ class RAVE(pl.LightningModule):
         log = sum(list(map(self.log_distance, x, y)))
 
         return lin + log
-
-    def reparametrize_kl(self, z: torch.Tensor):
-        mean, scale = z.chunk(2, 1)
-        std = nn.functional.softplus(scale) + 1e-4
-        var = std * std
-        logvar = torch.log(var)
-
-        z = torch.randn_like(mean) * std + mean
-
-        kl = (mean * mean + var - logvar - 1).sum(1).mean()
-
-        if self.cropped_latent_size:
-            noise = torch.randn(
-                z.shape[0],
-                self.latent_size - self.cropped_latent_size,
-                z.shape[-1],
-            ).to(z.device)
-            z = torch.cat([z, noise], 1)
-        return z, kl
-
-    def reparametrize_vq(self, z):
-        q, _, commmitment = self.rvq(z.transpose(-1, -2))
-        q = q.transpose(-1, -2)
-        return q, commmitment.mean()
 
     def reparametrize(self, z):
         if self.regularization == "kl":

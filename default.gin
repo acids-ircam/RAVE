@@ -1,6 +1,7 @@
 sampling_rate = 44100
 capacity = 64
 n_band = 16
+latent_size = 128
 
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
@@ -44,3 +45,7 @@ FullDiscriminator.msd = @MultiScaleDiscriminator
 
 CachedPQMF.attenuation = 100
 CachedPQMF.n_band = %n_band
+
+ResidualVQ.dim = %latent_size
+ResidualVQ.num_quantizers = 2
+ResidualVQ.codebook_size = 1024
