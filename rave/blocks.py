@@ -173,6 +173,7 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
+@gin.register
 class Generator(nn.Module):
 
     def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
@@ -252,6 +253,7 @@ class Generator(nn.Module):
         return waveform
 
 
+@gin.register
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios):

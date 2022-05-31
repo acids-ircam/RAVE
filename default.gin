@@ -1,5 +1,6 @@
 sampling_rate = 44100
 capacity = 64
+n_band = 16
 
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
@@ -40,3 +41,6 @@ MultiPeriodDiscriminator.convnet = @discriminator.ConvNet2d
 
 FullDiscriminator.mpd = @MultiPeriodDiscriminator
 FullDiscriminator.msd = @MultiScaleDiscriminator
+
+CachedPQMF.attenuation = 100
+CachedPQMF.n_band = %n_band

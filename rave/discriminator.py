@@ -23,10 +23,13 @@ class ConvNetNd(nn.Module):
         net = []
         for i in range(n_layers):
             if not isinstance(kernel_size, int):
-                pad = (cc.get_padding(kernel_size[0], stride[i])[0], 0)
+                pad = (cc.get_padding(kernel_size[0],
+                                      stride[i],
+                                      mode="centered")[0], 0)
                 s = (stride[i], 1)
             else:
-                pad = cc.get_padding(kernel_size, stride[i])[0]
+                pad = cc.get_padding(kernel_size, stride[i],
+                                     mode="centered")[0]
                 s = stride[i]
             net.append(
                 self.ConvNd(
