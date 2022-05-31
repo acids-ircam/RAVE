@@ -8,13 +8,35 @@ from einops import rearrange
 from .blocks import VariationalEncoder, DiscreteEncoder
 
 import gin
+from time import time
+
+
+class Profiler:
+
+    def __init__(self):
+        self.ticks = [[time(), None]]
+
+    def tick(self, msg):
+        self.ticks.append([time(), msg])
+
+    def __repr__(self):
+        rep = 80 * "=" + "\n"
+        total = self.ticks[-1][0] - self.ticks[0][0]
+        for i in range(1, len(self.ticks)):
+            msg = self.ticks[i][1]
+            ellapsed = self.ticks[i][0] - self.ticks[i - 1][0]
+            rep += msg + f": {ellapsed*1000:.2f}ms\n"
+        rep += f"TOTAL: {total*1000:.2f}ms\n"
+        rep += 80 * "=" + "\n\n\n"
+        return rep
 
 
 @gin.configurable
 class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
-                 decoder, discriminator, phase_1_duration, gan_loss):
+                 decoder, discriminator, phase_1_duration, gan_loss,
+                 feature_match):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -38,6 +60,7 @@ class RAVE(pl.LightningModule):
         self.warmup = phase_1_duration
         self.warmed_up = False
         self.sr = sampling_rate
+        self.feature_match = feature_match
 
         self.register_buffer("saved_step", torch.tensor(0))
 
@@ -79,38 +102,51 @@ class RAVE(pl.LightningModule):
         return feature_true, feature_fake
 
     def training_step(self, batch, batch_idx):
+        p = Profiler()
+
         self.saved_step += 1
         self.warmed_up = True
 
         gen_opt, dis_opt = self.optimizers()
+        p.tick("get optimizers")
         x = batch.unsqueeze(1)
+
+        x = self.pqmf(x)
+        p.tick("pqmf")
 
         if self.warmed_up:  # EVAL ENCODER
             self.encoder.set_warmed_up(True)
 
         # ENCODE INPUT
         z, reg = self.encoder.reparametrize(self.encoder(x))[:2]
+        p.tick("encode")
 
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
+        p.tick("decode")
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distance = self.distance(x, y)
+        p.tick("mb distance")
 
-        if self.pqmf is not None:  # FULL BAND RECOMPOSITION
-            x = self.pqmf.inverse(x)
-            y = self.pqmf.inverse(y)
-            distance = distance + self.distance(x, y)
+        x = self.pqmf.inverse(x)
+        y = self.pqmf.inverse(y)
+        p.tick("recomposition")
+
+        distance = distance + self.distance(x, y)
+        p.tick("fb distance")
 
         loud_x = self.loudness(x)
         loud_y = self.loudness(y)
         loud_dist = (loud_x - loud_y).pow(2).mean()
         distance = distance + loud_dist
+        p.tick("loudness")
 
         feature_matching_distance = 0.
         if self.warmed_up:  # DISCRIMINATION
             xy = torch.cat([x, y], 0)
             features = self.discriminator(xy)
+
             feature_true, feature_fake = self.split_features(features)
 
             loss_dis = 0
@@ -143,6 +179,7 @@ class RAVE(pl.LightningModule):
 
         # COMPOSE GEN LOSS
         loss_gen = distance + loss_adv + reg
+        p.tick("loss")
 
         if self.feature_match:
             loss_gen = loss_gen + feature_matching_distance
@@ -156,6 +193,7 @@ class RAVE(pl.LightningModule):
             gen_opt.zero_grad()
             loss_gen.backward()
             gen_opt.step()
+        p.tick("optim")
 
         # LOGGING
         self.log("loss_dis", loss_dis)
@@ -166,6 +204,9 @@ class RAVE(pl.LightningModule):
         self.log("pred_fake", pred_fake.mean())
         self.log("distance", distance)
         self.log("feature_matching", feature_matching_distance)
+        p.tick("logging")
+
+        print(p)
 
     def encode(self, x):
         x = self.pqmf(x)
@@ -187,7 +228,7 @@ class RAVE(pl.LightningModule):
         else:
             mean = None
 
-        z = self.reparametrize(z)[0]
+        z = self.encoder.reparametrize(z)[0]
         y = self.decoder(z, add_noise=self.warmed_up)
 
         x = self.pqmf.inverse(x)

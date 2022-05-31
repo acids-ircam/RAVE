@@ -11,6 +11,8 @@ import pytorch_lightning as pl
 from os import environ, path
 import numpy as np
 
+import gin
+
 import GPUtil as gpu
 
 from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
@@ -18,76 +20,32 @@ from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
 if __name__ == "__main__":
 
     class args(Config):
-        groups = ["small", "large"]
-
-        DATA_SIZE = 16
-        CAPACITY = setting(default=32, small=16, large=64)
-        LATENT_SIZE = 128
-        BIAS = True
-        NO_LATENCY = False
-        RATIOS = setting(
-            default=[4, 4, 4, 2],
-            small=[4, 4, 4, 2],
-            large=[4, 4, 2, 2, 2],
-        )
-
-        MIN_KL = 1e-1
-        MAX_KL = 1e-1
-        CROPPED_LATENT_SIZE = 0
-        FEATURE_MATCH = True
-
-        REGULARIZATION = "kl"
-
-        LOUD_STRIDE = 1
-
-        USE_NOISE = True
-        NOISE_RATIOS = [4, 4, 4]
-        NOISE_BANDS = 5
-
-        WARMUP = setting(default=1000000, small=1000000, large=3000000)
-        MODE = "hinge"
-        CKPT = None
+        GIN = "default.gin"
 
         PREPROCESSED = None
         WAV = None
-        SR = 48000
         N_SIGNAL = 65536
-        MAX_STEPS = setting(default=3000000, small=3000000, large=6000000)
+        MAX_STEPS = 6000000
         VAL_EVERY = 10000
 
         BATCH = 8
+        CKPT = None
 
         NAME = None
 
     args.parse_args()
 
     assert args.NAME is not None
-    model = RAVE(
-        data_size=args.DATA_SIZE,
-        capacity=args.CAPACITY,
-        latent_size=args.LATENT_SIZE,
-        ratios=args.RATIOS,
-        bias=args.BIAS,
-        loud_stride=args.LOUD_STRIDE,
-        use_noise=args.USE_NOISE,
-        noise_ratios=args.NOISE_RATIOS,
-        noise_bands=args.NOISE_BANDS,
-        warmup=args.WARMUP,
-        mode=args.MODE,
-        no_latency=args.NO_LATENCY,
-        sr=args.SR,
-        min_kl=args.MIN_KL,
-        max_kl=args.MAX_KL,
-        cropped_latent_size=args.CROPPED_LATENT_SIZE,
-        feature_match=args.FEATURE_MATCH,
-        regularization=args.REGULARIZATION,
-    )
+
+    gin.parse_config_file(args.GIN)
+
+    model = RAVE()
 
     x = torch.zeros(args.BATCH, 2**14)
     model.validation_step(x, 0)
 
     preprocess = lambda name: simple_audio_preprocess(
-        args.SR,
+        model.sr,
         2 * args.N_SIGNAL,
     )(name).astype(np.float16)
 
@@ -100,7 +58,7 @@ if __name__ == "__main__":
             lambda x: x.astype(np.float32),
             RandomCrop(args.N_SIGNAL),
             RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, args.SR),
+                lambda x: random_phase_mangle(x, 20, 2000, .99, model.sr),
                 p=.8,
             ),
             Dequantize(16),
@@ -156,6 +114,7 @@ if __name__ == "__main__":
         callbacks=[validation_checkpoint, last_checkpoint],
         max_epochs=100000,
         max_steps=args.MAX_STEPS,
+        profiler="simple",
         **val_check,
     )
 
