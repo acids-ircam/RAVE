@@ -1,4 +1,5 @@
 sampling_rate = 44100
+capacity = 64
 
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
@@ -17,3 +18,25 @@ Loudness.sr = %sampling_rate
 Loudness.block_size = 512
 Loudness.n_fft = 2048
 
+ConvNet1d.in_size = 1
+ConvNet1d.out_size = 1
+ConvNet1d.capacity = %capacity
+ConvNet1d.n_layers = 4
+ConvNet1d.kernel_size = 15
+ConvNet1d.stride = 4
+
+ConvNet2d.in_size = 1
+ConvNet2d.out_size = 1
+ConvNet2d.capacity = %capacity
+ConvNet2d.n_layers = 4
+ConvNet2d.kernel_size = 5
+ConvNet2d.stride = 4
+
+MultiScaleDiscriminator.n_discriminators = 3
+MultiScaleDiscriminator.convnet = @discriminator.ConvNet1d
+
+MultiPeriodDiscriminator.periods = [2, 3, 5, 7, 11]
+MultiPeriodDiscriminator.convnet = @discriminator.ConvNet2d
+
+FullDiscriminator.mpd = @MultiPeriodDiscriminator
+FullDiscriminator.msd = @MultiScaleDiscriminator

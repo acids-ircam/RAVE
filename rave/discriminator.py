@@ -1,9 +1,8 @@
-from turtle import forward
-import torch
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 import numpy as np
 import cached_conv as cc
+import gin
 
 
 class ConvNetNd(nn.Module):
@@ -51,6 +50,7 @@ class ConvNetNd(nn.Module):
         return features
 
 
+@gin.register
 class ConvNet1d(ConvNetNd):
 
     @property
@@ -58,6 +58,7 @@ class ConvNet1d(ConvNetNd):
         return nn.Conv1d
 
 
+@gin.register
 class ConvNet2d(ConvNetNd):
 
     @property
@@ -65,15 +66,14 @@ class ConvNet2d(ConvNetNd):
         return nn.Conv2d
 
 
+@gin.register
 class MultiScaleDiscriminator(nn.Module):
 
-    def __init__(self, capacity, n_discriminators, n_layers, kernel_size,
-                 stride) -> None:
+    def __init__(self, n_discriminators, convnet) -> None:
         super().__init__()
         layers = []
         for i in range(n_discriminators):
-            layers.append(
-                ConvNet1d(1, 1, capacity, n_layers, kernel_size, stride))
+            layers.append(convnet())
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
@@ -84,17 +84,16 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
+@gin.register
 class MultiPeriodDiscriminator(nn.Module):
 
-    def __init__(self, capacity, periods, n_layers, kernel_size,
-                 stride) -> None:
+    def __init__(self, periods, convnet) -> None:
         super().__init__()
         layers = []
         self.periods = periods
 
         for _ in periods:
-            layers.append(
-                ConvNet2d(1, 1, capacity, n_layers, kernel_size, stride))
+            layers.append(convnet())
 
         self.layers = nn.ModuleList(layers)
 
@@ -110,25 +109,13 @@ class MultiPeriodDiscriminator(nn.Module):
         return x.reshape(*x.shape[:2], -1, n)
 
 
+@gin.configurable
 class FullDiscriminator(nn.Module):
 
-    def __init__(self, capacity, periods, n_scale, n_layers, scale_kernel_size,
-                 period_kernel_size, stride) -> None:
+    def __init__(self, mpd, msd) -> None:
         super().__init__()
-        self.mpd = MultiPeriodDiscriminator(
-            capacity,
-            periods,
-            n_layers,
-            period_kernel_size,
-            stride,
-        )
-        self.msd = MultiScaleDiscriminator(
-            capacity,
-            n_scale,
-            n_layers,
-            scale_kernel_size,
-            stride,
-        )
+        self.mpd = mpd()
+        self.msd = msd()
 
     def forward(self, x):
         features = []
