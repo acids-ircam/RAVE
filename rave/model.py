@@ -5,7 +5,7 @@ from .core import multiscale_stft
 from sklearn.decomposition import PCA
 from einops import rearrange
 
-from .blocks import VariationalEncoder, DiscreteEncoder
+from .blocks import VariationalEncoder
 
 import gin
 from time import time
@@ -105,7 +105,6 @@ class RAVE(pl.LightningModule):
         p = Profiler()
 
         self.saved_step += 1
-        self.warmed_up = True
 
         gen_opt, dis_opt = self.optimizers()
         p.tick("get optimizers")
@@ -206,7 +205,7 @@ class RAVE(pl.LightningModule):
         self.log("feature_matching", feature_matching_distance)
         p.tick("logging")
 
-        print(p)
+        # print(p)
 
     def encode(self, x):
         x = self.pqmf(x)

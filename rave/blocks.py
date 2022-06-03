@@ -13,6 +13,12 @@ import cached_conv as cc
 ResidualVQ = gin.external_configurable(ResidualVQ)
 
 
+class SampleNorm(nn.Module):
+
+    def forward(self, x):
+        return x / torch.norm(x, 2, 1, keepdim=True)
+
+
 class Residual(nn.Module):
 
     def __init__(self, module, cumulative_delay=0):
@@ -260,7 +266,8 @@ class Generator(nn.Module):
 @gin.register
 class Encoder(nn.Module):
 
-    def __init__(self, data_size, capacity, latent_size, ratios, n_out):
+    def __init__(self, data_size, capacity, latent_size, ratios, n_out,
+                 hypersphere):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
@@ -268,7 +275,10 @@ class Encoder(nn.Module):
             in_dim = 2**i * capacity
             out_dim = 2**(i + 1) * capacity
 
-            net.append(nn.BatchNorm1d(in_dim))
+            if hypersphere:
+                net.append(SampleNorm())
+            else:
+                net.append(nn.BatchNorm1d(in_dim))
             net.append(nn.LeakyReLU(.2))
             net.append(
                 cc.Conv1d(
@@ -279,7 +289,10 @@ class Encoder(nn.Module):
                     stride=r,
                     cumulative_delay=net[-3].cumulative_delay,
                 ))
-            net.append(nn.BatchNorm1d(out_dim))
+            if hypersphere:
+                net.append(SampleNorm())
+            else:
+                net.append(nn.BatchNorm1d(in_dim))
             net.append(nn.LeakyReLU(.2))
             net.append(
                 cc.Conv1d(

@@ -18,7 +18,7 @@ CachedPQMF.n_band = %n_band
 
 # ENCODER
 ResidualVQ.dim = %latent_size
-ResidualVQ.num_quantizers = 2
+ResidualVQ.num_quantizers = 4
 ResidualVQ.codebook_size = 1024
 
 Encoder.data_size = %n_band
@@ -27,6 +27,8 @@ Encoder.latent_size = %latent_size
 Encoder.ratios = %ratios
 variational/Encoder.n_out = 2
 discrete/Encoder.n_out = 1
+Encoder.hypersphere = True
+
 
 VariationalEncoder.encoder = @variational/Encoder
 VariationalEncoder.beta = .1
@@ -64,23 +66,22 @@ ConvNet.stride = 4
 scales/ConvNet.conv = @torch.nn.Conv1d
 periods/ConvNet.conv = @torch.nn.Conv2d
 
-scales/ConvNet.kernel_size = 15
-periods/ConvNet.kernel_size = 5
-
 MultiScaleDiscriminator.n_discriminators = 3
 MultiScaleDiscriminator.convnet = @scales/ConvNet
+scales/ConvNet.kernel_size = 15
 
 MultiPeriodDiscriminator.periods = [2, 3, 5, 7, 11]
 MultiPeriodDiscriminator.convnet = @periods/ConvNet
+periods/ConvNet.kernel_size = 5
 
 # RAVE
 RAVE.latent_size = %latent_size
 RAVE.pqmf = @CachedPQMF
 RAVE.sampling_rate = %sampling_rate
 RAVE.loudness = @Loudness
-RAVE.encoder = @DiscreteEncoder
+RAVE.encoder = @VariationalEncoder  
 RAVE.decoder = @Generator
-RAVE.discriminator = @FullDiscriminator
+RAVE.discriminator = @CombineDiscriminators
 RAVE.phase_1_duration = %phase_1_duration
 RAVE.gan_loss = @nonsaturating_gan
 RAVE.feature_match = True

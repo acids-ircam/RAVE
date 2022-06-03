@@ -94,7 +94,7 @@ class MultiPeriodDiscriminator(nn.Module):
 
 
 @gin.register
-class FullDiscriminator(nn.Module):
+class CombineDiscriminators(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
