@@ -113,8 +113,7 @@ class RAVE(pl.LightningModule):
         x = self.pqmf(x)
         p.tick("pqmf")
 
-        if self.warmed_up:  # EVAL ENCODER
-            self.encoder.set_warmed_up(True)
+        self.encoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
         z, reg = self.encoder.reparametrize(self.encoder(x))[:2]

@@ -267,7 +267,7 @@ class Generator(nn.Module):
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios, n_out,
-                 hypersphere, repeat_layers):
+                 sample_norm, repeat_layers):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
@@ -275,7 +275,7 @@ class Encoder(nn.Module):
             in_dim = 2**i * capacity
             out_dim = 2**(i + 1) * capacity
 
-            if hypersphere:
+            if sample_norm:
                 net.append(SampleNorm())
             else:
                 net.append(nn.BatchNorm1d(in_dim))
@@ -291,7 +291,7 @@ class Encoder(nn.Module):
                 ))
 
             for i in range(repeat_layers - 1):
-                if hypersphere:
+                if sample_norm:
                     net.append(SampleNorm())
                 else:
                     net.append(nn.BatchNorm1d(in_dim))
@@ -330,7 +330,7 @@ class VariationalEncoder(nn.Module):
     def __init__(self, encoder, beta):
         super().__init__()
         self.encoder = encoder()
-        self.warmup = False
+        self.warmed_up = False
         self.beta = beta
 
     def reparametrize(self, z):
@@ -342,16 +342,15 @@ class VariationalEncoder(nn.Module):
         z = torch.randn_like(mean) * std + mean
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
-        if self.warmup:
-            z = z.detach()
-            kl = kl.detach()
         return z, self.beta * kl
 
     def set_warmed_up(self, value):
-        self.warmup = value
+        self.warmed_up = value
 
     def forward(self, x: torch.Tensor):
         z = self.encoder(x)
+        if self.warmed_up:
+            z = z.detach()
         return z
 
 
@@ -370,7 +369,7 @@ class DiscreteEncoder(nn.Module):
         return q, self.beta * commmitment.mean(), index
 
     def set_warmed_up(self, value):
-        self.warmup = value
+        self.warmed_up = value
 
     def forward(self, x):
         z = self.encoder(x)

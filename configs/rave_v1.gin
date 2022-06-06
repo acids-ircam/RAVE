@@ -27,7 +27,7 @@ Encoder.latent_size = %latent_size
 Encoder.ratios = %ratios
 variational/Encoder.n_out = 2
 discrete/Encoder.n_out = 1
-Encoder.hypersphere = False
+Encoder.sample_norm = False
 Encoder.repeat_layers = 1
 
 
