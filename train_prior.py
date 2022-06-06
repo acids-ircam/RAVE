@@ -65,12 +65,17 @@ model = Model(
 
 args.N_SIGNAL = max(args.N_SIGNAL, get_n_signal(args, model.synth))
 
+preprocess = lambda name: simple_audio_preprocess(
+    model.sr,
+    2 * args.N_SIGNAL,
+)(name).astype(np.float16)
+
 dataset = SimpleDataset(
     args.PREPROCESSED,
     args.WAV,
-    preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL),
+    preprocess_function=preprocess,
     split_set="full",
-    transforms=lambda x: x.reshape(1, -1),
+    transforms=lambda x: x.reshape(1, -1).astype(np.float32),
 )
 
 val = max((2 * len(dataset)) // 100, 1)

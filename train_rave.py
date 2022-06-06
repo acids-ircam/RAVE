@@ -6,7 +6,7 @@ from rave.core import random_phase_mangle
 from rave.core import search_for_run
 
 from udls import SimpleDataset, simple_audio_preprocess
-from effortless_config import Config, setting
+from effortless_config import Config
 import pytorch_lightning as pl
 from os import environ, path
 import numpy as np
