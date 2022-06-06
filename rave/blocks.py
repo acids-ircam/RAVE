@@ -294,7 +294,7 @@ class Encoder(nn.Module):
                 if sample_norm:
                     net.append(SampleNorm())
                 else:
-                    net.append(nn.BatchNorm1d(in_dim))
+                    net.append(nn.BatchNorm1d(out_dim))
                 net.append(nn.LeakyReLU(.2))
                 net.append(
                     cc.Conv1d(

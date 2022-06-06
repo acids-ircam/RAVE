@@ -34,6 +34,7 @@ import math
 
 
 class TraceModel(nn.Module):
+
     def __init__(self, pretrained: RAVE, resample: Resampling,
                  fidelity: float):
         super().__init__()
@@ -159,8 +160,8 @@ class TraceModel(nn.Module):
             z = nn.functional.conv1d(z, self.latent_pca.T.unsqueeze(-1))
             z = z + self.latent_mean.unsqueeze(-1)
 
-        if self.stereo and z.shape[0] == 1:  # DUPLICATE LATENT PATH
-            z = z.expand(2, z.shape[1], z.shape[2])
+        if self.stereo:  # DUPLICATE LATENT PATH
+            z = torch.cat([z, z], 0)  # 2B x C x T
 
         # CAT WITH SAMPLES FROM PRIOR DISTRIBUTION
         pad_size = self.latent_size.item() - z.shape[1]
@@ -194,7 +195,10 @@ class TraceModel(nn.Module):
         x = self.resample.to_target_sampling_rate(x)
 
         if self.stereo:
-            x = x.permute(1, 0, 2)
+            x = x.permute(1, 2, 0).squeeze(0)
+            x = x.reshape(x.shape[0], 2, -1)
+            x = x.permute(2, 1, 0)
+
         return x
 
     def forward(self, x):
