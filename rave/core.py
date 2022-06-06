@@ -9,6 +9,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import librosa as li
 from pathlib import Path
 import gin
+import udls
+import udls.transforms as transforms
+from torch.utils.data import random_split
+import GPUtil as gpu
+import os
 
 
 def mod_sigmoid(x):
@@ -65,44 +70,6 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     angle = random_angle(min_f, max_f, sr)
     b, a = pole_to_z_filter(angle, amp)
     return lfilter(b, a, x)
-
-
-class EMAModelCheckPoint(ModelCheckpoint):
-
-    def __init__(self, model: torch.nn.Module, alpha=.999, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.shadow = {}
-        for n, p in model.named_parameters():
-            if p.requires_grad:
-                self.shadow[n] = p.data.clone()
-        self.model = model
-        self.alpha = alpha
-
-    def on_train_batch_end(self, *args, **kwargs):
-        with torch.no_grad():
-            for n, p in self.model.named_parameters():
-                if n in self.shadow:
-                    self.shadow[n] *= self.alpha
-                    self.shadow[n] += (1 - self.alpha) * p.data
-
-    def on_validation_epoch_start(self, *args, **kwargs):
-        self.swap()
-
-    def on_validation_epoch_end(self, *args, **kwargs):
-        self.swap()
-
-    def swap(self):
-        for n, p in self.model.named_parameters():
-            if n in self.shadow:
-                tmp = p.data.clone()
-                p.data.copy_(self.shadow[n])
-                self.shadow[n] = tmp
-
-    def save_checkpoint(self, *args, **kwargs):
-        self.swap()
-        super().save_checkpoint(*args, **kwargs)
-        self.swap()
 
 
 @gin.configurable
@@ -179,6 +146,63 @@ def search_for_run(run_path, mode="last"):
     ckpts = sorted(ckpts)
     if len(ckpts): return ckpts[-1]
     else: return None
+
+
+def get_dataset(data_dir, preprocess_dir, sr, n_signal):
+    preprocess = lambda name: udls.simple_audio_preprocess(
+        sr,
+        2 * n_signal,
+    )(name).astype(np.float16)
+
+    dataset = udls.SimpleDataset(
+        preprocess_dir,
+        data_dir,
+        preprocess_function=preprocess,
+        split_set="full",
+        transforms=transforms.Compose([
+            lambda x: x.astype(np.float32),
+            transforms.RandomCrop(n_signal),
+            transforms.RandomApply(
+                lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
+                p=.8,
+            ),
+            transforms.Dequantize(16),
+            lambda x: x.astype(np.float32),
+        ]),
+    )
+
+    return dataset
+
+
+def split_dataset(dataset, percent):
+    split1 = max((percent * len(dataset)) // 100, 1)
+    split2 = len(dataset) - split1
+    split1, split2 = random_split(
+        dataset,
+        [split1, split2],
+        generator=torch.Generator().manual_seed(42),
+    )
+    return split1, split2
+
+
+def setup_gpu():
+    CUDA = gpu.getAvailable(maxMemory=.05)
+    VISIBLE_DEVICES = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+
+    if VISIBLE_DEVICES:
+        use_gpu = int(int(VISIBLE_DEVICES) >= 0)
+    elif len(CUDA):
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
+        use_gpu = 1
+    elif torch.cuda.is_available():
+        print("Cuda is available but no fully free GPU found.")
+        print("Training may be slower due to concurrent processes.")
+        use_gpu = 1
+    else:
+        print("No GPU found.")
+        use_gpu = 0
+    
+    return use_gpu
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):

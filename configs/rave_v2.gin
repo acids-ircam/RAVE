@@ -1,7 +1,7 @@
 # RAVE CONFIGURATION
 
 sampling_rate = 44100
-capacity = 64
+capacity = 32
 n_band = 16
 latent_size = 128
 ratios = [4, 4, 4, 2]

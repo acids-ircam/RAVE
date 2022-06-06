@@ -1,26 +1,20 @@
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from rave.model import RAVE
-from rave.core import random_phase_mangle
-from rave.core import search_for_run
+import rave
 
-from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config
 import pytorch_lightning as pl
-from os import environ, path
-import numpy as np
+from os import path
+
+import rave.core
 
 import gin
-
-import GPUtil as gpu
-
-from udls.transforms import Compose, RandomApply, Dequantize, RandomCrop
 
 if __name__ == "__main__":
 
     class args(Config):
-        GIN = "default.gin"
+        GIN = "configs/rave_v2.gin"
 
         PREPROCESSED = None
         WAV = None
@@ -39,66 +33,23 @@ if __name__ == "__main__":
 
     gin.parse_config_file(args.GIN)
 
-    model = RAVE()
+    model = rave.RAVE()
 
-    x = torch.zeros(args.BATCH, 2**14)
-    model.validation_step(x, 0)
-
-    preprocess = lambda name: simple_audio_preprocess(
-        model.sr,
-        2 * args.N_SIGNAL,
-    )(name).astype(np.float16)
-
-    dataset = SimpleDataset(
-        args.PREPROCESSED,
+    dataset = rave.core.get_dataset(
         args.WAV,
-        preprocess_function=preprocess,
-        split_set="full",
-        transforms=Compose([
-            lambda x: x.astype(np.float32),
-            RandomCrop(args.N_SIGNAL),
-            RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, model.sr),
-                p=.8,
-            ),
-            Dequantize(16),
-            lambda x: x.astype(np.float32),
-        ]),
+        args.PREPROCESSED,
+        model.sr,
+        args.N_SIGNAL,
     )
 
-    val = max((2 * len(dataset)) // 100, 1)
-    train = len(dataset) - val
-    train, val = random_split(
-        dataset,
-        [train, val],
-        generator=torch.Generator().manual_seed(42),
-    )
-
+    train, val = rave.core.split_dataset(dataset, 98)
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
     val = DataLoader(val, args.BATCH, False, num_workers=8)
 
     # CHECKPOINT CALLBACKS
-    validation_checkpoint = pl.callbacks.ModelCheckpoint(
-        monitor="validation",
-        filename="best",
-    )
+    validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
+                                                         filename="best")
     last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
-
-    CUDA = gpu.getAvailable(maxMemory=.05)
-    VISIBLE_DEVICES = environ.get("CUDA_VISIBLE_DEVICES", "")
-
-    if VISIBLE_DEVICES:
-        use_gpu = int(int(VISIBLE_DEVICES) >= 0)
-    elif len(CUDA):
-        environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
-        use_gpu = 1
-    elif torch.cuda.is_available():
-        print("Cuda is available but no fully free GPU found.")
-        print("Training may be slower due to concurrent processes.")
-        use_gpu = 1
-    else:
-        print("No GPU found.")
-        use_gpu = 0
 
     val_check = {}
     if len(train) >= args.VAL_EVERY:
@@ -107,9 +58,13 @@ if __name__ == "__main__":
         nepoch = args.VAL_EVERY // len(train)
         val_check["check_val_every_n_epoch"] = nepoch
 
+    use_gpu = rave.core.setup_gpu()
+
     trainer = pl.Trainer(
-        logger=pl.loggers.TensorBoardLogger(path.join("runs", args.NAME),
-                                            name="rave"),
+        logger=pl.loggers.TensorBoardLogger(
+            path.join("runs", args.NAME),
+            name="rave",
+        ),
         gpus=use_gpu,
         callbacks=[validation_checkpoint, last_checkpoint],
         max_epochs=100000,
@@ -118,7 +73,7 @@ if __name__ == "__main__":
         **val_check,
     )
 
-    run = search_for_run(args.CKPT)
+    run = rave.core.search_for_run(args.CKPT)
     if run is not None:
         step = torch.load(run, map_location='cpu')["global_step"]
         trainer.fit_loop.epoch_loop._batches_that_stepped = step
