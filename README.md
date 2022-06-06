@@ -69,3 +69,18 @@ You can also use RAVE as a VST audio plugin using the RAVE vst !
 ## Discussion
 
 If you have questions, want to share your experience with RAVE or share musical pieces done with the model, you can use the [Discussion tab](https://github.com/acids-ircam/RAVE/discussions) !
+
+## Demonstation
+
+### RAVE x nn~
+
+Demonstration of what you can do with RAVE and the nn~ external for maxmsp !
+
+[![RAVE x nn~](http://img.youtube.com/vi/dMZs04TzxUI/mqdefault.jpg)](https://www.youtube.com/watch?v=dMZs04TzxUI)
+
+### embedded RAVE
+
+Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
+
+
+[![RAVE x nn~](http://img.youtube.com/vi/jAIRf4nGgYI/mqdefault.jpg)](https://www.youtube.com/watch?v=jAIRf4nGgYI)
