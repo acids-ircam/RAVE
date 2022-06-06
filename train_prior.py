@@ -70,7 +70,7 @@ dataset = SimpleDataset(
     args.WAV,
     preprocess_function=simple_audio_preprocess(model.sr, args.N_SIGNAL),
     split_set="full",
-    transforms=lambda x: x.reshape(1, -1),
+    transforms=lambda x: x.reshape(1, -1).astype(np.float32),
 )
 
 val = max((2 * len(dataset)) // 100, 1)
