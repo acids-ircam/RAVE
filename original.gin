@@ -28,7 +28,7 @@ Encoder.ratios = %ratios
 variational/Encoder.n_out = 2
 discrete/Encoder.n_out = 1
 Encoder.hypersphere = False
-Encoder.repeat_layers = 2
+Encoder.repeat_layers = 1
 
 
 VariationalEncoder.encoder = @variational/Encoder
@@ -45,7 +45,7 @@ Generator.ratios = %ratios
 Generator.loud_stride = 1
 Generator.use_noise = True
 
-ResidualStack.kernel_sizes = [3, 5, 7]
+ResidualStack.kernel_sizes = [3]
 ResidualStack.dilations_list = [[1, 1], [3, 1], [5, 1]]
 
 NoiseGenerator.ratios = [4, 4, 4]
@@ -82,7 +82,7 @@ RAVE.sampling_rate = %sampling_rate
 RAVE.loudness = @Loudness
 RAVE.encoder = @VariationalEncoder  
 RAVE.decoder = @Generator
-RAVE.discriminator = @CombineDiscriminators
+RAVE.discriminator = @MultiScaleDiscriminator
 RAVE.phase_1_duration = %phase_1_duration
 RAVE.gan_loss = @nonsaturating_gan
 RAVE.feature_match = True

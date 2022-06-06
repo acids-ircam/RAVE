@@ -267,7 +267,7 @@ class Generator(nn.Module):
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios, n_out,
-                 hypersphere):
+                 hypersphere, repeat_layers):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
@@ -289,19 +289,21 @@ class Encoder(nn.Module):
                     stride=r,
                     cumulative_delay=net[-3].cumulative_delay,
                 ))
-            if hypersphere:
-                net.append(SampleNorm())
-            else:
-                net.append(nn.BatchNorm1d(in_dim))
-            net.append(nn.LeakyReLU(.2))
-            net.append(
-                cc.Conv1d(
-                    out_dim,
-                    out_dim,
-                    3,
-                    padding=cc.get_padding(3),
-                    cumulative_delay=net[-3].cumulative_delay,
-                ))
+
+            for i in range(repeat_layers - 1):
+                if hypersphere:
+                    net.append(SampleNorm())
+                else:
+                    net.append(nn.BatchNorm1d(in_dim))
+                net.append(nn.LeakyReLU(.2))
+                net.append(
+                    cc.Conv1d(
+                        out_dim,
+                        out_dim,
+                        3,
+                        padding=cc.get_padding(3),
+                        cumulative_delay=net[-3].cumulative_delay,
+                    ))
 
         net.append(nn.LeakyReLU(.2))
         net.append(
