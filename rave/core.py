@@ -19,6 +19,13 @@ def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
 
+def copy_config(source, destination):
+    with open(source, "r") as source:
+        with open(destination, "w") as destination:
+            for l in source.read():
+                destination.write(l)
+
+
 @gin.configurable
 def multiscale_stft(signal, scales, overlap):
     """

@@ -5,8 +5,7 @@ import rave
 
 from effortless_config import Config
 import pytorch_lightning as pl
-from os import path
-
+import os
 import rave.core
 
 import gin
@@ -29,9 +28,15 @@ if __name__ == "__main__":
 
     args.parse_args()
 
-    assert args.NAME is not None
+    assert args.NAME is not None, "You must enter a name for this run"
 
-    gin.parse_config_file(args.GIN)
+    gin_config = gin.parse_config_file(args.GIN)
+
+    os.makedirs(os.path.join("runs", args.NAME), exist_ok=True)
+    rave.core.copy_config(
+        gin_config.filename,
+        os.path.join("runs", args.NAME, "config.gin"),
+    )
 
     model = rave.RAVE()
 
@@ -62,7 +67,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
-            path.join("runs", args.NAME),
+            os.path.join("runs", args.NAME),
             name="rave",
         ),
         gpus=use_gpu,
