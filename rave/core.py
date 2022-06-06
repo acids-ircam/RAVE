@@ -5,7 +5,6 @@ from einops import rearrange
 import numpy as np
 from random import random
 from scipy.signal import lfilter
-from pytorch_lightning.callbacks import ModelCheckpoint
 import librosa as li
 from pathlib import Path
 import gin
@@ -201,7 +200,7 @@ def setup_gpu():
     else:
         print("No GPU found.")
         use_gpu = 0
-    
+
     return use_gpu
 
 
