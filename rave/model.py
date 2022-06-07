@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pytorch_lightning as pl
-from .core import multiscale_stft
+import rave.core
 from sklearn.decomposition import PCA
 from einops import rearrange
 
@@ -15,7 +15,7 @@ class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
                  decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match):
+                 feature_match, valid_signal_crop):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -40,6 +40,8 @@ class RAVE(pl.LightningModule):
         self.warmed_up = False
         self.sr = sampling_rate
         self.feature_match = feature_match
+        self.receptive_field = None
+        self.valid_signal_crop = valid_signal_crop
 
         self.register_buffer("saved_step", torch.tensor(0))
 
@@ -60,8 +62,8 @@ class RAVE(pl.LightningModule):
         return abs(torch.log(x + 1) - torch.log(y + 1)).mean()
 
     def distance(self, x, y):
-        x = multiscale_stft(x)
-        y = multiscale_stft(y)
+        x = rave.core.multiscale_stft(x)
+        y = rave.core.multiscale_stft(y)
 
         lin = sum(list(map(self.lin_distance, x, y)))
         log = sum(list(map(self.log_distance, x, y)))
@@ -96,6 +98,10 @@ class RAVE(pl.LightningModule):
 
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
+
+        if self.valid_signal_crop and self.receptive_field is not None:
+            x = rave.core.valid_signal_crop(x, *self.receptive_field)
+            y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distance = self.distance(x, y)
@@ -181,7 +187,11 @@ class RAVE(pl.LightningModule):
         y = self.pqmf.inverse(y)
         return y
 
+    def forward(self, x):
+        return self.decode(self.encode(x))
+
     def validation_step(self, batch, batch_idx):
+
         x = batch.unsqueeze(1)
         x = self.pqmf(x)
         z = self.encoder(x)
@@ -204,6 +214,9 @@ class RAVE(pl.LightningModule):
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
+        if self.receptive_field is None:
+            self.receptive_field = rave.core.get_rave_receptive_field(self)
+
         if not len(out): return
         audio, z = list(zip(*out))
         if self.saved_step > self.warmup:

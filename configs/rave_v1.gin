@@ -84,5 +84,6 @@ RAVE.encoder = @VariationalEncoder
 RAVE.decoder = @Generator
 RAVE.discriminator = @MultiScaleDiscriminator
 RAVE.phase_1_duration = %phase_1_duration
-RAVE.gan_loss = @nonsaturating_gan
+RAVE.gan_loss = @hinge_gan
 RAVE.feature_match = True
+RAVE.valid_signal_crop = False

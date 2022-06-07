@@ -252,3 +252,32 @@ def nonsaturating_gan(score_real, score_fake):
     loss_dis = -(torch.log(score_real) + torch.log(1 - score_fake)).mean()
     loss_gen = -torch.log(score_fake).mean()
     return loss_dis, loss_gen
+
+
+@torch.enable_grad()
+def get_rave_receptive_field(model):
+    N = 2**15
+    model.eval()
+    while True:
+        x = torch.randn(1, 1, N, requires_grad=True)
+        y = model(x)
+        y[0, 0, N // 2].backward()
+        grad = x.grad.data.reshape(-1)
+        left_grad, right_grad = grad.chunk(2, 0)
+        large_enough = (left_grad[0] == 0) and right_grad[-1] == 0
+        if large_enough:
+            break
+        else:
+            N *= 2
+    left_receptive_field = len(left_grad[left_grad != 0])
+    right_receptive_field = len(right_grad[right_grad != 0])
+    model.zero_grad()
+    return left_receptive_field, right_receptive_field
+
+
+def valid_signal_crop(x, left_rf, right_rf):
+    dim = x.shape[1]
+    x = x[..., left_rf // dim:]
+    if right_rf:
+        x = x[..., :-right_rf // dim]
+    return x

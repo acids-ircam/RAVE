@@ -1,77 +1,41 @@
-from effortless_config import Config, setting
+# %%
+import gin
 from rave import RAVE
 import torch
-from time import time
-import numpy as np
-import gin
+import matplotlib.pyplot as plt
 
-torch.set_grad_enabled(False)
+gin.parse_config_file("configs/rave_v2.gin")
 
-
-class args(Config):
-    groups = ["small", "large"]
-
-    DATA_SIZE = 16
-    CAPACITY = setting(default=64, small=32, large=64)
-    LATENT_SIZE = 128
-    BIAS = True
-    NO_LATENCY = False
-    RATIOS = setting(
-        default=[4, 4, 4, 2],
-        small=[4, 4, 4, 2],
-        large=[4, 4, 2, 2, 2],
-    )
-
-    MIN_KL = 1e-1
-    MAX_KL = 1e-1
-    CROPPED_LATENT_SIZE = 0
-    FEATURE_MATCH = True
-
-    LOUD_STRIDE = 1
-
-    USE_NOISE = True
-    NOISE_RATIOS = [4, 4, 4]
-    NOISE_BANDS = 5
-
-    D_CAPACITY = 16
-    D_MULTIPLIER = 4
-    D_N_LAYERS = 4
-
-    WARMUP = setting(default=1000000, small=1000000, large=3000000)
-    MODE = "hinge"
-    CKPT = None
-
-    PREPROCESSED = None
-    WAV = None
-    SR = 48000
-    N_SIGNAL = 65536
-    MAX_STEPS = setting(default=3000000, small=3000000, large=6000000)
-    VAL_EVERY = 10000
-
-    BATCH = 8
-
-    NAME = None
+rave = RAVE().eval()
 
 
-args.parse_args()
+def get_rave_receptive_field(model):
+    N = 2**15
+    model.eval()
+    while True:
+        x = torch.randn(1, 1, N, requires_grad=True)
+        y = model(x)
+        y[0, 0, N // 2].backward()
+        grad = x.grad.data.reshape(-1)
+        left_grad, right_grad = grad.chunk(2, 0)
+        large_enough = (left_grad[0] == 0) and right_grad[-1] == 0
+        if large_enough:
+            break
+        else:
+            N *= 2
+    left_receptive_field = len(left_grad[left_grad != 0])
+    right_receptive_field = len(right_grad[right_grad != 0])
+    model.zero_grad()
+    return left_receptive_field, right_receptive_field
 
-gin.parse_config_file("original.gin")
-model = RAVE().cuda()
 
-x = torch.randn(1, 1, 2**16).cuda()
+print(get_rave_receptive_field(rave))
 
-for i in range(3):
-    model.decode(model.encode(x))
+# %%
+rf_v1 = 26157 + 22060
+rf_v2 = 45933 + 41836
 
-times = []
-for i in range(40):
-    st = time()
-    model.decode(model.encode(x))
-    st = time() - st
-    times.append(st)
+print(rf_v1 / 44100)
+print(rf_v2 / 44100)
 
-times = 1000 * np.asarray(times)
-mean = times.mean()
-std = times.std()
-
-print(f"{mean:.2f}ms +- {std:.2f}ms")
+# %%
