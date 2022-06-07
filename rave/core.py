@@ -278,7 +278,7 @@ def get_rave_receptive_field(model):
 
 def valid_signal_crop(x, left_rf, right_rf):
     dim = x.shape[1]
-    x = x[..., left_rf // dim:]
-    if right_rf:
-        x = x[..., :-right_rf // dim]
+    x = x[..., left_rf.item() // dim:]
+    if right_rf.item():
+        x = x[..., :-right_rf.item() // dim]
     return x

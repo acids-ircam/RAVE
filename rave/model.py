@@ -40,10 +40,10 @@ class RAVE(pl.LightningModule):
         self.warmed_up = False
         self.sr = sampling_rate
         self.feature_match = feature_match
-        self.receptive_field = None
         self.valid_signal_crop = valid_signal_crop
 
         self.register_buffer("saved_step", torch.tensor(0))
+        self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
     def configure_optimizers(self):
         gen_p = list(self.encoder.parameters())
@@ -99,7 +99,7 @@ class RAVE(pl.LightningModule):
         # DECODE LATENT
         y = self.decoder(z, add_noise=self.warmed_up)
 
-        if self.valid_signal_crop and self.receptive_field is not None:
+        if self.valid_signal_crop and self.receptive_field.sum():
             x = rave.core.valid_signal_crop(x, *self.receptive_field)
             y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
@@ -214,10 +214,11 @@ class RAVE(pl.LightningModule):
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):
-        if self.receptive_field is None:
+        if not self.receptive_field.sum():
             print("Computing receptive field for this configuration...")
-            self.receptive_field = rave.core.get_rave_receptive_field(self)
-            lrf, rrf = self.receptive_field
+            lrf, rrf = rave.core.get_rave_receptive_field(self)
+            self.receptive_field[0] = lrf
+            self.receptive_field[1] = rrf
             print(
                 f"Receptive field: {1000*lrf/self.sr:.2f}ms <-- x --> {1000*rrf/self.sr:.2f}ms"
             )
