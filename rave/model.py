@@ -215,7 +215,12 @@ class RAVE(pl.LightningModule):
 
     def validation_epoch_end(self, out):
         if self.receptive_field is None:
+            print("Computing receptive field for this configuration...")
             self.receptive_field = rave.core.get_rave_receptive_field(self)
+            lrf, rrf = self.receptive_field
+            print(
+                f"Receptive field: {1000*lrf/self.sr:.2f}ms <-- x --> {1000*rrf/self.sr:.2f}ms"
+            )
 
         if not len(out): return
         audio, z = list(zip(*out))
