@@ -12,6 +12,9 @@ import udls
 import udls.transforms as transforms
 from torch.utils.data import random_split
 import GPUtil as gpu
+from tqdm import tqdm
+import os
+import yaml
 
 
 def mod_sigmoid(x):
@@ -272,7 +275,32 @@ def valid_signal_crop(x, left_rf, right_rf):
     return x
 
 
-def extract_code(model, loader):
-    for x in loader:
-        x = x.unsqueeze(1)
-        x = model.encoder(model.pqmf())
+@torch.no_grad()
+def extract_codes(model, loader, out_path):
+    os.makedirs(out_path, exist_ok=True)
+    device = next(iter(model.parameters())).device
+    code = lambda x: model.encoder.reparametrize(model.encoder(model.pqmf(x)))
+
+    x = next(iter(loader))
+    x = x.unsqueeze(1).to(device)
+    batch_size, n_code, n_frame = code(x)[-1].shape
+
+    out_array = np.memmap(
+        os.path.join(out_path, "data.npy"),
+        dtype='uint16',
+        mode='w+',
+        shape=(
+            len(loader) * batch_size,
+            n_code,
+            n_frame,
+        ),
+    )
+
+    for i, x in enumerate(tqdm(loader, desc="Extracting codes")):
+        x = x.unsqueeze(1).to(device)
+        index = code(x)[-1].cpu().numpy().astype(np.uint16)
+        out_array[i * batch_size:(i + 1) * batch_size] = index
+
+    out_array.flush()
+    with open(os.path.join(out_path, "info.yaml"), "w") as info:
+        yaml.safe_dump({"shape": out_array.shape}, info)

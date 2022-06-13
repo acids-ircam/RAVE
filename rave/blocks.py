@@ -368,7 +368,7 @@ class DiscreteEncoder(nn.Module):
         q, index, commmitment = self.rvq(z)
         noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
         q = q + noise_amp * torch.randn_like(q)
-        return q, self.beta * commmitment.mean(), index
+        return q, self.beta * commmitment.mean(), index.transpose(-2, -1)
 
     def set_warmed_up(self, value):
         self.warmed_up = value
