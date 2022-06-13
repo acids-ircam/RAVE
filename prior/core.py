@@ -21,3 +21,16 @@ class CodeDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx].astype(np.int32)
+
+
+def get_decode_function(model):
+
+    @torch.no_grad()
+    def decode_function(z):
+        model.to(z.device)
+        model.eval()
+        y = model.decode(z).cpu()
+        model.cpu()
+        return y
+
+    return decode_function

@@ -45,12 +45,9 @@ class Prior(pl.LightningModule):
     @torch.no_grad()
     def generate(self, x, sample: bool = True):
         for i in tqdm(range(x.shape[-1] - 1)):
-            if cc.USE_BUFFER_CONV:
-                start = i
-                offset = i
-            else:
-                start = None
-                offset = 0
+
+            start = i if cc.USE_BUFFER_CONV else None
+            offset = i if cc.USE_BUFFER_CONV else 0
 
             pred = self.forward(x[..., start:i + 1], offset=offset)
 
@@ -93,6 +90,7 @@ class Prior(pl.LightningModule):
 
     def validation_epoch_end(self, out):
         if self.decode_fun is None: return
+
         batch = out[0]
 
         z = self.generate(batch)
