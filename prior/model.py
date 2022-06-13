@@ -17,16 +17,19 @@ class Prior(pl.LightningModule):
                  residual_block,
                  n_layers,
                  n_quantizer,
-                 resolution,
+                 codebook_dim,
                  sampling_rate,
+                 cycle_size,
                  decode_fun=None):
         super().__init__()
         self.pre_net = pre_net()
         self.post_net = post_net()
-        self.residuals = nn.ModuleList(
-            [residual_block() for _ in range(n_layers)])
+        self.residuals = nn.ModuleList([
+            residual_block(dilation=2**(i % cycle_size))
+            for i in range(n_layers)
+        ])
         self.n_quantizer = n_quantizer
-        self.resolution = resolution
+        self.codebook_dim = codebook_dim
         self.decode_fun = decode_fun
         self.sampling_rate = sampling_rate
 
@@ -34,7 +37,7 @@ class Prior(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=1e-4)
 
     def forward(self, x, offset=0):
-        x = F.one_hot(x, self.resolution).permute(0, 2, 1).float()
+        x = F.one_hot(x, self.codebook_dim).permute(0, 2, 1).float()
         res = self.pre_net(x)
         skp = torch.tensor(0.).to(x)
         for layer in self.residuals:
@@ -69,7 +72,7 @@ class Prior(pl.LightningModule):
         pred = self.forward(batch).permute(0, 2, 1)
 
         loss = nn.functional.cross_entropy(
-            pred.reshape(-1, self.resolution),
+            pred.reshape(-1, self.codebook_dim),
             batch.reshape(-1),
         )
 
@@ -81,7 +84,7 @@ class Prior(pl.LightningModule):
         pred = self.forward(batch).permute(0, 2, 1)
 
         loss = nn.functional.cross_entropy(
-            pred.reshape(-1, self.resolution),
+            pred.reshape(-1, self.codebook_dim),
             batch.reshape(-1),
         )
 

@@ -4,6 +4,7 @@ import gin
 import cached_conv as cc
 
 
+@gin.register
 class ResidualBlock(nn.Module):
 
     def __init__(self, res_size, skp_size, kernel_size, dilation, n_dim):
@@ -31,7 +32,7 @@ class ResidualBlock(nn.Module):
             x.shape[-1],
             device=x.device,
         ) + offset) % self.n_dim
-        bias = self.dim_embedding(idx).transpose()
+        bias = self.dim_embedding(idx).transpose(0,1)
 
         x = x + bias
 
@@ -45,9 +46,9 @@ class ResidualBlock(nn.Module):
 
 
 @gin.register
-def pre_net(dim, res_size, kernel_size):
+def pre_net(in_dim, res_size, kernel_size):
     return nn.Sequential(
-        cc.Conv1d(dim,
+        cc.Conv1d(in_dim,
                   res_size,
                   kernel_size,
                   padding=cc.get_padding(kernel_size, mode="causal")),
@@ -56,13 +57,13 @@ def pre_net(dim, res_size, kernel_size):
 
 
 @gin.register
-def post_net(skp_size, dim):
+def post_net(skp_size, out_dim):
     return nn.Sequential(
         cc.Conv1d(skp_size, skp_size, 1),
         nn.LeakyReLU(.2),
         cc.Conv1d(
             skp_size,
-            dim,
+            out_dim,
             1,
         ),
     )
