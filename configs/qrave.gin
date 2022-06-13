@@ -40,6 +40,7 @@ VariationalEncoder.beta = .05
 DiscreteEncoder.encoder = @discrete/Encoder
 DiscreteEncoder.beta = .1
 DiscreteEncoder.latent_size = %latent_size
+DiscreteEncoder.num_quantizers = %num_quantizers
 
 # GENERATOR
 Generator.latent_size = %latent_size
