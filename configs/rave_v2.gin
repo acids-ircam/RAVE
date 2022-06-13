@@ -32,7 +32,7 @@ Encoder.repeat_layers = 2
 
 
 VariationalEncoder.encoder = @variational/Encoder
-VariationalEncoder.beta = .1
+VariationalEncoder.beta = .05
 
 DiscreteEncoder.encoder = @discrete/Encoder
 DiscreteEncoder.beta = .1
