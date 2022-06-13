@@ -33,6 +33,7 @@ if __name__ == "__main__":
     gin_config = gin.parse_config_file(args.GIN)
 
     os.makedirs(os.path.join("runs", args.NAME), exist_ok=True)
+
     rave.core.copy_config(
         gin_config.filename,
         os.path.join("runs", args.NAME, "config.gin"),
@@ -46,7 +47,6 @@ if __name__ == "__main__":
         model.sr,
         args.N_SIGNAL,
     )
-
     train, val = rave.core.split_dataset(dataset, 98)
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
     val = DataLoader(val, args.BATCH, False, num_workers=8)

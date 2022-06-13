@@ -15,6 +15,7 @@ import GPUtil as gpu
 from tqdm import tqdm
 import os
 import yaml
+import filecmp
 
 
 def mod_sigmoid(x):
@@ -22,6 +23,11 @@ def mod_sigmoid(x):
 
 
 def copy_config(source, destination):
+    if os.path.exists(destination):
+        assert filecmp.cmp(
+            source, destination
+        ), "Same run, incompatible configuration. Choose a different name !"
+        return
     with open(source, "r") as source:
         with open(destination, "w") as destination:
             for l in source.read():
