@@ -2,68 +2,23 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from tqdm import tqdm
-
-from .residual_block import ResidualBlock
-from .core import DiagonalShift, QuantizedNormal
+import gin
 
 import cached_conv as cc
 
 
+@gin.configurable
 class Model(pl.LightningModule):
 
-    def __init__(self, resolution, res_size, skp_size, kernel_size, cycle_size,
-                 n_layers, pretrained_vae):
+    def __init__(self, pre_net, post_net, residual_block, n_layers):
         super().__init__()
-        self.save_hyperparameters()
-
-        self.diagonal_shift = DiagonalShift()
-        self.quantized_normal = QuantizedNormal(resolution)
-
-        self.synth = torch.jit.load(pretrained_vae)
-        self.sr = self.synth.sampling_rate.item()
-        data_size = self.synth.cropped_latent_size
-
-        self.pre_net = nn.Sequential(
-            cc.Conv1d(
-                resolution * data_size,
-                res_size,
-                kernel_size,
-                padding=cc.get_padding(kernel_size, mode="causal"),
-                groups=data_size,
-            ),
-            nn.LeakyReLU(.2),
-        )
-
-        self.residuals = nn.ModuleList([
-            ResidualBlock(
-                res_size,
-                skp_size,
-                kernel_size,
-                2**(i % cycle_size),
-            ) for i in range(n_layers)
-        ])
-
-        self.post_net = nn.Sequential(
-            cc.Conv1d(skp_size, skp_size, 1),
-            nn.LeakyReLU(.2),
-            cc.Conv1d(
-                skp_size,
-                resolution * data_size,
-                1,
-                groups=data_size,
-            ),
-        )
-
-        self.data_size = data_size
-
-        self.val_idx = 0
+        self.pre_net = pre_net()
+        self.post_net = post_net()
+        self.residuals = nn.ModuleList(
+            [residual_block() for _ in range(n_layers)])
 
     def configure_optimizers(self):
-        p = []
-        p.extend(list(self.pre_net.parameters()))
-        p.extend(list(self.residuals.parameters()))
-        p.extend(list(self.post_net.parameters()))
-        return torch.optim.Adam(p, lr=1e-4)
+        return torch.optim.Adam(self.parameters(), lr=1e-4)
 
     @torch.no_grad()
     def encode(self, x):

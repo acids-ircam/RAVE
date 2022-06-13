@@ -12,7 +12,6 @@ import udls
 import udls.transforms as transforms
 from torch.utils.data import random_split
 import GPUtil as gpu
-import os
 
 
 def mod_sigmoid(x):
@@ -271,3 +270,9 @@ def valid_signal_crop(x, left_rf, right_rf):
     if right_rf.item():
         x = x[..., :-right_rf.item() // dim]
     return x
+
+
+def extract_code(model, loader):
+    for x in loader:
+        x = x.unsqueeze(1)
+        x = model.encoder(model.pqmf())
