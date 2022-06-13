@@ -63,14 +63,12 @@ if __name__ == "__main__":
         nepoch = args.VAL_EVERY // len(train)
         val_check["check_val_every_n_epoch"] = nepoch
 
-    use_gpu = rave.core.setup_gpu()
-
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             os.path.join("runs", args.NAME),
             name="rave",
         ),
-        gpus=use_gpu,
+        gpus=rave.core.setup_gpu(),
         callbacks=[validation_checkpoint, last_checkpoint],
         max_epochs=100000,
         max_steps=args.MAX_STEPS,

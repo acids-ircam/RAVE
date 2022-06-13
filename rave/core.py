@@ -192,23 +192,7 @@ def split_dataset(dataset, percent):
 
 
 def setup_gpu():
-    CUDA = gpu.getAvailable(maxMemory=.05)
-    VISIBLE_DEVICES = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-
-    if VISIBLE_DEVICES:
-        use_gpu = int(int(VISIBLE_DEVICES) >= 0)
-    elif len(CUDA):
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(CUDA[0])
-        use_gpu = 1
-    elif torch.cuda.is_available():
-        print("Cuda is available but no fully free GPU found.")
-        print("Training may be slower due to concurrent processes.")
-        use_gpu = 1
-    else:
-        print("No GPU found.")
-        use_gpu = 0
-
-    return use_gpu
+    return gpu.getAvailable(maxMemory=.05)
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):
@@ -261,8 +245,13 @@ def get_rave_receptive_field(model):
     device = next(iter(model.parameters())).device
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
-        y = model(x)
+
+        z = model.encoder(model.pqmf(x))[:, :model.latent_size]
+        y = model.pqmf.inverse(model.decoder(z))
+
         y[0, 0, N // 2].backward()
+        assert x.grad is not None, "input has no grad"
+
         grad = x.grad.data.reshape(-1)
         left_grad, right_grad = grad.chunk(2, 0)
         large_enough = (left_grad[0] == 0) and right_grad[-1] == 0

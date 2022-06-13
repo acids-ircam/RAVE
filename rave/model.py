@@ -179,7 +179,7 @@ class RAVE(pl.LightningModule):
 
     def encode(self, x):
         x = self.pqmf(x)
-        z, _ = self.encoder.reparametrize(self.encoder(x))[:2]
+        z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
     def decode(self, z):

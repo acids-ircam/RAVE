@@ -20,6 +20,8 @@ CachedPQMF.n_band = %n_band
 ResidualVQ.dim = %latent_size
 ResidualVQ.num_quantizers = 4
 ResidualVQ.codebook_size = 1024
+ResidualVQ.channel_last = False
+
 
 Encoder.data_size = %n_band
 Encoder.capacity = %capacity

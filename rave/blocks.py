@@ -357,15 +357,17 @@ class VariationalEncoder(nn.Module):
 @gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder, beta):
+    def __init__(self, encoder, beta, latent_size):
         super().__init__()
         self.encoder = encoder()
         self.rvq = ResidualVQ()
         self.beta = beta
+        self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
 
     def reparametrize(self, z):
-        q, index, commmitment = self.rvq(z.transpose(-1, -2))
-        q = q.transpose(-1, -2)
+        q, index, commmitment = self.rvq(z)
+        noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
+        q = q + noise_amp * torch.randn_like(q)
         return q, self.beta * commmitment.mean(), index
 
     def set_warmed_up(self, value):
