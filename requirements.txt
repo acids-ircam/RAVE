@@ -12,5 +12,6 @@ termcolor==1.1.0
 torch==1.11.0
 tensorboard==2.8.0
 GPUtil==1.4.0
+vector-quantize-pytorch==0.6.0
 git+https://github.com/caillonantoine/cached_conv.git@v2.4.0#egg=cached_conv
 git+https://github.com/caillonantoine/UDLS.git#egg=udls
