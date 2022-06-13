@@ -23,7 +23,8 @@ class CodeDataset(torch.utils.data.Dataset):
         return self.data[idx].astype(np.int32)
 
 
-def get_decode_function(model):
+def get_decode_function(model_path):
+    model = torch.jit.script(model_path)
 
     @torch.no_grad()
     def decode_function(z):

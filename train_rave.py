@@ -32,11 +32,11 @@ if __name__ == "__main__":
 
     gin_config = gin.parse_config_file(args.GIN)
 
-    os.makedirs(os.path.join("runs", args.NAME), exist_ok=True)
+    os.makedirs(os.path.join("runs", args.NAME, "rave"), exist_ok=True)
 
     rave.core.copy_config(
         gin_config.filename,
-        os.path.join("runs", args.NAME, "config.gin"),
+        os.path.join("runs", args.NAME, "rave", "config.gin"),
     )
 
     model = rave.RAVE()
