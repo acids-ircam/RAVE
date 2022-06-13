@@ -7,3 +7,5 @@ lightning_logs/
 *.wav
 *.txt
 runs
+*.npy
+*.yaml

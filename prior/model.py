@@ -10,12 +10,14 @@ import cached_conv as cc
 @gin.configurable
 class Model(pl.LightningModule):
 
-    def __init__(self, pre_net, post_net, residual_block, n_layers):
+    def __init__(self, pre_net, post_net, residual_block, n_layers,
+                 n_quantizer):
         super().__init__()
         self.pre_net = pre_net()
         self.post_net = post_net()
         self.residuals = nn.ModuleList(
             [residual_block() for _ in range(n_layers)])
+        self.n_quantizer = n_quantizer
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-4)
