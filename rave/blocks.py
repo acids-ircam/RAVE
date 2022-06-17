@@ -252,7 +252,8 @@ class Generator(nn.Module):
             waveform, loudness = self.synth(x)
             noise = torch.zeros_like(waveform)
 
-        loudness = loudness.repeat_interleave(self.loud_stride)
+        if self.loud_stride != 1:
+            loudness = loudness.repeat_interleave(self.loud_stride)
         loudness = loudness.reshape(x.shape[0], 1, -1)
 
         waveform = torch.tanh(waveform) * mod_sigmoid(loudness)

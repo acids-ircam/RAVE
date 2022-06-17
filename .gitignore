@@ -9,3 +9,4 @@ lightning_logs/
 runs
 *.npy
 *.yaml
+*.onnx
