@@ -18,6 +18,8 @@ root = os.path.join("runs", args.NAME, "rave")
 gin.parse_config_file(os.path.join(root, "config.gin"))
 checkpoint = rave.core.search_for_run(root)
 
+print(f"using {checkpoint}")
+
 pretrained = rave.RAVE()
 pretrained.load_state_dict(torch.load(checkpoint)["state_dict"])
 pretrained.eval()
@@ -28,7 +30,7 @@ pretrained(x).shape
 torch.onnx.export(
     pretrained,
     x,
-    "rave.onnx",
+    f"{args.NAME}.onnx",
     export_params=True,
     opset_version=15,
     input_names=["audio_in"],
@@ -39,4 +41,5 @@ torch.onnx.export(
         },
         "audio_out": [0],
     },
+    do_constant_folding=False,
 )
