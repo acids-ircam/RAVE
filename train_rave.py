@@ -163,7 +163,8 @@ if __name__ == "__main__":
         **val_check,
     )
 
-    run = search_for_run(args.CKPT)
+    run = search_for_run(args.CKPT, mode="last")
+    if run is None: run = search_for_run(args.CKPT, mode="best)
     if run is not None:
         step = torch.load(run, map_location='cpu')["global_step"]
         trainer.fit_loop.epoch_loop._batches_that_stepped = step
