@@ -9,6 +9,7 @@ from udls import SimpleDataset, simple_audio_preprocess
 from effortless_config import Config, setting
 import pytorch_lightning as pl
 from os import environ, path
+import os
 import numpy as np
 
 import GPUtil as gpu
@@ -120,8 +121,10 @@ if __name__ == "__main__":
         generator=torch.Generator().manual_seed(42),
     )
 
-    train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
-    val = DataLoader(val, args.BATCH, False, num_workers=8)
+
+    num_workers = 0 if os.name == "nt" else 8
+    train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=num_workers)
+    val = DataLoader(val, args.BATCH, False, num_workers=num_workers)
 
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(
