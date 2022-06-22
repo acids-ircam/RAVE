@@ -10,7 +10,10 @@
    - Go to a terminal an enter `nvidia-smi`
    - If a message appears with the name of your graphic card and the available memory, it's all good !
    - Otherwise, you have to install **cuda** on your computer (we don't provide support for that, lots of guides are available online)
-3. Let's install python !
+3. Make sure that you have a CUDA enabled torch installation
+   - Type `python -c "import torch; print(torch.cuda.is_available())"`
+   - If `True` appears, great ! Otherwise you should [re-install torch manually](https://pytorch.org/get-started/locally/)
+5. Let's install python !
 
 # Python installation
 
