@@ -111,7 +111,8 @@ class ResidualStack(nn.Module):
         self.cumulative_delay = self.net.cumulative_delay
 
     def forward(self, x):
-        return sum(self.net(x))
+        x = torch.stack(self.net(x), 0).sum(0)
+        return x
 
 
 class UpsampleLayer(nn.Module):
@@ -358,13 +359,13 @@ class VariationalEncoder(nn.Module):
 @gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder, beta, latent_size,num_quantizers):
+    def __init__(self, encoder, beta, latent_size, num_quantizers):
         super().__init__()
         self.encoder = encoder()
         self.rvq = ResidualVQ()
         self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
-        self.num_quantizers= num_quantizers
+        self.num_quantizers = num_quantizers
 
     def reparametrize(self, z):
         q, index, commmitment = self.rvq(z)
