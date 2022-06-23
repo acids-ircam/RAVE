@@ -17,7 +17,6 @@ class args(Config):
 
 args.parse_args()
 
-args.override(NAME="darbouka_onnx")
 assert args.NAME is not None
 
 root = os.path.join("runs", args.NAME, "rave")

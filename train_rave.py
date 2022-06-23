@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
         PREPROCESSED = None
         WAV = None
-        N_SIGNAL = 65536
+        N_SIGNAL = 131072
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
 
