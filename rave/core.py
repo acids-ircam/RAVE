@@ -31,10 +31,14 @@ def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
             return None
 
         if trim_silence:
-            x = np.concatenate(
-                [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
-                -1,
-            )
+            try:
+                x = np.concatenate(
+                    [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
+                    -1,
+                )
+            except Exception as e:
+                print(e)
+                return None
 
         if crop:
             crop_size = len(x) % N
@@ -44,8 +48,11 @@ def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
             pad = (N - (len(x) % N)) % N
             x = np.pad(x, (0, pad))
 
+        if not len(x):
+            return None
+
         x = x.reshape(-1, N)
-        return x.astype(np.float32)
+        return x.astype(np.float16)
 
     return preprocess
 
@@ -195,15 +202,10 @@ def search_for_run(run_path, mode="last"):
 
 
 def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-    preprocess = lambda name: simple_audio_preprocess(
-        sr,
-        2 * n_signal,
-    )(name).astype(np.float16)
-
     dataset = udls.SimpleDataset(
         preprocess_dir,
         data_dir,
-        preprocess_function=preprocess,
+        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
         split_set="full",
         transforms=transforms.Compose([
             lambda x: x.astype(np.float32),
