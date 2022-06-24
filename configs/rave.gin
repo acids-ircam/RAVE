@@ -1,0 +1,92 @@
+# RAVE CONFIGURATION
+
+sampling_rate = 44100
+capacity = 64
+n_band = 16
+latent_size = 128
+ratios = [4, 4, 4, 2]
+phase_1_duration = 1000000
+
+simple_audio_preprocess:
+    crop = True
+    trim_silence = True
+
+# GENERAL CONVOLUTION CONFIGURATION
+cc.Conv1d.bias = False
+cc.ConvTranspose1d.bias = False
+cc.get_padding.mode = "centered"
+
+# PQMF
+CachedPQMF:
+    attenuation = 100
+    n_band = %n_band
+
+# ENCODER
+Encoder:
+    data_size = %n_band
+    capacity = %capacity
+    latent_size = %latent_size
+    ratios = %ratios
+    sample_norm = False
+    repeat_layers = 1
+
+variational/Encoder.n_out = 2
+
+VariationalEncoder:
+    encoder = @variational/Encoder
+    beta = .1
+
+# GENERATOR
+Generator:
+    latent_size = %latent_size
+    capacity = %capacity
+    data_size = %n_band
+    ratios = %ratios
+    loud_stride = 1
+    use_noise = True
+
+ResidualStack:
+    kernel_sizes = [3]
+    dilations_list = [[1, 1], [3, 1], [5, 1]]
+
+NoiseGenerator:
+    ratios = [4, 4, 4]
+    noise_bands = 5
+
+multiscale_stft:
+    scales = [2048, 1024, 512, 256, 128]
+    overlap = .75
+
+Loudness:
+    sr = %sampling_rate
+    block_size = 512
+    n_fft = 2048
+
+# DISCRIMINATOR
+ConvNet:
+    in_size = 1
+    out_size = 1
+    capacity = %capacity
+    n_layers = 4
+    stride = 4
+
+scales/ConvNet.conv = @torch.nn.Conv1d
+
+MultiScaleDiscriminator:
+    n_discriminators = 3
+    convnet = @scales/ConvNet
+
+scales/ConvNet.kernel_size = 15
+
+# RAVE
+RAVE.latent_size = %latent_size
+RAVE.pqmf = @CachedPQMF
+RAVE.sampling_rate = %sampling_rate
+RAVE.loudness = @Loudness
+RAVE.encoder = @VariationalEncoder  
+RAVE.decoder = @Generator
+RAVE.discriminator = @MultiScaleDiscriminator
+RAVE.phase_1_duration = %phase_1_duration
+RAVE.gan_loss = @hinge_gan
+RAVE.feature_match = True
+RAVE.valid_signal_crop = False
