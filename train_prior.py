@@ -78,7 +78,7 @@ val = max((2 * len(dataset)) // 100, 1)
 train = len(dataset) - val
 train, val = random_split(dataset, [train, val])
 
-num_workers = 0 is os.name == "nt" else 8
+num_workers = 0 if os.name == "nt" else 8
 train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=num_workers)
 val = DataLoader(val, args.BATCH, False, num_workers=num_workers)
 
