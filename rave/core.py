@@ -18,6 +18,38 @@ import yaml
 import filecmp
 
 
+@gin.configurable
+def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
+
+    def preprocess(name):
+        try:
+            x, sr = li.load(name, sr=sampling_rate)
+        except KeyboardInterrupt:
+            exit()
+        except Exception as e:
+            print(e)
+            return None
+
+        if trim_silence:
+            x = np.concatenate(
+                [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
+                -1,
+            )
+
+        if crop:
+            crop_size = len(x) % N
+            if crop_size:
+                x = x[:-crop_size]
+        else:
+            pad = (N - (len(x) % N)) % N
+            x = np.pad(x, (0, pad))
+
+        x = x.reshape(-1, N)
+        return x.astype(np.float32)
+
+    return preprocess
+
+
 def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
@@ -163,7 +195,7 @@ def search_for_run(run_path, mode="last"):
 
 
 def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-    preprocess = lambda name: udls.simple_audio_preprocess(
+    preprocess = lambda name: simple_audio_preprocess(
         sr,
         2 * n_signal,
     )(name).astype(np.float16)

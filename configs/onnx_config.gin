@@ -1,4 +1,8 @@
 include "configs/original_rave.gin"
 
+simple_audio_preprocess:
+    crop = True
+    trim_silence = True
+
 capacity = 32
 Generator.use_noise = False
