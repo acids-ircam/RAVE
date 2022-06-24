@@ -1,0 +1,15 @@
+sampling_rate = 44100
+capacity = 64
+n_band = 16
+latent_size = 128
+ratios = [4, 4, 4, 2]
+phase_1_duration = 1000000
+
+simple_audio_preprocess:
+    crop = True
+    trim_silence = True
+
+# GENERAL CONVOLUTION CONFIGURATION
+cc.Conv1d.bias = False
+cc.ConvTranspose1d.bias = False
+cc.get_padding.mode = "centered"
