@@ -5,12 +5,13 @@ import pytorch_lightning as pl
 from tqdm import tqdm
 import gin
 
+import core
+
 import cached_conv as cc
 
 
 @gin.configurable
 class Prior(pl.LightningModule):
-
     def __init__(self,
                  pre_net,
                  post_net,
@@ -33,11 +34,14 @@ class Prior(pl.LightningModule):
         self.decode_fun = decode_fun
         self.sampling_rate = sampling_rate
 
+        self.register_buffer("receptive_field", torch.tensor(0).long())
+
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-4)
 
-    def forward(self, x, offset=0):
-        x = F.one_hot(x, self.codebook_dim).permute(0, 2, 1).float()
+    def forward(self, x, offset=0, one_hot_encoding=True):
+        if one_hot_encoding:
+            x = F.one_hot(x, self.codebook_dim).permute(0, 2, 1).float()
         res = self.pre_net(x)
         skp = torch.tensor(0.).to(x)
         for layer in self.residuals:
@@ -71,6 +75,9 @@ class Prior(pl.LightningModule):
         batch = batch.permute(0, 2, 1).reshape(batch.shape[0], -1)
         pred = self.forward(batch).permute(0, 2, 1)
 
+        batch = batch[:, self.receptive_field:-1]
+        pred = pred[:, self.receptive_field + 1:]
+
         loss = nn.functional.cross_entropy(
             pred.reshape(-1, self.codebook_dim),
             batch.reshape(-1),
@@ -92,6 +99,12 @@ class Prior(pl.LightningModule):
         return batch
 
     def validation_epoch_end(self, out):
+        if not self.receptive_field.sum():
+            print("Computing receptive field for this configuration...")
+            lrf = core.get_prior_receptive_field(self)[0]
+            self.receptive_field = lrf
+            print(f"Receptive field: {1000*lrf/self.sr:.2f}ms <-- z")
+
         if self.decode_fun is None: return
 
         batch = out[0]

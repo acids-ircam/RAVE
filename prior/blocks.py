@@ -6,7 +6,6 @@ import cached_conv as cc
 
 @gin.register
 class ResidualBlock(nn.Module):
-
     def __init__(self, res_size, skp_size, kernel_size, dilation, n_dim):
         super().__init__()
         fks = (kernel_size - 1) * dilation + 1
@@ -15,7 +14,7 @@ class ResidualBlock(nn.Module):
             res_size,
             2 * res_size,
             kernel_size,
-            padding=(fks - 1, 0),
+            padding=cc.get_padding(kernel_size, 1, dilation, "causal"),
             dilation=dilation,
         )
         self.rconv = nn.Conv1d(res_size, res_size, 1)
@@ -32,7 +31,7 @@ class ResidualBlock(nn.Module):
             x.shape[-1],
             device=x.device,
         ) + offset) % self.n_dim
-        bias = self.dim_embedding(idx).transpose(0,1)
+        bias = self.dim_embedding(idx).transpose(0, 1)
 
         x = x + bias
 

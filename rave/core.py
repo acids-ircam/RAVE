@@ -20,7 +20,6 @@ import filecmp
 
 @gin.configurable
 def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
-
     def preprocess(name):
         try:
             x, sr = li.load(name, sr=sampling_rate)
@@ -127,7 +126,6 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 @gin.configurable
 class Loudness(nn.Module):
-
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr
