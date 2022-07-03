@@ -1,6 +1,7 @@
 include "configs/xrave.gin"
 
 num_quantizers = 4
+ratios = [4, 2, 2, 2]
 
 # ENCODER
 ResidualVQ:
