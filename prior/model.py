@@ -70,7 +70,7 @@ class Prior(pl.LightningModule):
 
     def post_process_prediction(self, x, sample: bool = True):
         if sample: x = F.gumbel_softmax(x, hard=True, dim=1)
-        x = torch.argmax(x, dim=1, keepdim=True)
+        x = torch.argmax(x, dim=1, keepdim=False)
         return x
 
     def training_step(self, batch, batch_idx):
@@ -109,9 +109,9 @@ class Prior(pl.LightningModule):
 
         if self.decode_fun is None: return
 
-        batch = out[0]
+        batch = out[0][..., :512]
 
-        z = self.generate(batch)
+        z = self.generate(batch.reshape(batch.shape[0], -1))
         z = z.reshape(z.shape[0], -1, self.n_quantizer).permute(0, 2, 1)
         y = self.decode_fun(z)
 
@@ -119,5 +119,5 @@ class Prior(pl.LightningModule):
             "generation",
             y.reshape(-1),
             self.global_step,
-            self.sampling_rate.item(),
+            self.sampling_rate,
         )
