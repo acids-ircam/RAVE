@@ -43,11 +43,12 @@ class ScriptedRAVE(torch.nn.Module):
         elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
             self.mode = "discrete"
             self.latent_size = pretrained.encoder.num_quantizers
-            self.quantizer = rave.scripted_vq.SimpleQuantizer(
-                map(
+            self.quantizer = rave.scripted_vq.SimpleQuantizer([
+                *map(
                     lambda l: l._codebook.embed,
                     pretrained.encoder.rvq.layers,
-                ))
+                )
+            ])
 
         x = torch.zeros(1, 1, 2**14)
         x = self.pqmf(x)

@@ -372,6 +372,7 @@ class DiscreteEncoder(nn.Module):
         q = q + noise_amp * torch.randn_like(q)
         return q
 
+    @torch.jit.ignore
     def reparametrize(self, z):
         q, index, commmitment = self.rvq(z)
         q = self.add_noise_to_vector(q)
