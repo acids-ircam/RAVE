@@ -18,7 +18,7 @@ class SimpleQuantizer(nn.Module):
         super().__init__()
         self.register_buffer("embed", torch.stack(embed_list, 0))
 
-    def residual_quantize(self, x):
+    def residual_quantize(self, x: torch.Tensor) -> torch.Tensor:
         index = []
         for embed in self.embed:
             embed_ind = closest_code(x, embed)
@@ -27,8 +27,8 @@ class SimpleQuantizer(nn.Module):
             index.append(embed_ind)
         return torch.stack(index, 1)
 
-    def residual_dequantize(self, index: torch.Tensor):
-        y = 0.
+    def residual_dequantize(self, index: torch.Tensor) -> torch.Tensor:
+        y = torch.tensor(0.).to(index.device)
         for i, embed in zip(index.transpose(0, 1), self.embed):
             y = y + F.embedding(i, embed).permute(0, 2, 1)
         return y

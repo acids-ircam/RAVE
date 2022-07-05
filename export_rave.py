@@ -49,6 +49,8 @@ class ScriptedRAVE(torch.nn.Module):
                     pretrained.encoder.rvq.layers,
                 )
             ])
+            del self.encoder.rvq
+
 
         x = torch.zeros(1, 1, 2**14)
         x = self.pqmf(x)
