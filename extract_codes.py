@@ -19,7 +19,7 @@ if __name__ == "__main__":
         OUT_PATH = "."
 
     args.parse_args()
-    model = torch.jit.load(args.RAVE).eval()
+    model = torch.jit.load(args.RAVE).eval().cuda()
     dataset = rave.core.get_dataset(
         args.WAV,
         args.PREPROCESSED,

@@ -82,7 +82,7 @@ class Prior(pl.LightningModule):
 
         loss = nn.functional.cross_entropy(
             pred.reshape(-1, self.codebook_dim),
-            batch.reshape(-1),
+            batch.reshape(-1).long(),
         )
 
         self.log("prior_prediction", loss)
@@ -94,7 +94,7 @@ class Prior(pl.LightningModule):
 
         loss = nn.functional.cross_entropy(
             pred.reshape(-1, self.codebook_dim),
-            batch.reshape(-1),
+            batch.reshape(-1).long(),
         )
 
         self.log("validation", loss)
@@ -104,7 +104,7 @@ class Prior(pl.LightningModule):
         if not self.receptive_field.sum():
             print("Computing receptive field for this configuration...")
             lrf = get_prior_receptive_field(self)[0]
-            self.receptive_field = lrf
+            self.receptive_field += lrf
             print(f"Receptive field: {lrf:.2f} steps <-- z")
 
         if self.decode_fun is None: return
