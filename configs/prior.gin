@@ -1,11 +1,11 @@
 codebook_dim = 1024
 n_quantizer = 4
 residual_dim = 512
-skip_dim = 512
+skip_dim = 256
 
 pre_net.in_dim = %codebook_dim
 pre_net.res_size = %residual_dim
-pre_net.kernel_size = 5
+pre_net.kernel_size = 3
 
 post_net.skp_size = %skip_dim
 post_net.out_dim = %codebook_dim
@@ -18,8 +18,8 @@ ResidualBlock.n_dim = %n_quantizer
 Prior.pre_net = @pre_net
 Prior.post_net = @post_net
 Prior.residual_block = @ResidualBlock
-Prior.n_layers = 20
+Prior.n_layers = 10
 Prior.n_quantizer = %n_quantizer
 Prior.codebook_dim = %codebook_dim
 Prior.sampling_rate = 44100
-Prior.cycle_size = 5
+Prior.cycle_size = 6
