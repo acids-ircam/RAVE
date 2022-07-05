@@ -367,10 +367,14 @@ class DiscreteEncoder(nn.Module):
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
 
-    def reparametrize(self, z):
-        q, index, commmitment = self.rvq(z)
+    def add_noise_to_vector(self, q):
         noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
         q = q + noise_amp * torch.randn_like(q)
+        return q
+
+    def reparametrize(self, z):
+        q, index, commmitment = self.rvq(z)
+        q = self.add_noise_to_vector(q)
         return q, self.beta * commmitment.mean(), index.transpose(-2, -1)
 
     def set_warmed_up(self, value):

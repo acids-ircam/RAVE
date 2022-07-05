@@ -1,4 +1,3 @@
-from turtle import forward
 import torch
 
 torch.set_grad_enabled(False)
@@ -6,9 +5,12 @@ torch.set_grad_enabled(False)
 import torch.nn as nn
 import torch.nn.functional as F
 import cached_conv as cc
+
 import rave
 import rave.blocks
 import rave.core
+import rave.scripted_vq
+
 import gin
 from effortless_config import Config
 import os
@@ -41,6 +43,11 @@ class ScriptedRAVE(torch.nn.Module):
         elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
             self.mode = "discrete"
             self.latent_size = pretrained.encoder.num_quantizers
+            self.quantizer = rave.scripted_vq.SimpleQuantizer(
+                map(
+                    lambda l: l._codebook.embed,
+                    pretrained.encoder.rvq.layers,
+                ))
 
         x = torch.zeros(1, 1, 2**14)
         x = self.pqmf(x)
@@ -66,8 +73,11 @@ class ScriptedRAVE(torch.nn.Module):
             z = z - self.latent_mean.unsqueeze(-1)
             z = F.conv1d(z, self.latent_pca.unsqueeze(-1))
             z = z[:, :self.latent_size]
-        # elif self.mode == "discrete":
-        #     z = self.encoder.reparametrize(z)[-1]
+        elif self.mode == "discrete":
+            z = self.quantizer.residual_quantize(z)
+        else:
+            raise ValueError(f"mode {self.mode} not understood")
+
         return z
 
     @torch.jit.export
@@ -83,6 +93,11 @@ class ScriptedRAVE(torch.nn.Module):
             z = torch.cat([z, noise], 1)
             z = F.conv1d(z, self.latent_pca.T.unsqueeze(-1))
             z = z + self.latent_mean.unsqueeze(-1)
+        elif self.mode == "discrete":
+            z = self.quantizer.residual_dequantize(z)
+            z = self.encoder.add_noise_to_vector(z)
+        else:
+            raise ValueError(f"mode {self.mode} not understood")
 
         y = self.decoder(z)
         y = self.pqmf.inverse(y)
