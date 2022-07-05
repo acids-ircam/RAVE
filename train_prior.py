@@ -15,8 +15,8 @@ if __name__ == "__main__":
 
     class args(Config):
         GIN = "configs/prior.gin"
-
         CODES = None
+
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
         RAVE = None

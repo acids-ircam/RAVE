@@ -5,6 +5,7 @@ import os
 
 
 class CodeDataset(torch.utils.data.Dataset):
+
     def __init__(self, path) -> None:
         super().__init__()
         with open(os.path.join(path, "info.yaml"), "r") as info:
@@ -23,7 +24,7 @@ class CodeDataset(torch.utils.data.Dataset):
 
 
 def get_decode_function(model_path):
-    model = torch.jit.script(model_path)
+    model = torch.jit.load(model_path)
 
     @torch.no_grad()
     def decode_function(z):

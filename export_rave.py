@@ -28,6 +28,8 @@ class ScriptedRAVE(torch.nn.Module):
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
 
+        self.sr = pretrained.sr
+
         self.full_latent_size = pretrained.latent_size
 
         self.register_buffer("latent_pca", pretrained.latent_pca)

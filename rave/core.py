@@ -319,11 +319,11 @@ def valid_signal_crop(x, left_rf, right_rf):
 def extract_codes(model, loader, out_path):
     os.makedirs(out_path, exist_ok=True)
     device = next(iter(model.parameters())).device
-    code = lambda x: model.encoder.reparametrize(model.encoder(model.pqmf(x)))
+    code = model.encode
 
     x = next(iter(loader))
     x = x.unsqueeze(1).to(device)
-    batch_size, n_code, n_frame = code(x)[-1].shape
+    batch_size, n_code, n_frame = code(x).shape
 
     out_array = np.memmap(
         os.path.join(out_path, "data.npy"),
@@ -338,7 +338,7 @@ def extract_codes(model, loader, out_path):
 
     for i, x in enumerate(tqdm(loader, desc="Extracting codes")):
         x = x.unsqueeze(1).to(device)
-        index = code(x)[-1].cpu().numpy().astype(np.uint16)
+        index = code(x).cpu().numpy().astype(np.uint16)
         out_array[i * batch_size:(i + 1) * batch_size] = index
 
     out_array.flush()

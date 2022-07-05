@@ -5,13 +5,14 @@ import pytorch_lightning as pl
 from tqdm import tqdm
 import gin
 
-import core
+from .core import get_prior_receptive_field
 
 import cached_conv as cc
 
 
 @gin.configurable
 class Prior(pl.LightningModule):
+
     def __init__(self,
                  pre_net,
                  post_net,
@@ -41,7 +42,8 @@ class Prior(pl.LightningModule):
 
     def forward(self, x, offset=0, one_hot_encoding=True):
         if one_hot_encoding:
-            x = F.one_hot(x, self.codebook_dim).permute(0, 2, 1).float()
+            x = F.one_hot(x.long(), num_classes=self.codebook_dim)
+            x = x.permute(0, 2, 1).float()
         res = self.pre_net(x)
         skp = torch.tensor(0.).to(x)
         for layer in self.residuals:
@@ -101,9 +103,9 @@ class Prior(pl.LightningModule):
     def validation_epoch_end(self, out):
         if not self.receptive_field.sum():
             print("Computing receptive field for this configuration...")
-            lrf = core.get_prior_receptive_field(self)[0]
+            lrf = get_prior_receptive_field(self)[0]
             self.receptive_field = lrf
-            print(f"Receptive field: {1000*lrf/self.sr:.2f}ms <-- z")
+            print(f"Receptive field: {lrf:.2f} steps <-- z")
 
         if self.decode_fun is None: return
 
