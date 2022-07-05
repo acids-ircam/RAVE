@@ -8,7 +8,6 @@ from effortless_config import Config
 
 import cached_conv as cc
 import torch.nn as nn
-import re
 
 
 class args(Config):
