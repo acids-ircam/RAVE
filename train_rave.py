@@ -13,7 +13,7 @@ import gin
 if __name__ == "__main__":
 
     class args(Config):
-        GIN = "configs/rave_v2.gin"
+        GIN = "configs/xrave.gin"
 
         PREPROCESSED = None
         WAV = None

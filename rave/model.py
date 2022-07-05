@@ -55,21 +55,6 @@ class RAVE(pl.LightningModule):
 
         return gen_opt, dis_opt
 
-    def lin_distance(self, x, y):
-        return torch.norm(x - y) / torch.norm(x)
-
-    def log_distance(self, x, y):
-        return abs(torch.log(x + 1) - torch.log(y + 1)).mean()
-
-    def distance(self, x, y):
-        x = rave.core.multiscale_stft(x)
-        y = rave.core.multiscale_stft(y)
-
-        lin = sum(list(map(self.lin_distance, x, y)))
-        log = sum(list(map(self.log_distance, x, y)))
-
-        return lin + log
-
     def split_features(self, features):
         feature_true = []
         feature_fake = []
@@ -104,12 +89,12 @@ class RAVE(pl.LightningModule):
             y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        distance = self.distance(x, y)
+        distance = rave.core.multiscale_spectral_distance(x, y)
 
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
 
-        distance = distance + self.distance(x, y)
+        distance = distance + rave.core.multiscale_spectral_distance(x, y)
 
         loud_x = self.loudness(x)
         loud_y = self.loudness(y)

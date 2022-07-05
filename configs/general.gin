@@ -5,6 +5,8 @@ latent_size = 128
 ratios = [4, 4, 4, 2]
 phase_1_duration = 1000000
 
+log_distance.epsilon = 1e-7
+
 simple_audio_preprocess:
     crop = True
     trim_silence = True

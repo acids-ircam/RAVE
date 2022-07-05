@@ -1,4 +1,4 @@
-include "configs/rave.gin"
+include "configs/rave_v1.gin"
 
 capacity = 32
 Generator.use_noise = False

@@ -20,6 +20,7 @@ import filecmp
 
 @gin.configurable
 def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
+
     def preprocess(name):
         try:
             x, sr = li.load(name, sr=sampling_rate)
@@ -126,6 +127,7 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 @gin.configurable
 class Loudness(nn.Module):
+
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr
@@ -342,3 +344,23 @@ def extract_codes(model, loader, out_path):
     out_array.flush()
     with open(os.path.join(out_path, "info.yaml"), "w") as info:
         yaml.safe_dump({"shape": out_array.shape}, info)
+
+
+@gin.configurable
+def lin_distance(x, y):
+    return torch.norm(x - y) / torch.norm(x)
+
+
+@gin.configurable
+def log_distance(x, y, epsilon):
+    return abs(torch.log(x + epsilon) - torch.log(y + epsilon)).mean()
+
+
+def multiscale_spectral_distance(x, y):
+    x = multiscale_stft(x)
+    y = multiscale_stft(y)
+
+    lin = sum(list(map(lin_distance, x, y)))
+    log = sum(list(map(log_distance, x, y)))
+
+    return lin + log

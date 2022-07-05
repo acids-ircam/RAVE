@@ -1,4 +1,6 @@
-include "configs/rave.gin"
+include "configs/rave_v1.gin"
+
+log_distance.epsilon = 1
 
 # ENCODER
 Encoder.repeat_layers = 2

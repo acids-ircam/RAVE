@@ -1,4 +1,4 @@
-include "configs/xrave.gin"
+include "configs/rave_v2.gin"
 
 num_quantizers = 4
 ratios = [4, 2, 2, 2]
