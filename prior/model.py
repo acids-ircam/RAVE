@@ -12,7 +12,6 @@ import cached_conv as cc
 
 @gin.configurable
 class Prior(pl.LightningModule):
-
     def __init__(self,
                  pre_net,
                  post_net,
@@ -22,12 +21,13 @@ class Prior(pl.LightningModule):
                  codebook_dim,
                  sampling_rate,
                  cycle_size,
+                 dilation_factor,
                  decode_fun=None):
         super().__init__()
         self.pre_net = pre_net()
         self.post_net = post_net()
         self.residuals = nn.ModuleList([
-            residual_block(dilation=2**(i % cycle_size))
+            residual_block(dilation=dilation_factor**(i % cycle_size))
             for i in range(n_layers)
         ])
         self.n_quantizer = n_quantizer
@@ -77,8 +77,8 @@ class Prior(pl.LightningModule):
         batch = batch.permute(0, 2, 1).reshape(batch.shape[0], -1)
         pred = self.forward(batch).permute(0, 2, 1)
 
-        batch = batch[:, self.receptive_field:-1]
-        pred = pred[:, self.receptive_field + 1:]
+        batch = batch[:, self.receptive_field + 1:]
+        pred = pred[:, self.receptive_field:-1]
 
         loss = nn.functional.cross_entropy(
             pred.reshape(-1, self.codebook_dim),
@@ -91,6 +91,9 @@ class Prior(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         batch = batch.permute(0, 2, 1).reshape(batch.shape[0], -1)
         pred = self.forward(batch).permute(0, 2, 1)
+
+        batch = batch[:, self.receptive_field + 1:]
+        pred = pred[:, self.receptive_field:-1]
 
         loss = nn.functional.cross_entropy(
             pred.reshape(-1, self.codebook_dim),
