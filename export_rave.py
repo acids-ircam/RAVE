@@ -1,25 +1,27 @@
+import logging
+import math
+import os
+
+logging.basicConfig(level=logging.INFO)
+logging.info("library loading")
 import torch
 
 torch.set_grad_enabled(False)
 
+import cached_conv as cc
+import gin
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-import cached_conv as cc
+from effortless_config import Config
 
 import rave
 import rave.blocks
 import rave.core
 import rave.scripted_vq
 
-import gin
-from effortless_config import Config
-import os
-import math
-import numpy as np
-
 
 class ScriptedRAVE(torch.nn.Module):
-
     def __init__(self, pretrained: rave.RAVE, stereo: bool) -> None:
         super().__init__()
         self.stereo = stereo
@@ -53,8 +55,7 @@ class ScriptedRAVE(torch.nn.Module):
             del self.encoder.rvq
 
         x = torch.zeros(1, 1, 2**14)
-        x = self.pqmf(x)
-        z = self.encoder(x)
+        z = self.encoder(self.pqmf(x))
         ratio_encode = x.shape[-1] // z.shape[-1]
 
         self.register_buffer(
@@ -82,6 +83,9 @@ class ScriptedRAVE(torch.nn.Module):
 
     @torch.jit.export
     def decode(self, z):
+        if self.stereo:
+            z = torch.cat([z, z], 0)
+
         z = self.pre_process_latent(z)
         y = self.decoder(z)
         y = self.pqmf.inverse(y)
@@ -96,7 +100,6 @@ class ScriptedRAVE(torch.nn.Module):
 
 
 class VariationalScriptedRAVE(ScriptedRAVE):
-
     def post_process_latent(self, z):
         z = self.encoder.reparametrize(z)[0]
         z = z - self.latent_mean.unsqueeze(-1)
@@ -117,12 +120,12 @@ class VariationalScriptedRAVE(ScriptedRAVE):
 
 
 class DiscreteScriptedRAVE(ScriptedRAVE):
-
     def post_process_latent(self, z):
         z = self.quantizer.residual_quantize(z)
         return z
 
     def pre_process_latent(self, z):
+        z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
         z = self.quantizer.residual_dequantize(z)
         z = self.encoder.add_noise_to_vector(z)
         return z
@@ -139,6 +142,8 @@ args.parse_args()
 cc.use_cached_conv(args.STREAMING)
 
 assert args.NAME is not None, "YOU HAD ONE JOB: GIVE A NAME !!"
+
+logging.info("building rave")
 
 root = os.path.join("runs", args.NAME, "rave")
 gin.parse_config_file(os.path.join(root, "config.gin"))
@@ -161,14 +166,26 @@ else:
     raise ValueError(f"Encoder type {type(pretrained.encoder)} "
                      "not supported for export.")
 
+logging.info("warmup pass")
+
 x = torch.zeros(1, 1, 2**14)
 pretrained(x)
+
+logging.info("remove weightnorm")
 
 for m in pretrained.modules():
     if hasattr(m, "weight_g"):
         nn.utils.remove_weight_norm(m)
 
+logging.info("script model")
+
 scripted_rave = script_class(pretrained=pretrained, stereo=args.STEREO)
 scripted_rave = torch.jit.script(scripted_rave)
 
+logging.info("save model")
+
 torch.jit.save(scripted_rave, f"{args.NAME}.ts")
+
+logging.info("check model")
+
+rave.core.check_scripted_model(scripted_rave)

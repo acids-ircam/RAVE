@@ -13,10 +13,10 @@ def closest_code(x, embed):
 
 
 class SimpleQuantizer(nn.Module):
-
     def __init__(self, embed_list) -> None:
         super().__init__()
         self.register_buffer("embed", torch.stack(embed_list, 0))
+        self.n_codes = self.embed.shape[1]
 
     def residual_quantize(self, x: torch.Tensor) -> torch.Tensor:
         index = []

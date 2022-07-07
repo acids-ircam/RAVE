@@ -20,7 +20,6 @@ import filecmp
 
 @gin.configurable
 def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
-
     def preprocess(name):
         try:
             x, sr = li.load(name, sr=sampling_rate)
@@ -127,7 +126,6 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 @gin.configurable
 class Loudness(nn.Module):
-
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr
@@ -364,3 +362,25 @@ def multiscale_spectral_distance(x, y):
     log = sum(list(map(log_distance, x, y)))
 
     return lin + log
+
+
+def check_scripted_model(model: nn.Module, buffer_size=8192):
+    checked_methods = []
+    for n, b in model.named_buffers():
+        if "_params" in n:
+            method = n[:-7]
+            n_in, ratio_in, n_out, ratio_out = b.numpy()
+            x = torch.zeros(1, n_in, buffer_size // ratio_in)
+            y = getattr(model, method)(x)
+            assert y.shape[0] == x.shape[
+                0], f"{method}: batch size inconsistent"
+            assert y.shape[
+                1] == n_out, f"{method}: wrong output channel number"
+            assert y.shape[
+                2] == buffer_size // ratio_out, f"{method}: out_buffer is {y.shape[-1].item()}, should be {2**14 // ratio_out}"
+            checked_methods.append(method)
+
+    print(f"The following methods have passed the tests "
+          f"with buffer size {buffer_size}:")
+    for m in checked_methods:
+        print(f" - {m}")
