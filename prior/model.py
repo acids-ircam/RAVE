@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from tqdm import tqdm
+from tqdm import trange
 import gin
 
 from .core import get_prior_receptive_field
@@ -57,7 +57,7 @@ class Prior(pl.LightningModule):
     @torch.jit.export
     @torch.no_grad()
     def generate(self, x, sample: bool = True):
-        for i in range(x.shape[-1] - 1):
+        for i in trange(x.shape[-1] - 1):
 
             start = i if self.use_cached_conv else None
             offset = i if self.use_cached_conv else 0

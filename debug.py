@@ -1,38 +1,45 @@
-# %%
+#%%
 import torch
-
-torch.set_grad_enabled(False)
-import cached_conv as cc
 import prior
 import rave.core
 import gin
-import soundfile as sf
-import torch.nn.functional as F
-from time import time
+import matplotlib.pyplot as plt
+import cached_conv as cc
 
-device = torch.device(f"cuda:{rave.core.setup_gpu()[0]}")
-
-gin.parse_config_file("configs/prior.gin")
-
+torch.set_grad_enabled(False)
 cc.use_cached_conv(True)
 
-synth = torch.jit.load("piano.ts").eval().to(device)
-# model = prior.Prior.load_from_checkpoint(
-#     rave.core.search_for_run("runs/prior_piano/prior"))
-model = prior.Prior().to(device)
-model.eval()
-x = torch.zeros(1, 1024).to(device)
-model(x)
-model = torch.jit.script(model)
-print("scripted !")
+device = torch.device(f"cuda:2")
 
-st = time()
-z = model.generate(torch.zeros(1, 2**10).to(device), sample=True)
-print(time() - st)
+gin.parse_config_file("configs/prior.gin")
+z = torch.zeros(1, 2**13)
+model = prior.Prior.load_from_checkpoint(
+    rave.core.search_for_run("runs/prior_piano/rave")).eval()
+model(z)
+model.to(device)
 
-z = z.reshape(1, -1, 4).transpose(1, 2)
+# %%
+import librosa as li
+import soundfile as sf
+import math
+import numpy as np
 
-y = synth.decode(z).cpu()
-sf.write("out.wav", y.reshape(-1).numpy(), 44100)
+x, sr = li.load("nocturne.wav", sr=None)
+x = x[:2**int(math.floor(math.log2(len(x))))]
+x /= np.max(abs(x))
+
+x = torch.from_numpy(x).reshape(1, 1, -1)
+
+rave_pretrained = torch.jit.load("piano.ts")
+
+# %%
+z = rave_pretrained.encode(x).permute(0, 2, 1).reshape(1, -1).to(device)
+model(z)  # CACHE PREVIOUS STEPS
+z_continuation = model.generate(torch.zeros(1, 4096).to(device))
+# %%
+z_full = torch.cat([z, z_continuation], -1)
+z_full = z_full.reshape(-1, 4).transpose(0, 1).reshape(1, 4, -1).cpu()
+y_full = rave_pretrained.decode(z_full.contiguous()).reshape(-1).numpy()
+sf.write("continuation.wav", y_full, sr)
 
 # %%
