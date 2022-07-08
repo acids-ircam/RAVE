@@ -244,7 +244,13 @@ class Generator(nn.Module):
         self.loud_stride = loud_stride
         self.cumulative_delay = self.synth.cumulative_delay
 
-    def forward(self, x, add_noise: bool = True):
+        self.register_buffer("warmed_up", torch.tensor(0))
+
+    def set_warmed_up(self, state: bool):
+        state = torch.tensor(int(state), device=self.warmed_up.device)
+        self.warmed_up = state
+
+    def forward(self, x):
         x = self.net(x)
 
         if self.use_noise:
@@ -259,7 +265,7 @@ class Generator(nn.Module):
 
         waveform = torch.tanh(waveform) * mod_sigmoid(loudness)
 
-        if add_noise:
+        if self.warmed_up and self.use_noise:
             waveform = waveform + noise
 
         return waveform
@@ -332,7 +338,7 @@ class VariationalEncoder(nn.Module):
     def __init__(self, encoder, beta):
         super().__init__()
         self.encoder = encoder()
-        self.warmed_up = False
+        self.register_buffer("warmed_up", torch.tensor(0))
         self.beta = beta
 
     def reparametrize(self, z):
@@ -346,8 +352,9 @@ class VariationalEncoder(nn.Module):
 
         return z, self.beta * kl
 
-    def set_warmed_up(self, value):
-        self.warmed_up = value
+    def set_warmed_up(self, state: bool):
+        state = torch.tensor(int(state), device=self.warmed_up.device)
+        self.warmed_up = state
 
     def forward(self, x: torch.Tensor):
         z = self.encoder(x)
@@ -366,6 +373,7 @@ class DiscreteEncoder(nn.Module):
         self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
+        self.register_buffer("warmed_up", torch.tensor(0))
 
     def add_noise_to_vector(self, q):
         noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
@@ -378,8 +386,9 @@ class DiscreteEncoder(nn.Module):
         q = self.add_noise_to_vector(q)
         return q, self.beta * commmitment.mean(), index.transpose(-2, -1)
 
-    def set_warmed_up(self, value):
-        self.warmed_up = value
+    def set_warmed_up(self, state: bool):
+        state = torch.tensor(int(state), device=self.warmed_up.device)
+        self.warmed_up = state
 
     def forward(self, x):
         z = self.encoder(x)

@@ -1,30 +1,38 @@
 # %%
 import torch
-import torch.nn as nn
 
-model = torch.jit.load("piano.ts")
+torch.set_grad_enabled(False)
+import cached_conv as cc
+import prior
+import rave.core
+import gin
+import soundfile as sf
+import torch.nn.functional as F
+from time import time
 
+device = torch.device(f"cuda:{rave.core.setup_gpu()[0]}")
 
-def verify_model(model: nn.Module, buffer_size=8192):
-    checked_methods = []
-    for n, b in model.named_buffers():
-        if "_params" in n:
-            method = n[:-7]
-            n_in, ratio_in, n_out, ratio_out = b.numpy()
-            x = torch.randn(1, n_in, buffer_size // ratio_in)
-            y = getattr(model, method)(x)
-            assert y.shape[0] == x.shape[
-                0], f"{method}: batch size inconsistent"
-            assert y.shape[
-                1] == n_out, f"{method}: wrong output channel number"
-            assert y.shape[
-                2] == buffer_size // ratio_out, f"{method}: out_buffer is {y.shape[-1].item()}, should be {2**14 // ratio_out}"
-            checked_methods.append(method)
+gin.parse_config_file("configs/prior.gin")
 
-    print(f"The following methods have passed the tests "
-          f"with buffer size {buffer_size}:")
-    for m in checked_methods:
-        print(f" - {m}")
+cc.use_cached_conv(True)
 
+synth = torch.jit.load("piano.ts").eval().to(device)
+# model = prior.Prior.load_from_checkpoint(
+#     rave.core.search_for_run("runs/prior_piano/prior"))
+model = prior.Prior().to(device)
+model.eval()
+x = torch.zeros(1, 1024).to(device)
+model(x)
+model = torch.jit.script(model)
+print("scripted !")
 
-verify_model(model)
+st = time()
+z = model.generate(torch.zeros(1, 2**10).to(device), sample=True)
+print(time() - st)
+
+z = z.reshape(1, -1, 4).transpose(1, 2)
+
+y = synth.decode(z).cpu()
+sf.write("out.wav", y.reshape(-1).numpy(), 44100)
+
+# %%

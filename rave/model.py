@@ -77,12 +77,13 @@ class RAVE(pl.LightningModule):
         x = self.pqmf(x)
 
         self.encoder.set_warmed_up(self.warmed_up)
+        self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
         z, reg = self.encoder.reparametrize(self.encoder(x))[:2]
 
         # DECODE LATENT
-        y = self.decoder(z, add_noise=self.warmed_up)
+        y = self.decoder(z)
 
         if self.valid_signal_crop and self.receptive_field.sum():
             x = rave.core.valid_signal_crop(x, *self.receptive_field)
@@ -168,7 +169,7 @@ class RAVE(pl.LightningModule):
         return z
 
     def decode(self, z):
-        y = self.decoder(z, add_noise=True)
+        y = self.decoder(z)
         y = self.pqmf.inverse(y)
         return y
 
@@ -187,7 +188,7 @@ class RAVE(pl.LightningModule):
             mean = None
 
         z = self.encoder.reparametrize(z)[0]
-        y = self.decoder(z, add_noise=self.warmed_up)
+        y = self.decoder(z)
 
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)

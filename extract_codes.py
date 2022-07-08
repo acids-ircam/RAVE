@@ -14,7 +14,7 @@ if __name__ == "__main__":
         WAV = None
         PREPROCESSED = None
         RAVE = None
-        N_SIGNAL = 2**21
+        N_SIGNAL = 2**19
         BATCH_SIZE = 16
         OUT_PATH = "."
 

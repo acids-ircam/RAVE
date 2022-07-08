@@ -6,7 +6,9 @@ import cached_conv as cc
 
 @gin.register
 class ResidualBlock(nn.Module):
-    def __init__(self, res_size, skp_size, kernel_size, dilation, n_dim):
+
+    def __init__(self, res_size, skp_size, kernel_size, dilation, n_dim,
+                 quantizer_embedding):
         super().__init__()
         fks = (kernel_size - 1) * dilation + 1
 
@@ -14,26 +16,30 @@ class ResidualBlock(nn.Module):
             res_size,
             2 * res_size,
             kernel_size,
-            padding=cc.get_padding(kernel_size, 1, dilation, "causal"),
+            padding=(fks - 1, 0),
             dilation=dilation,
         )
         self.rconv = nn.Conv1d(res_size, res_size, 1)
         self.sconv = nn.Conv1d(res_size, skp_size, 1)
 
-        self.dim_embedding = nn.Embedding(n_dim, res_size)
+        if quantizer_embedding:
+            self.dim_embedding = nn.Embedding(n_dim, res_size)
+        else:
+            self.dim_embedding = None
 
         self.n_dim = n_dim
 
-    def forward(self, x, skp, offset=0):
+    def forward(self, x, skp, offset: int = 0):
         res = x.clone()
 
         idx = (torch.arange(
             x.shape[-1],
             device=x.device,
         ) + offset) % self.n_dim
-        bias = self.dim_embedding(idx).transpose(0, 1)
 
-        x = x + bias
+        if self.dim_embedding is not None:
+            bias = self.dim_embedding(idx).transpose(0, 1)
+            x = x + bias
 
         x = self.dconv(x)
         xa, xb = torch.split(x, x.shape[1] // 2, 1)

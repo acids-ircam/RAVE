@@ -12,6 +12,7 @@ import cached_conv as cc
 
 @gin.configurable
 class Prior(pl.LightningModule):
+
     def __init__(self,
                  pre_net,
                  post_net,
@@ -35,12 +36,14 @@ class Prior(pl.LightningModule):
         self.decode_fun = decode_fun
         self.sampling_rate = sampling_rate
 
+        self.use_cached_conv = cc.USE_BUFFER_CONV
+
         self.register_buffer("receptive_field", torch.tensor(0).long())
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-4)
 
-    def forward(self, x, offset=0, one_hot_encoding=True):
+    def forward(self, x, offset: int = 0, one_hot_encoding: bool = True):
         if one_hot_encoding:
             x = F.one_hot(x.long(), num_classes=self.codebook_dim)
             x = x.permute(0, 2, 1).float()
@@ -51,21 +54,21 @@ class Prior(pl.LightningModule):
         x = self.post_net(skp)
         return x
 
+    @torch.jit.export
     @torch.no_grad()
     def generate(self, x, sample: bool = True):
-        for i in tqdm(range(x.shape[-1] - 1)):
+        for i in range(x.shape[-1] - 1):
 
-            start = i if cc.USE_BUFFER_CONV else None
-            offset = i if cc.USE_BUFFER_CONV else 0
+            start = i if self.use_cached_conv else None
+            offset = i if self.use_cached_conv else 0
 
-            pred = self.forward(x[..., start:i + 1], offset=offset)
-
-            if not cc.USE_BUFFER_CONV:
-                pred = pred[..., -1:]
-
+            pred = self.forward(x[..., start:i + 1],
+                                offset=offset,
+                                one_hot_encoding=True)
+            pred = pred[..., -1:]
             pred = self.post_process_prediction(pred, sample=sample)
 
-            x[..., i + 1:i + 2] = pred
+            x[:, i + 1:i + 2] = pred
         return x
 
     def post_process_prediction(self, x, sample: bool = True):
@@ -74,8 +77,8 @@ class Prior(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        batch = batch.permute(0, 2, 1).reshape(batch.shape[0], -1)
-        pred = self.forward(batch).permute(0, 2, 1)
+        batch = batch.permute(0, 2, 1).reshape(batch.shape[0], -1)  # B x (T D)
+        pred = self.forward(batch).permute(0, 2, 1)  # B x (T D) x C
 
         batch = batch[:, self.receptive_field + 1:]
         pred = pred[:, self.receptive_field:-1]
@@ -108,13 +111,13 @@ class Prior(pl.LightningModule):
             print("Computing receptive field for this configuration...")
             lrf = get_prior_receptive_field(self)[0]
             self.receptive_field += lrf
-            print(f"Receptive field: {lrf:.2f} steps <-- z")
+            print(f"Receptive field: {lrf} steps <-- z")
 
         if self.decode_fun is None: return
 
         batch = out[0][..., :512]
 
-        z = self.generate(batch.reshape(batch.shape[0], -1))
+        z = self.generate(batch.reshape(batch.shape[0], -1), sample=True)
         z = z.reshape(z.shape[0], -1, self.n_quantizer).permute(0, 2, 1)
         y = self.decode_fun(z)
 

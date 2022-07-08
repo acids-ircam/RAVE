@@ -6,7 +6,7 @@ skip_dim = 256
 pre_net:
     in_dim = %codebook_dim
     res_size = %residual_dim
-    kernel_size = 3
+    kernel_size = 5
 
 post_net:
     skp_size = %skip_dim
@@ -17,6 +17,7 @@ ResidualBlock:
     skp_size = %skip_dim
     kernel_size = 5
     n_dim = %n_quantizer
+    quantizer_embedding = False
 
 Prior:
     pre_net = @pre_net
@@ -27,4 +28,4 @@ Prior:
     codebook_dim = %codebook_dim
     sampling_rate = 44100
     cycle_size = 5
-    dilation_factor = 5
+    dilation_factor = 4
