@@ -1,6 +1,6 @@
 include "configs/rave_v2.gin"
 
-num_quantizers = 4
+num_quantizers = 2
 ratios = [4, 2, 2, 2]
 latent_size = 512
 
