@@ -20,6 +20,7 @@ import filecmp
 
 @gin.configurable
 def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
+
     def preprocess(name):
         try:
             x, sr = li.load(name, sr=sampling_rate)
@@ -126,6 +127,7 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 @gin.configurable
 class Loudness(nn.Module):
+
     def __init__(self, sr, block_size, n_fft=2048):
         super().__init__()
         self.sr = sr
@@ -199,14 +201,31 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-    dataset = udls.SimpleDataset(
-        preprocess_dir,
-        data_dir,
-        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
-        split_set="full",
+# def get_dataset(data_dir, preprocess_dir, sr, n_signal):
+#     dataset = udls.SimpleDataset(
+#         preprocess_dir,
+#         data_dir,
+#         preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
+#         split_set="full",
+#         transforms=transforms.Compose([
+#             lambda x: x.astype(np.float32),
+#             transforms.RandomCrop(n_signal),
+#             transforms.RandomApply(
+#                 lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
+#                 p=.8,
+#             ),
+#             transforms.Dequantize(16),
+#             lambda x: x.astype(np.float32),
+#         ]),
+#     )
+
+#     return dataset
+
+
+def get_dataset(dataset_path, sr, n_signal):
+    dataset = udls.WaveformAudioExampleDataset(
+        dataset_path,
         transforms=transforms.Compose([
-            lambda x: x.astype(np.float32),
             transforms.RandomCrop(n_signal),
             transforms.RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
@@ -216,7 +235,6 @@ def get_dataset(data_dir, preprocess_dir, sr, n_signal):
             lambda x: x.astype(np.float32),
         ]),
     )
-
     return dataset
 
 

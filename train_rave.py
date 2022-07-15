@@ -7,6 +7,7 @@ from effortless_config import Config
 import pytorch_lightning as pl
 import os
 import rave.core
+import udls
 
 import gin
 
@@ -15,11 +16,10 @@ if __name__ == "__main__":
     class args(Config):
         GIN = "configs/rave_v2.gin"
 
-        PREPROCESSED = None
-        WAV = None
-        N_SIGNAL = 131072
+        DATASET_PATH = None
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
+        N_SIGNAL = 131072
 
         BATCH = 8
         CKPT = None
@@ -29,6 +29,7 @@ if __name__ == "__main__":
     args.parse_args()
 
     assert args.NAME is not None, "You must enter a name for this run"
+    assert args.DATASET_PATH is not None, "You must enter a dataset path"
 
     gin_config = gin.parse_config_file(args.GIN)
 
@@ -41,12 +42,14 @@ if __name__ == "__main__":
 
     model = rave.RAVE()
 
-    dataset = rave.core.get_dataset(
-        args.WAV,
-        args.PREPROCESSED,
-        model.sr,
-        args.N_SIGNAL,
-    )
+    # dataset = rave.core.get_dataset(
+    #     args.WAV,
+    #     args.PREPROCESSED,
+    #     model.sr,
+    #     args.N_SIGNAL,
+    # )
+
+    dataset = rave.core.get_dataset(args.DATASET_PATH, model.sr, args.N_SIGNAL)
     train, val = rave.core.split_dataset(dataset, 98)
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
     val = DataLoader(val, args.BATCH, False, num_workers=8)
