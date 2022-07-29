@@ -1,13 +1,12 @@
+import cached_conv as cc
+import gin
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytorch_lightning as pl
 from tqdm import trange
-import gin
 
 from .core import get_prior_receptive_field
-
-import cached_conv as cc
 
 
 @gin.configurable

@@ -1,15 +1,15 @@
+import os
+
+import gin
+import pytorch_lightning as pl
 import torch
+from effortless_config import Config
 from torch.utils.data import DataLoader
 
-import rave
 import prior
-
-from effortless_config import Config
-import pytorch_lightning as pl
-import os
-import rave.core
 import prior.core
-import gin
+import rave
+import rave.core
 
 if __name__ == "__main__":
 

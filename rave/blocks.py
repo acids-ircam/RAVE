@@ -1,14 +1,12 @@
+import cached_conv as cc
+import gin
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
-import numpy as np
-from .core import mod_sigmoid
-from .core import amp_to_impulse_response, fft_convolve
-
 from vector_quantize_pytorch import ResidualVQ
 
-import gin
-import cached_conv as cc
+from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
 ResidualVQ = gin.external_configurable(ResidualVQ)
 

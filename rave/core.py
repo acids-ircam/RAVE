@@ -1,21 +1,22 @@
-import torch
-import torch.nn as nn
-import torch.fft as fft
-from einops import rearrange
-import numpy as np
-from random import random
-from scipy.signal import lfilter
-import librosa as li
+import filecmp
+import os
 from pathlib import Path
+from random import random
+
 import gin
+import GPUtil as gpu
+import librosa as li
+import numpy as np
+import torch
+import torch.fft as fft
+import torch.nn as nn
 import udls
 import udls.transforms as transforms
-from torch.utils.data import random_split
-import GPUtil as gpu
-from tqdm import tqdm
-import os
 import yaml
-import filecmp
+from einops import rearrange
+from scipy.signal import lfilter
+from torch.utils.data import random_split
+from tqdm import tqdm
 
 
 @gin.configurable
@@ -201,31 +202,14 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-# def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-#     dataset = udls.SimpleDataset(
-#         preprocess_dir,
-#         data_dir,
-#         preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
-#         split_set="full",
-#         transforms=transforms.Compose([
-#             lambda x: x.astype(np.float32),
-#             transforms.RandomCrop(n_signal),
-#             transforms.RandomApply(
-#                 lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
-#                 p=.8,
-#             ),
-#             transforms.Dequantize(16),
-#             lambda x: x.astype(np.float32),
-#         ]),
-#     )
-
-#     return dataset
-
-
-def get_dataset(dataset_path, sr, n_signal):
-    dataset = udls.WaveformAudioExampleDataset(
-        dataset_path,
+def get_dataset(data_dir, preprocess_dir, sr, n_signal):
+    dataset = udls.SimpleDataset(
+        preprocess_dir,
+        data_dir,
+        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
+        split_set="full",
         transforms=transforms.Compose([
+            lambda x: x.astype(np.float32),
             transforms.RandomCrop(n_signal),
             transforms.RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
@@ -235,6 +219,7 @@ def get_dataset(dataset_path, sr, n_signal):
             lambda x: x.astype(np.float32),
         ]),
     )
+
     return dataset
 
 

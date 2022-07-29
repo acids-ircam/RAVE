@@ -1,2 +1,2 @@
-from .blocks import ResidualBlock, pre_net, post_net
+from .blocks import ResidualBlock, post_net, pre_net
 from .model import Prior

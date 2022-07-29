@@ -1,14 +1,13 @@
 import torch
 
 torch.set_grad_enabled(False)
-import torch.nn as nn
-from effortless_config import Config
 import logging
-from termcolor import colored
-
 import math
 
+import torch.nn as nn
 from cached_conv import use_cached_conv
+from effortless_config import Config
+from termcolor import colored
 
 logging.basicConfig(level=logging.INFO,
                     format=colored("[%(relativeCreated).2f] ", "green") +
@@ -26,6 +25,7 @@ args.parse_args()
 use_cached_conv(True)
 
 import cached_conv as cc
+
 from prior.model import Model
 from rave.core import search_for_run
 

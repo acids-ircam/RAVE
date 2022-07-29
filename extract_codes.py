@@ -1,11 +1,10 @@
 import torch
 
 torch.set_grad_enabled(False)
+from effortless_config import Config
 from torch.utils.data import DataLoader
 
 import rave
-
-from effortless_config import Config
 import rave.core
 
 if __name__ == "__main__":

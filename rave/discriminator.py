@@ -1,8 +1,8 @@
-import torch.nn as nn
-import torch.nn.utils.weight_norm as wn
-import numpy as np
 import cached_conv as cc
 import gin
+import numpy as np
+import torch.nn as nn
+import torch.nn.utils.weight_norm as wn
 
 
 @gin.register

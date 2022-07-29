@@ -1,12 +1,13 @@
+import math
+
+import cached_conv as cc
+import gin
+import numpy as np
 import torch
 import torch.nn as nn
-from scipy.signal import kaiser, kaiserord, kaiser_beta, firwin
-from scipy.optimize import fmin
-import math
-import numpy as np
 from einops import rearrange
-import gin
-import cached_conv as cc
+from scipy.optimize import fmin
+from scipy.signal import firwin, kaiser, kaiser_beta, kaiserord
 
 
 def reverse_half(x):

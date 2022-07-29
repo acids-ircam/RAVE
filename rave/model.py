@@ -1,13 +1,13 @@
-import torch
+import gin
 import numpy as np
 import pytorch_lightning as pl
-import rave.core
-from sklearn.decomposition import PCA
+import torch
 from einops import rearrange
+from sklearn.decomposition import PCA
+
+import rave.core
 
 from .blocks import VariationalEncoder
-
-import gin
 
 
 @gin.configurable
@@ -193,7 +193,7 @@ class RAVE(pl.LightningModule):
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
 
-        distance = self.distance(x, y)
+        distance = rave.core.multiscale_spectral_distance(x, y)
 
         if self.trainer is not None:
             self.log("validation", distance)
@@ -240,7 +240,7 @@ class RAVE(pl.LightningModule):
                     np.argmax(var > p).astype(np.float32),
                 )
 
-        y = torch.cat(audio, 0)[:64].reshape(-1)
+        y = torch.cat(audio, 0)[:8].reshape(-1)
         self.logger.experiment.add_audio("audio_val", y,
                                          self.saved_step.item(), self.sr)
         self.idx += 1

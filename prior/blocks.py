@@ -1,7 +1,7 @@
+import cached_conv as cc
+import gin
 import torch
 import torch.nn as nn
-import gin
-import cached_conv as cc
 
 
 @gin.register

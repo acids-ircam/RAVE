@@ -1,6 +1,6 @@
-sampling_rate = 44100
+sampling_rate = 16000
 capacity = 64
-n_band = 16
+n_band = 4
 latent_size = 128
 ratios = [4, 4, 4, 2]
 phase_1_duration = 1000000
