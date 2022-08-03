@@ -1,7 +1,7 @@
 include "configs/rave_v2.gin"
 
-num_quantizers = 2
-ratios = [4, 4, 4, 2]
+num_quantizers = 4
+ratios = [4, 4, 2, 2]
 latent_size = 512
 
 # ENCODER
@@ -21,4 +21,6 @@ DiscreteEncoder:
 
 # RAVE
 RAVE.encoder = @DiscreteEncoder  
+RAVE.phase_1_duration = 0
+
 

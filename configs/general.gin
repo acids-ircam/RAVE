@@ -1,8 +1,8 @@
-sampling_rate = 16000
+sampling_rate = 44100
 capacity = 64
-n_band = 4
+n_band = 16
 latent_size = 128
-ratios = [4, 4, 4, 2]
+ratios = [4, 4, 2, 2]
 phase_1_duration = 1000000
 
 log_distance.epsilon = 1e-7

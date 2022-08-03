@@ -3,7 +3,6 @@ import os
 import gin
 import pytorch_lightning as pl
 import torch
-import udls
 from effortless_config import Config
 from torch.utils.data import DataLoader
 
