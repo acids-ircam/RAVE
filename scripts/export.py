@@ -14,12 +14,32 @@ import nn_tilde
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from effortless_config import Config
 
 import rave
 import rave.blocks
 import rave.core
 import rave.scripted_vq
+from absl import flags, app
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string('run',
+                    default=None,
+                    help='Path to the run to export',
+                    required=True)
+flags.DEFINE_bool('streaming',
+                  default=False,
+                  help='Enable the model streaming mode')
+flags.DEFINE_float(
+    'fidelity',
+    default=.95,
+    lower_bound=.1,
+    upper_bound=.999,
+    help='Fidelity to use during inference (Variational mode only)')
+flags.DEFINE_bool(
+    'stereo',
+    default=False,
+    help='Enable fake stereo mode (one encoding, double decoding')
 
 
 class ScriptedRAVE(nn_tilde.Module):
@@ -42,7 +62,7 @@ class ScriptedRAVE(nn_tilde.Module):
 
         if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
             latent_size = max(
-                np.argmax(pretrained.fidelity.numpy() > args.FIDELITY), 1)
+                np.argmax(pretrained.fidelity.numpy() > FLAGS.fidelity), 1)
             latent_size = 2**math.ceil(math.log2(latent_size))
             self.latent_size = latent_size
 
@@ -168,21 +188,17 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         return z
 
 
-class args(Config):
-    RUN = None
-    STREAMING = False
-    FIDELITY = .95
-    STEREO = False
-
-
 def main():
-    args.parse_args()
-    cc.use_cached_conv(args.STREAMING)
+    app.run(export)
+
+
+def export(argv):
+    cc.use_cached_conv(FLAGS.streaming)
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(args.RUN, "config.gin"))
-    checkpoint = rave.core.search_for_run(args.RUN)
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
+    checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
@@ -212,24 +228,24 @@ def main():
 
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained, stereo=args.STEREO)
+    scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
 
     logging.info("save model")
-    model_name = os.path.basename(os.path.normpath(args.RUN))
-    if args.STREAMING:
+    model_name = os.path.basename(os.path.normpath(FLAGS.run))
+    if FLAGS.streaming:
         model_name += "_streaming"
-    if args.STEREO:
+    if FLAGS.stereo:
         model_name += "_stereo"
     model_name += ".ts"
 
-    scripted_rave.export_to_ts(os.path.join(args.RUN, model_name))
+    scripted_rave.export_to_ts(os.path.join(FLAGS.run, model_name))
 
     logging.info("check model")
 
     rave.core.check_scripted_model(scripted_rave)
 
     logging.info(
-        f"all good ! model exported to {os.path.join(args.RUN, model_name)}")
+        f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
 
 
 if __name__ == '__main__':
