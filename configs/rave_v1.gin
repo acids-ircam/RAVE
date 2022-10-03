@@ -1,76 +1,100 @@
-include "configs/general.gin"
+import rave
+from rave import pqmf
+from rave import core
+from rave import blocks
+from rave import discriminator
 
-# PQMF
-CachedPQMF:
-    attenuation = 100
-    n_band = %n_band
+SAMPLING_RATE = 44100
+CAPACITY = 64
+N_BAND = 16
+LATENT_SIZE = 128
+RATIOS = [4, 4, 4, 2]
+PHASE_1_DURATION = 1000000
 
-# ENCODER
-Encoder:
-    data_size = %n_band
-    capacity = %capacity
-    latent_size = %latent_size
-    ratios = %ratios
-    sample_norm = False
-    repeat_layers = 1
+# CORE CONFIGURATION
+core.log_distance.epsilon = 1e-7
 
-variational/Encoder.n_out = 2
+core.simple_audio_preprocess:
+    crop = True
+    trim_silence = True
 
-VariationalEncoder:
-    encoder = @variational/Encoder
-    beta = .1
-
-# GENERATOR
-Generator:
-    latent_size = %latent_size
-    capacity = %capacity
-    data_size = %n_band
-    ratios = %ratios
-    loud_stride = 1
-    use_noise = True
-
-ResidualStack:
-    kernel_sizes = [3]
-    dilations_list = [[1, 1], [3, 1], [5, 1]]
-
-NoiseGenerator:
-    ratios = [4, 4, 4]
-    noise_bands = 5
-
-multiscale_stft:
+core.multiscale_stft:
     scales = [2048, 1024, 512, 256, 128]
     overlap = .75
 
-Loudness:
-    sr = %sampling_rate
+core.Loudness:
+    sr = %SAMPLING_RATE
     block_size = 512
     n_fft = 2048
 
+# CONVOLUTION CONFIGURATION
+cc.Conv1d.bias = False
+cc.ConvTranspose1d.bias = False
+cc.get_padding.mode = "centered"
+
+# PQMF
+pqmf.CachedPQMF:
+    attenuation = 100
+    n_band = %N_BAND
+
+# ENCODER
+blocks.Encoder:
+    data_size = %N_BAND
+    capacity = %CAPACITY
+    latent_size = %LATENT_SIZE
+    ratios = %RATIOS
+    sample_norm = False
+    repeat_layers = 1
+
+variational/blocks.Encoder.n_out = 2
+
+blocks.VariationalEncoder:
+    encoder = @variational/blocks.Encoder
+    beta = .1
+
+# DECODER
+blocks.Generator:
+    latent_size = %LATENT_SIZE
+    capacity = %CAPACITY
+    data_size = %N_BAND
+    ratios = %RATIOS
+    loud_stride = 1
+    use_noise = True
+
+blocks.ResidualStack:
+    kernel_sizes = [3]
+    dilations_list = [[1, 1], [3, 1], [5, 1]]
+
+blocks.NoiseGenerator:
+    ratios = [4, 4, 4]
+    noise_bands = 5
+
 # DISCRIMINATOR
-ConvNet:
+discriminator.ConvNet:
     in_size = 1
     out_size = 1
-    capacity = %capacity
+    capacity = %CAPACITY
     n_layers = 4
     stride = 4
 
-scales/ConvNet.conv = @torch.nn.Conv1d
+scales/discriminator.ConvNet:
+    conv = @torch.nn.Conv1d
+    kernel_size = 15
 
-MultiScaleDiscriminator:
+discriminator.MultiScaleDiscriminator:
     n_discriminators = 3
-    convnet = @scales/ConvNet
+    convnet = @scales/discriminator.ConvNet
 
-scales/ConvNet.kernel_size = 15
-
-# RAVE
-RAVE.latent_size = %latent_size
-RAVE.pqmf = @CachedPQMF
-RAVE.sampling_rate = %sampling_rate
-RAVE.loudness = @Loudness
-RAVE.encoder = @VariationalEncoder  
-RAVE.decoder = @Generator
-RAVE.discriminator = @MultiScaleDiscriminator
-RAVE.phase_1_duration = %phase_1_duration
-RAVE.gan_loss = @hinge_gan
-RAVE.feature_match = True
-RAVE.valid_signal_crop = False
+# MODEL ASSEMBLING
+RAVE:
+    latent_size = %LATENT_SIZE
+    pqmf = @pqmf.CachedPQMF
+    sampling_rate = %SAMPLING_RATE
+    loudness = @core.Loudness
+    encoder = @blocks.VariationalEncoder  
+    decoder = @blocks.Generator
+    discriminator = @discriminator.MultiScaleDiscriminator
+    phase_1_duration = %PHASE_1_DURATION
+    gan_loss = @core.hinge_gan
+    feature_match = True
+    valid_signal_crop = False

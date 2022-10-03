@@ -1,4 +1,8 @@
 include "configs/rave_v1.gin"
 
-capacity = 32
-Generator.use_noise = False
+import rave
+from rave import blocks
+
+CAPACITY = 32
+
+blocks.Generator.use_noise = False

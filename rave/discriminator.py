@@ -1,3 +1,4 @@
+from typing import Sequence, Type
 import cached_conv as cc
 import gin
 import numpy as np
@@ -50,7 +51,7 @@ class ConvNet(nn.Module):
         return features
 
 
-@gin.configurable
+@gin.register
 class MultiScaleDiscriminator(nn.Module):
 
     def __init__(self, n_discriminators, convnet) -> None:
@@ -68,7 +69,7 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-@gin.configurable
+@gin.register
 class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(self, periods, convnet) -> None:
@@ -96,13 +97,12 @@ class MultiPeriodDiscriminator(nn.Module):
 @gin.register
 class CombineDiscriminators(nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, discriminators: Sequence[Type[nn.Module]]) -> None:
         super().__init__()
-        self.mpd = MultiPeriodDiscriminator()
-        self.msd = MultiScaleDiscriminator()
+        self.discriminators = nn.ModuleList(disc_cls() for disc_cls in discriminators)
 
     def forward(self, x):
         features = []
-        features.extend(self.mpd(x))
-        features.extend(self.msd(x))
+        for disc in self.discriminators:
+            features.extend(disc(x))
         return features

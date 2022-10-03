@@ -8,7 +8,7 @@ from vector_quantize_pytorch import ResidualVQ
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
-ResidualVQ = gin.external_configurable(ResidualVQ)
+ResidualVQ = gin.external_configurable(ResidualVQ, module='vqp')
 
 
 class SampleNorm(nn.Module):

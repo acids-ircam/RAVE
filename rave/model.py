@@ -210,7 +210,10 @@ class RAVE(pl.LightningModule):
             )
 
         if not len(out): return
+
         audio, z = list(zip(*out))
+        audio = list(map(lambda x: x.cpu(), audio))
+
         if self.saved_step > self.warmup:
             self.warmed_up = True
 

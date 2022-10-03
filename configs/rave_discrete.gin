@@ -1,26 +1,31 @@
 include "configs/rave_v2.gin"
 
-num_quantizers = 4
-ratios = [4, 4, 2, 2]
-latent_size = 512
+import rave
+from rave import blocks
+
+NUM_QUANTIZERS = 8
+RATIOS = [4, 4, 2, 2]
+LATENT_SIZE = 512
+CODEBOOK_SIZE = 1024
 
 # ENCODER
-ResidualVQ:
-    dim = %latent_size
-    num_quantizers = %num_quantizers
-    codebook_size = 1024
+vqp.ResidualVQ:
+    dim = %LATENT_SIZE
+    num_quantizers = %NUM_QUANTIZERS
+    codebook_size = %CODEBOOK_SIZE
     channel_last = False
 
-discrete/Encoder.n_out = 1
+discrete/blocks.Encoder.n_out = 1
 
-DiscreteEncoder:
-    encoder = @discrete/Encoder
+blocks.DiscreteEncoder:
+    encoder = @discrete/blocks.Encoder
     beta = .1
-    latent_size = %latent_size
-    num_quantizers = %num_quantizers
+    latent_size = %LATENT_SIZE
+    num_quantizers = %NUM_QUANTIZERS
 
 # RAVE
-RAVE.encoder = @DiscreteEncoder  
-RAVE.phase_1_duration = 0
+RAVE:
+    encoder = @blocks.DiscreteEncoder  
+    phase_1_duration = 0
 
 
