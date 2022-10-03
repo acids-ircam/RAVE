@@ -14,6 +14,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from effortless_config import Config
+import nn_tilde
 
 import rave
 import rave.blocks
@@ -21,7 +22,7 @@ import rave.core
 import rave.scripted_vq
 
 
-class ScriptedRAVE(torch.nn.Module):
+class ScriptedRAVE(nn_tilde.Module):
 
     def __init__(self, pretrained: rave.RAVE, stereo: bool) -> None:
         super().__init__()
@@ -59,15 +60,41 @@ class ScriptedRAVE(torch.nn.Module):
         z = self.encoder(self.pqmf(x))
         ratio_encode = x.shape[-1] // z.shape[-1]
 
-        self.register_buffer(
-            "encode_params",
-            torch.tensor([1, 1, self.latent_size, ratio_encode]))
-        self.register_buffer(
-            "decode_params",
-            torch.tensor(
-                [self.latent_size, ratio_encode, 2 if stereo else 1, 1]))
-        self.register_buffer("forward_params",
-                             torch.tensor([1, 1, 2 if stereo else 1, 1]))
+        self.register_method(
+            "encode",
+            in_channels=1,
+            in_ratio=1,
+            out_channels=self.latent_size,
+            out_ratio=ratio_encode,
+            input_labels=['(signal) Input audio signal'],
+            output_labels=[
+                f'(signal) Latent dimension {i}'
+                for i in range(self.latent_size)
+            ],
+        )
+
+        self.register_method(
+            "decode",
+            in_channels=self.latent_size,
+            in_ratio=ratio_encode,
+            out_channels=1,
+            out_ratio=1,
+            input_labels=[
+                f'(signal) Latent dimension {i}'
+                for i in range(self.latent_size)
+            ],
+            output_labels=['(signal) Reconstructed audio signal'],
+        )
+
+        self.register_method(
+            "forward",
+            in_channels=1,
+            in_ratio=1,
+            out_channels=1,
+            out_ratio=1,
+            input_labels=['(signal) Input audio signal'],
+            output_labels=['(signal) Reconstructed audio signal'],
+        )
 
     def post_process_latent(self, z):
         raise NotImplementedError
@@ -135,60 +162,60 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
 
 
 class args(Config):
-    NAME = None
+    RUN = None
     STREAMING = False
     FIDELITY = .95
     STEREO = False
 
 
-args.parse_args()
-cc.use_cached_conv(args.STREAMING)
+def main():
+    args.parse_args()
+    cc.use_cached_conv(args.STREAMING)
 
-assert args.NAME is not None, "YOU HAD ONE JOB: GIVE A NAME !!"
+    logging.info("building rave")
 
-logging.info("building rave")
+    gin.parse_config_file(os.path.join(args.RUN, "config.gin"))
+    checkpoint = rave.core.search_for_run(args.RUN)
 
-root = os.path.join("runs", args.NAME, "rave")
-gin.parse_config_file(os.path.join(root, "config.gin"))
-checkpoint = rave.core.search_for_run(root)
+    pretrained = rave.RAVE()
+    if checkpoint is not None:
+        pretrained.load_state_dict(torch.load(checkpoint)["state_dict"])
+    else:
+        print("No checkpoint found, RAVE will remain randomly initialized")
+    pretrained.eval()
 
-pretrained = rave.RAVE()
-if checkpoint is not None:
-    pretrained.load_state_dict(torch.load(checkpoint)["state_dict"])
-else:
-    print("No checkpoint found, RAVE will remain randomly initialized")
-pretrained.eval()
+    if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
+        script_class = VariationalScriptedRAVE
+    elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
+        script_class = DiscreteScriptedRAVE
+    else:
+        raise ValueError(f"Encoder type {type(pretrained.encoder)} "
+                         "not supported for export.")
 
-if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
-    mode = "variational"
-    script_class = VariationalScriptedRAVE
-elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
-    mode = "discrete"
-    script_class = DiscreteScriptedRAVE
-else:
-    raise ValueError(f"Encoder type {type(pretrained.encoder)} "
-                     "not supported for export.")
+    logging.info("warmup pass")
 
-logging.info("warmup pass")
+    x = torch.zeros(1, 1, 2**14)
+    pretrained(x)
 
-x = torch.zeros(1, 1, 2**14)
-pretrained(x)
+    logging.info("remove weightnorm")
 
-logging.info("remove weightnorm")
+    for m in pretrained.modules():
+        if hasattr(m, "weight_g"):
+            nn.utils.remove_weight_norm(m)
 
-for m in pretrained.modules():
-    if hasattr(m, "weight_g"):
-        nn.utils.remove_weight_norm(m)
+    logging.info("script model")
 
-logging.info("script model")
+    scripted_rave = script_class(pretrained=pretrained, stereo=args.STEREO)
+    scripted_rave = torch.jit.script(scripted_rave)
 
-scripted_rave = script_class(pretrained=pretrained, stereo=args.STEREO)
-scripted_rave = torch.jit.script(scripted_rave)
+    logging.info("save model")
 
-logging.info("save model")
+    torch.jit.save(scripted_rave, f"{args.NAME}.ts")
 
-torch.jit.save(scripted_rave, f"{args.NAME}.ts")
+    logging.info("check model")
 
-logging.info("check model")
+    rave.core.check_scripted_model(scripted_rave)
 
-rave.core.check_scripted_model(scripted_rave)
+
+if __name__ == '__main__':
+    main()

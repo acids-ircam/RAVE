@@ -47,6 +47,7 @@ setuptools.setup(
         "console_scripts": [
             "rave-train = scripts.train:main",
             "rave-preprocess = scripts.preprocess:main",
+            "rave-export = scripts.export:main",
         ]
     },
     install_requires=requirements.split("\n"),

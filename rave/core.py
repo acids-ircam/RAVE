@@ -184,7 +184,7 @@ def search_for_run(run_path, mode="last"):
     if run_path is None: return None
     if ".ckpt" in run_path: return run_path
     ckpts = map(str, Path(run_path).rglob("*.ckpt"))
-    ckpts = filter(lambda e: mode in e, ckpts)
+    ckpts = filter(lambda e: mode in os.path.basename(str(e)), ckpts)
     ckpts = sorted(ckpts)
     if len(ckpts): return ckpts[-1]
     else: return None
