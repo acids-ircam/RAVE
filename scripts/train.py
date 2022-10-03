@@ -1,6 +1,5 @@
 import hashlib
 import os
-import subprocess
 
 import gin
 import pytorch_lightning as pl
@@ -18,7 +17,6 @@ def main():
     class args(Config):
         GIN = "configs/rave_v2.gin"
 
-        WAV = None
         DB_PATH = None
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
