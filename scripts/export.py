@@ -10,11 +10,11 @@ torch.set_grad_enabled(False)
 
 import cached_conv as cc
 import gin
+import nn_tilde
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from effortless_config import Config
-import nn_tilde
 
 import rave
 import rave.blocks

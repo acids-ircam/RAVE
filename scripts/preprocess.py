@@ -7,28 +7,43 @@ from datetime import timedelta
 from functools import partial
 from itertools import repeat
 from typing import Callable, Iterable, Tuple
+from absl import flags, app
 
 import lmdb
 import numpy as np
 import torch
-from effortless_config import Config
 from tqdm import tqdm
 from udls.generated import AudioExample
 
 torch.set_grad_enabled(False)
 
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string('input_path',
+                    None,
+                    help='Path to a directory containing audio files',
+                    required=True)
+flags.DEFINE_string('output_path',
+                    None,
+                    help='Output directory for the dataset',
+                    required=True)
+flags.DEFINE_integer('num_signal',
+                     131072,
+                     help='Number of audio samples to use during training')
+flags.DEFINE_integer('sampling_rate',
+                     48000,
+                     help='Sampling rate to use during training')
+flags.DEFINE_integer('max_db_size',
+                     100,
+                     help='Maximum size (in GB) of the dataset')
+flags.DEFINE_multi_string(
+    'ext',
+    default=['wav', 'opus', 'mp3', 'aac', 'flac'],
+    help='Extension to search for in the input directory')
+
 
 def float_array_to_int16_bytes(x):
     return np.floor(x * (2**15 - 1)).astype(np.int16).tobytes()
-
-
-class args(Config):
-    INPUT_PATH = None
-    OUTPUT_PATH = None
-    NUM_SIGNAL = 131072
-    SAMPLING_RATE = 48000
-    MAX_DB_SIZE = 100
-    EXT = ['wav', 'opus', 'mp3', 'aac', 'flac']
 
 
 def load_audio_chunk(path: str, n_signal: int,
@@ -41,6 +56,7 @@ def load_audio_chunk(path: str, n_signal: int,
         ],
         stdout=subprocess.PIPE,
     )
+
     chunk = process.stdout.read(n_signal * 2)
 
     while len(chunk) == n_signal * 2:
@@ -62,7 +78,7 @@ def process_audio_array(audio: Tuple[int, bytes],
 
     buffers = {}
     buffers['waveform'] = AudioExample.AudioBuffer(
-        sampling_rate=args.SAMPLING_RATE,
+        sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,
     )
@@ -103,24 +119,23 @@ def flat_mappper(func, arg):
 
 
 def main():
-    args.parse_args()
+    app.run(preprocess)
 
-    assert args.OUTPUT_PATH is not None, "You must define an output path !"
-    assert args.INPUT_PATH is not None, "You must define an input path !"
 
+def preprocess(argv):
     chunk_load = partial(load_audio_chunk,
-                         n_signal=args.NUM_SIGNAL,
-                         sr=args.SAMPLING_RATE)
+                         n_signal=FLAGS.num_signal,
+                         sr=FLAGS.sampling_rate)
 
     # create database
-    env = lmdb.open(args.OUTPUT_PATH, map_size=args.MAX_DB_SIZE * 1024**3)
+    env = lmdb.open(FLAGS.output_path, map_size=FLAGS.max_db_size * 1024**3)
     pool = multiprocessing.Pool()
 
     # search for audio files
     audios = flatten(
         map(
-            lambda ext: pathlib.Path(args.INPUT_PATH).rglob(f'*.{ext}'),
-            args.EXT,
+            lambda ext: pathlib.Path(FLAGS.input_path).rglob(f'*.{ext}'),
+            FLAGS.ext,
         ))
     audios = list(map(str, audios))
 
@@ -133,8 +148,12 @@ def main():
 
     pbar = tqdm(processed_samples)
     for audio_id in pbar:
-        n_seconds = args.NUM_SIGNAL / args.SAMPLING_RATE * audio_id
+        n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
 
         pbar.set_description(f'dataset length: {timedelta(seconds=n_seconds)}')
 
     pool.close()
+
+
+if __name__ == '__main__':
+    main()
