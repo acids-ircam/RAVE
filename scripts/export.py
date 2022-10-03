@@ -19,7 +19,7 @@ import rave
 import rave.blocks
 import rave.core
 import rave.scripted_vq
-from absl import flags, app
+from absl import flags
 
 FLAGS = flags.FLAGS
 
@@ -188,11 +188,7 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         return z
 
 
-def main():
-    app.run(export)
-
-
-def export(argv):
+def main(argv):
     cc.use_cached_conv(FLAGS.streaming)
 
     logging.info("building rave")
@@ -246,7 +242,3 @@ def export(argv):
 
     logging.info(
         f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
-
-
-if __name__ == '__main__':
-    main()

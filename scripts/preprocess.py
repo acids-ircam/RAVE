@@ -7,7 +7,7 @@ from datetime import timedelta
 from functools import partial
 from itertools import repeat
 from typing import Callable, Iterable, Tuple
-from absl import flags, app
+from absl import flags
 
 import lmdb
 import numpy as np
@@ -118,11 +118,7 @@ def flat_mappper(func, arg):
         queue.put(item)
 
 
-def main():
-    app.run(preprocess)
-
-
-def preprocess(argv):
+def main(argv):
     chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
                          sr=FLAGS.sampling_rate)
@@ -153,7 +149,3 @@ def preprocess(argv):
         pbar.set_description(f'dataset length: {timedelta(seconds=n_seconds)}')
 
     pool.close()
-
-
-if __name__ == '__main__':
-    main()

@@ -1,6 +1,6 @@
 import hashlib
 import os
-from absl import flags, app
+from absl import flags
 
 import gin
 import pytorch_lightning as pl
@@ -12,6 +12,8 @@ import rave.core
 import rave.dataset
 
 FLAGS = flags.FLAGS
+
+print('train', __name__)
 
 flags.DEFINE_string('name', None, help='Name of the run', required=True)
 flags.DEFINE_multi_string('config',
@@ -35,12 +37,7 @@ flags.DEFINE_string('ckpt',
 flags.DEFINE_multi_string('gin_param', default=[], help='Override gin binding')
 
 
-def main():
-    app.run(train)
-
-
-def train(argv):
-    assert FLAGS.name is not None, "You must enter a name for this run"
+def main(argv):
 
     gin.parse_config_files_and_bindings(FLAGS.config, FLAGS.gin_param)
 
@@ -99,7 +96,3 @@ def train(argv):
         training_commit.write(rave.__version__.commit)
 
     trainer.fit(model, train, val, ckpt_path=run)
-
-
-if __name__ == "__main__":
-    main()

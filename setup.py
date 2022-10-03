@@ -43,13 +43,9 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    entry_points={
-        "console_scripts": [
-            "rave-train = scripts.train:main",
-            "rave-preprocess = scripts.preprocess:main",
-            "rave-export = scripts.export:main",
-        ]
-    },
+    entry_points={"console_scripts": [
+        "rave = scripts.main_cli:main",
+    ]},
     install_requires=requirements.split("\n"),
     python_requires='>=3.9',
     include_package_data=True,
