@@ -1,12 +1,13 @@
-from typing import Dict, Optional, Sequence
-import torch
-from udls.generated import AudioExample
-import numpy as np
-from udls import transforms
-from torch.utils import data
 from random import random
+from typing import Dict, Optional, Sequence
+
 import lmdb
+import numpy as np
+import torch
 from scipy.signal import lfilter
+from torch.utils import data
+from udls import transforms
+from udls.generated import AudioExample
 
 
 class AudioDataset(data.Dataset):
@@ -14,7 +15,7 @@ class AudioDataset(data.Dataset):
     @property
     def env(self) -> lmdb.Environment:
         if self._env is None:
-            self._env = lmdb.open(self._db_path)
+            self._env = lmdb.open(self._db_path, lock=False)
         return self._env
 
     @property
@@ -22,7 +23,7 @@ class AudioDataset(data.Dataset):
         if self._keys is None:
             with self.env.begin() as txn:
                 self._keys = list(txn.cursor().iternext(values=False))
-        return self.keys
+        return self._keys
 
     def __init__(self,
                  db_path: str,
@@ -36,11 +37,11 @@ class AudioDataset(data.Dataset):
         self._transforms = transforms
 
     def __len__(self):
-        return len(self._keys)
+        return len(self.keys)
 
     def __getitem__(self, index):
         with self.env.begin() as txn:
-            ae = AudioExample.FromString(txn.get(self._keys[index]))
+            ae = AudioExample.FromString(txn.get(self.keys[index]))
 
         buffer = ae.buffers[self._audio_key]
         assert buffer.precision == AudioExample.Precision.INT16

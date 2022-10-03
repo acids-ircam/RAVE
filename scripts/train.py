@@ -19,7 +19,7 @@ def main():
         GIN = "configs/rave_v2.gin"
 
         WAV = None
-        PREPROCESSED = None
+        DB_PATH = None
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
         N_SIGNAL = 131072
@@ -45,8 +45,7 @@ def main():
     model = rave.RAVE()
 
     dataset = rave.dataset.get_dataset(
-        args.WAV,
-        args.PREPROCESSED,
+        args.DB_PATH,
         model.sr,
         args.N_SIGNAL,
     )
@@ -89,8 +88,7 @@ def main():
         config_out.write(gin.operative_config_str())
     with open(os.path.join("runs", RUN_NAME, "commit"),
               "w") as training_commit:
-        training_commit.write(
-            subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode())
+        training_commit.write(rave.__version__.commit)
 
     trainer.fit(model, train, val, ckpt_path=run)
 

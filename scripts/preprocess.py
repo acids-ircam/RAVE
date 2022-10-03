@@ -1,5 +1,6 @@
 import functools
 import multiprocessing
+import os
 import pathlib
 import subprocess
 from datetime import timedelta
@@ -9,7 +10,6 @@ from typing import Callable, Iterable, Tuple
 
 import lmdb
 import numpy as np
-import os
 import torch
 from effortless_config import Config
 from tqdm import tqdm

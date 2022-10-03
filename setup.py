@@ -14,9 +14,9 @@ commit = subprocess.check_output([
     "HEAD",
 ]).strip().decode()
 
-with open('rave/__init__.py', 'a') as init:
-    init.write(f"__version__ = \"{version}\"\n")
-    init.write(f"__commit__ = \"{commit}\"\n")
+with open('rave/__version__.py', 'w') as init:
+    init.write(f"version = \"{version}\"\n")
+    init.write(f"commit = \"{commit}\"\n")
 
 import rave
 

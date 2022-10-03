@@ -1,8 +1,9 @@
+import os
+import pathlib
+
 import cached_conv as cc
 import gin
 import torch
-import os
-import pathlib
 
 gin.add_config_file_search_path(os.path.dirname(__file__))
 gin.add_config_file_search_path(
@@ -22,3 +23,9 @@ from .blocks import *
 from .discriminator import *
 from .model import RAVE
 from .pqmf import *
+
+try:
+    from .__version__ import *
+except:
+    __version__ = None
+    __commit__ = None
