@@ -1,7 +1,12 @@
 import cached_conv as cc
 import gin
 import torch
+import os
+import pathlib
 
+rave_install_path = pathlib.Path(os.path.dirname(__file__)).parent
+
+gin.add_config_file_search_path(str(rave_install_path))
 gin.register(torch.nn.Conv1d, module="torch.nn")
 gin.register(torch.nn.Conv2d, module="torch.nn")
 

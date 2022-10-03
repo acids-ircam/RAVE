@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 import rave
 import rave.core
 
-if __name__ == "__main__":
+
+def main():
 
     class args(Config):
         GIN = "configs/rave_v2.gin"
@@ -91,3 +92,7 @@ if __name__ == "__main__":
             subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode())
 
     trainer.fit(model, train, val, ckpt_path=run)
+
+
+if __name__ == "__main__":
+    main()
