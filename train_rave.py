@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 from effortless_config import Config
 from torch.utils.data import DataLoader
+import hashlib
 
 import rave
 import rave.core
@@ -30,14 +31,14 @@ if __name__ == "__main__":
     assert args.NAME is not None, "You must enter a name for this run"
     # assert args.DATASET_PATH is not None, "You must enter a dataset path"
 
-    gin_config = gin.parse_config_file(args.GIN)
+    gin.parse_config_file(args.GIN)
 
-    os.makedirs(os.path.join("runs", args.NAME, "rave"), exist_ok=True)
+    gin_hash = hashlib.md5(
+        gin.operative_config_str().encode()).hexdigest()[:10]
 
-    rave.core.copy_config(
-        gin_config.filename,
-        os.path.join("runs", args.NAME, "rave", "config.gin"),
-    )
+    RUN_NAME = f'{args.NAME}_{gin_hash}'
+
+    os.makedirs(os.path.join("runs", RUN_NAME, "rave"), exist_ok=True)
 
     model = rave.RAVE()
 
@@ -65,7 +66,7 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
-            os.path.join("runs", args.NAME),
+            os.path.join("runs", RUN_NAME),
             name="rave",
         ),
         gpus=rave.core.setup_gpu(),
