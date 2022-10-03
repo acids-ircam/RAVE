@@ -13,12 +13,12 @@ vqp.ResidualVQ:
     dim = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
     codebook_size = %CODEBOOK_SIZE
-    channel_last = False
 
 discrete/blocks.Encoder.n_out = 1
 
 blocks.DiscreteEncoder:
-    encoder = @discrete/blocks.Encoder
+    encoder_cls = @discrete/blocks.Encoder
+    rvq_cls = @vqp.ResidualVQ
     beta = .1
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS

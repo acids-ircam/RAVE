@@ -364,10 +364,11 @@ class VariationalEncoder(nn.Module):
 @gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder, beta, latent_size, num_quantizers):
+    def __init__(self, encoder_cls, rvq_cls, beta, latent_size,
+                 num_quantizers):
         super().__init__()
-        self.encoder = encoder()
-        self.rvq = ResidualVQ()
+        self.encoder = encoder_cls()
+        self.rvq = rvq_cls()
         self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
@@ -380,9 +381,12 @@ class DiscreteEncoder(nn.Module):
 
     @torch.jit.ignore
     def reparametrize(self, z):
+        z = z.permute(0, 2, 1)
         q, index, commmitment = self.rvq(z)
+        q = q.permute(0, 2, 1)
+        index = index.permute(0, 2, 1)
         q = self.add_noise_to_vector(q)
-        return q, self.beta * commmitment.mean(), index.transpose(-2, -1)
+        return q, self.beta * commmitment.mean(), index
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
