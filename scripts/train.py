@@ -33,13 +33,6 @@ def main():
 
     gin.parse_config_file(args.GIN)
 
-    gin_hash = hashlib.md5(
-        gin.operative_config_str().encode()).hexdigest()[:10]
-
-    RUN_NAME = f'{args.NAME}_{gin_hash}'
-
-    os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
-
     model = rave.RAVE()
 
     dataset = rave.dataset.get_dataset(
@@ -63,6 +56,14 @@ def main():
         nepoch = args.VAL_EVERY // len(train)
         val_check["check_val_every_n_epoch"] = nepoch
 
+    gin.finalize()
+    gin_hash = hashlib.md5(
+        gin.operative_config_str().encode()).hexdigest()[:10]
+
+    RUN_NAME = f'{args.NAME}_{gin_hash}'
+    
+    os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
+
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             "runs",
@@ -81,7 +82,6 @@ def main():
         step = torch.load(run, map_location='cpu')["global_step"]
         trainer.fit_loop.epoch_loop._batches_that_stepped = step
 
-    gin.finalize()
     with open(os.path.join("runs", RUN_NAME, "config.gin"), "w") as config_out:
         config_out.write(gin.operative_config_str())
     with open(os.path.join("runs", RUN_NAME, "commit"),
