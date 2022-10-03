@@ -381,12 +381,10 @@ class DiscreteEncoder(nn.Module):
 
     @torch.jit.ignore
     def reparametrize(self, z):
-        z = z.permute(0, 2, 1)
         q, index, commmitment = self.rvq(z)
-        q = q.permute(0, 2, 1)
-        index = index.permute(0, 2, 1)
         q = self.add_noise_to_vector(q)
-        return q, self.beta * commmitment.mean(), index
+        index = index.permute(0, 2, 1)
+        return q, self.beta * commmitment.mean()
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)

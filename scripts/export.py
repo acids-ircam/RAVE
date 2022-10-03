@@ -198,7 +198,8 @@ def main(argv):
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
-        pretrained.load_state_dict(torch.load(checkpoint)["state_dict"])
+        pretrained.load_state_dict(
+            torch.load(checkpoint, map_location='cpu')["state_dict"])
     else:
         print("No checkpoint found, RAVE will remain randomly initialized")
     pretrained.eval()
