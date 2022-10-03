@@ -1,5 +1,6 @@
 import hashlib
 import os
+import subprocess
 
 import gin
 import pytorch_lightning as pl
@@ -29,7 +30,6 @@ if __name__ == "__main__":
     args.parse_args()
 
     assert args.NAME is not None, "You must enter a name for this run"
-    # assert args.DATASET_PATH is not None, "You must enter a dataset path"
 
     gin.parse_config_file(args.GIN)
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     RUN_NAME = f'{args.NAME}_{gin_hash}'
 
-    os.makedirs(os.path.join("runs", RUN_NAME, "rave"), exist_ok=True)
+    os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
 
     model = rave.RAVE()
 
@@ -66,8 +66,8 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
-            os.path.join("runs", RUN_NAME),
-            name="rave",
+            "runs",
+            name=RUN_NAME,
         ),
         gpus=rave.core.setup_gpu(),
         callbacks=[validation_checkpoint, last_checkpoint],
@@ -81,5 +81,13 @@ if __name__ == "__main__":
     if run is not None:
         step = torch.load(run, map_location='cpu')["global_step"]
         trainer.fit_loop.epoch_loop._batches_that_stepped = step
+
+    gin.finalize()
+    with open(os.path.join("runs", RUN_NAME, "config.gin"), "w") as config_out:
+        config_out.write(gin.operative_config_str())
+    with open(os.path.join("runs", RUN_NAME, "commit"),
+              "w") as training_commit:
+        training_commit.write(
+            subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode())
 
     trainer.fit(model, train, val, ckpt_path=run)
