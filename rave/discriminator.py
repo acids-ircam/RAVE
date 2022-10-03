@@ -1,4 +1,5 @@
 from typing import Sequence, Type
+
 import cached_conv as cc
 import gin
 import numpy as np
@@ -99,7 +100,8 @@ class CombineDiscriminators(nn.Module):
 
     def __init__(self, discriminators: Sequence[Type[nn.Module]]) -> None:
         super().__init__()
-        self.discriminators = nn.ModuleList(disc_cls() for disc_cls in discriminators)
+        self.discriminators = nn.ModuleList(disc_cls()
+                                            for disc_cls in discriminators)
 
     def forward(self, x):
         features = []

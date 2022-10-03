@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 import gin
@@ -5,7 +6,6 @@ import pytorch_lightning as pl
 import torch
 from effortless_config import Config
 from torch.utils.data import DataLoader
-import hashlib
 
 import rave
 import rave.core

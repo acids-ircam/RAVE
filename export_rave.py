@@ -22,6 +22,7 @@ import rave.scripted_vq
 
 
 class ScriptedRAVE(torch.nn.Module):
+
     def __init__(self, pretrained: rave.RAVE, stereo: bool) -> None:
         super().__init__()
         self.stereo = stereo
@@ -100,6 +101,7 @@ class ScriptedRAVE(torch.nn.Module):
 
 
 class VariationalScriptedRAVE(ScriptedRAVE):
+
     def post_process_latent(self, z):
         z = self.encoder.reparametrize(z)[0]
         z = z - self.latent_mean.unsqueeze(-1)
@@ -120,6 +122,7 @@ class VariationalScriptedRAVE(ScriptedRAVE):
 
 
 class DiscreteScriptedRAVE(ScriptedRAVE):
+
     def post_process_latent(self, z):
         z = self.quantizer.residual_quantize(z)
         return z
