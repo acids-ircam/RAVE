@@ -2,6 +2,24 @@ import subprocess
 
 import setuptools
 
+version = subprocess.check_output([
+    "git",
+    "describe",
+    "--abbrev=0",
+]).strip().decode()
+
+commit = subprocess.check_output([
+    "git",
+    "rev-parse",
+    "HEAD",
+]).strip().decode()
+
+with open('rave/__init__.py', 'a') as init:
+    init.write(f"__version__ = \"{version}\"\n")
+    init.write(f"__commit__ = \"{commit}\"\n")
+
+import rave
+
 with open("README.md", "r") as readme:
     readme = readme.read()
 
@@ -10,11 +28,7 @@ with open("requirements.txt", "r") as requirements:
 
 setuptools.setup(
     name="rave",
-    version=subprocess.check_output([
-        "git",
-        "describe",
-        "--abbrev=0",
-    ]).strip().decode(),
+    version=rave.__version__,
     author="Antoine CAILLON",
     author_email="caillon@ircam.fr",
     description="RAVE: a Realtime Audio Variatione autoEncoder",
@@ -32,4 +46,5 @@ setuptools.setup(
     entry_points={"console_scripts": ["rave-train = scripts.train:main"]},
     install_requires=requirements.split("\n"),
     python_requires='>=3.9',
+    include_package_data=True,
 )
