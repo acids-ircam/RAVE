@@ -1,60 +1,62 @@
-import gin
+from typing import Dict, Optional, Sequence
 import torch
 from udls.generated import AudioExample
-import librosa as li
 import numpy as np
-import udls
 from udls import transforms
 from torch.utils import data
 from random import random
 import lmdb
+from scipy.signal import lfilter
 
 
-@gin.configurable
-def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
+class AudioDataset(data.Dataset):
 
-    def preprocess(name):
-        try:
-            x, sr = li.load(name, sr=sampling_rate)
-        except KeyboardInterrupt:
-            exit()
-        except Exception as e:
-            print(e)
-            return None
+    @property
+    def env(self) -> lmdb.Environment:
+        if self._env is None:
+            self._env = lmdb.open(self._db_path)
+        return self._env
 
-        if trim_silence:
-            try:
-                x = np.concatenate(
-                    [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
-                    -1,
-                )
-            except Exception as e:
-                print(e)
-                return None
+    @property
+    def keys(self) -> Sequence[str]:
+        if self._keys is None:
+            with self.env.begin() as txn:
+                self._keys = list(txn.cursor().iternext(values=False))
+        return self.keys
 
-        if crop:
-            crop_size = len(x) % N
-            if crop_size:
-                x = x[:-crop_size]
-        else:
-            pad = (N - (len(x) % N)) % N
-            x = np.pad(x, (0, pad))
+    def __init__(self,
+                 db_path: str,
+                 audio_key: str = 'waveform',
+                 transforms: Optional[transforms.Transform] = None) -> None:
+        super().__init__()
+        self._db_path = db_path
+        self._audio_key = audio_key
+        self._env = None
+        self._keys = None
+        self._transforms = transforms
 
-        if not len(x):
-            return None
+    def __len__(self):
+        return len(self._keys)
 
-        x = x.reshape(-1, N)
-        return x.astype(np.float16)
+    def __getitem__(self, index):
+        with self.env.begin() as txn:
+            ae = AudioExample.FromString(txn.get(self._keys[index]))
 
-    return preprocess
+        buffer = ae.buffers[self._audio_key]
+        assert buffer.precision == AudioExample.Precision.INT16
+
+        audio = np.frombuffer(buffer.data, dtype=np.int16)
+        audio = audio.astype(np.float) / (2**15 - 1)
+
+        if self._transforms is not None:
+            audio = self._transforms(audio)
+
+        return audio
 
 
-def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-    dataset = udls.SimpleDataset(
-        preprocess_dir,
-        data_dir,
-        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
-        split_set="full",
+def get_dataset(db_path, sr, n_signal):
+    return AudioDataset(
+        db_path,
         transforms=transforms.Compose([
             lambda x: x.astype(np.float32),
             transforms.RandomCrop(n_signal),
@@ -66,8 +68,6 @@ def get_dataset(data_dir, preprocess_dir, sr, n_signal):
             lambda x: x.astype(np.float32),
         ]),
     )
-
-    return dataset
 
 
 def split_dataset(dataset, percent):

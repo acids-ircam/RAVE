@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 import rave
 import rave.core
+import rave.dataset
 
 
 def main():
@@ -43,13 +44,13 @@ def main():
 
     model = rave.RAVE()
 
-    dataset = rave.core.get_dataset(
+    dataset = rave.dataset.get_dataset(
         args.WAV,
         args.PREPROCESSED,
         model.sr,
         args.N_SIGNAL,
     )
-    train, val = rave.core.split_dataset(dataset, 98)
+    train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
     val = DataLoader(val, args.BATCH, False, num_workers=8)
 
