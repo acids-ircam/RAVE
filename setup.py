@@ -28,7 +28,7 @@ with open("requirements.txt", "r") as requirements:
 
 setuptools.setup(
     name="rave",
-    version=rave.__version__,
+    version=rave.__version__.version,
     author="Antoine CAILLON",
     author_email="caillon@ircam.fr",
     description="RAVE: a Realtime Audio Variatione autoEncoder",

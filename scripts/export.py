@@ -50,7 +50,7 @@ class ScriptedRAVE(nn_tilde.Module):
             self.latent_size = pretrained.encoder.num_quantizers
             self.quantizer = rave.scripted_vq.SimpleQuantizer([
                 *map(
-                    lambda l: l._codebook.embed,
+                    lambda l: l._codebook.embed.squeeze(0),
                     pretrained.encoder.rvq.layers,
                 )
             ])
@@ -59,6 +59,8 @@ class ScriptedRAVE(nn_tilde.Module):
         x = torch.zeros(1, 1, 2**14)
         z = self.encoder(self.pqmf(x))
         ratio_encode = x.shape[-1] // z.shape[-1]
+
+        channels = ["(L)", "(R)"] if stereo else ["(mono)"]
 
         self.register_method(
             "encode",
@@ -77,23 +79,29 @@ class ScriptedRAVE(nn_tilde.Module):
             "decode",
             in_channels=self.latent_size,
             in_ratio=ratio_encode,
-            out_channels=1,
+            out_channels=2 if stereo else 1,
             out_ratio=1,
             input_labels=[
                 f'(signal) Latent dimension {i}'
                 for i in range(self.latent_size)
             ],
-            output_labels=['(signal) Reconstructed audio signal'],
+            output_labels=[
+                f'(signal) Reconstructed audio signal {channel}'
+                for channel in channels
+            ],
         )
 
         self.register_method(
             "forward",
             in_channels=1,
             in_ratio=1,
-            out_channels=1,
+            out_channels=2 if stereo else 1,
             out_ratio=1,
             input_labels=['(signal) Input audio signal'],
-            output_labels=['(signal) Reconstructed audio signal'],
+            output_labels=[
+                f'(signal) Reconstructed audio signal {channel}'
+                for channel in channels
+            ],
         )
 
     def post_process_latent(self, z):
@@ -113,7 +121,6 @@ class ScriptedRAVE(nn_tilde.Module):
     def decode(self, z):
         if self.stereo:
             z = torch.cat([z, z], 0)
-
         z = self.pre_process_latent(z)
         y = self.decoder(z)
         y = self.pqmf.inverse(y)
@@ -206,15 +213,23 @@ def main():
     logging.info("script model")
 
     scripted_rave = script_class(pretrained=pretrained, stereo=args.STEREO)
-    scripted_rave = torch.jit.script(scripted_rave)
 
     logging.info("save model")
+    model_name = os.path.basename(os.path.normpath(args.RUN))
+    if args.STREAMING:
+        model_name += "_streaming"
+    if args.STEREO:
+        model_name += "_stereo"
+    model_name += ".ts"
 
-    torch.jit.save(scripted_rave, f"{args.NAME}.ts")
+    scripted_rave.export_to_ts(os.path.join(args.RUN, model_name))
 
     logging.info("check model")
 
     rave.core.check_scripted_model(scripted_rave)
+
+    logging.info(
+        f"all good ! model exported to {os.path.join(args.RUN, model_name)}")
 
 
 if __name__ == '__main__':
