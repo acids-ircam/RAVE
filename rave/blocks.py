@@ -71,8 +71,10 @@ class ResidualVectorQuantize(nn.Module):
                 losses,
             )
 
+            losses = losses / (mask_threshold + 1)
+
         quantized_out = quantized_out.sum(-1)
-        losses = losses.sum(-1) / (mask_threshold.sum(-1) + 1)
+        losses = losses.sum(-1)
         return quantized_out, losses
 
 
