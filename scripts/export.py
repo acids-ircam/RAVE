@@ -237,9 +237,5 @@ def main(argv):
 
     scripted_rave.export_to_ts(os.path.join(FLAGS.run, model_name))
 
-    logging.info("check model")
-
-    rave.core.check_scripted_model(scripted_rave)
-
     logging.info(
         f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
