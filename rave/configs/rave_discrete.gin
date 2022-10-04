@@ -7,13 +7,14 @@ NUM_QUANTIZERS = 8
 RATIOS = [4, 4, 2, 2]
 LATENT_SIZE = 512
 CODEBOOK_SIZE = 1024
+DYNAMIC_MASKING = True
 
 # ENCODER
-vqp.ResidualVQ:
+blocks.ResidualVectorQuantize:
     dim = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
     codebook_size = %CODEBOOK_SIZE
-    channel_last = False
+    dynamic_masking = %DYNAMIC_MASKING
 
 discrete/blocks.Encoder.n_out = 1
 
