@@ -16,8 +16,9 @@ class WarmupCallback(pl.Callback):
         super().__init__()
         self.state = {'training_steps': 0}
 
-    def on_batch_start(self, trainer, pl_module):
-        if self.state['training_steps'] > pl_module.warmup:
+    def on_train_batch_start(self, trainer, pl_module, batch,
+                             batch_idx) -> None:
+        if self.state['training_steps'] >= pl_module.warmup:
             pl_module.warmed_up = True
         self.state['training_steps'] += 1
 
