@@ -13,8 +13,6 @@ import rave.dataset
 
 FLAGS = flags.FLAGS
 
-print('train', __name__)
-
 flags.DEFINE_string('name', None, help='Name of the run', required=True)
 flags.DEFINE_multi_string('config',
                           default='rave_v2.gin',
@@ -77,7 +75,10 @@ def main(argv):
             name=RUN_NAME,
         ),
         gpus=rave.core.setup_gpu(),
-        callbacks=[validation_checkpoint, last_checkpoint],
+        callbacks=[
+            validation_checkpoint, last_checkpoint,
+            rave.model.WarmupCallback()
+        ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,
         profiler="simple",

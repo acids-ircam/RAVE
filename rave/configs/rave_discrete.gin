@@ -29,5 +29,3 @@ blocks.DiscreteEncoder:
 RAVE:
     encoder = @blocks.DiscreteEncoder  
     phase_1_duration = 100000
-
-
