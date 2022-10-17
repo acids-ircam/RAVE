@@ -6,7 +6,7 @@ import subprocess
 from datetime import timedelta
 from functools import partial
 from itertools import repeat
-from typing import Callable, Iterable, Tuple
+from typing import Callable, Iterable, Sequence, Tuple
 from absl import flags
 
 import lmdb
@@ -19,10 +19,10 @@ torch.set_grad_enabled(False)
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('input_path',
-                    None,
-                    help='Path to a directory containing audio files',
-                    required=True)
+flags.DEFINE_multi_string('input_path',
+                          None,
+                          help='Path to a directory containing audio files',
+                          required=True)
 flags.DEFINE_string('output_path',
                     None,
                     help='Output directory for the dataset',
@@ -118,6 +118,15 @@ def flat_mappper(func, arg):
         queue.put(item)
 
 
+def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
+    paths = map(pathlib.Path, path_list)
+    audios = []
+    for p in paths:
+        for ext in extensions:
+            audios.append(p.rglob(f'*.{ext}'))
+    return flatten(audios)
+
+
 def main(argv):
     chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
@@ -128,11 +137,7 @@ def main(argv):
     pool = multiprocessing.Pool()
 
     # search for audio files
-    audios = flatten(
-        map(
-            lambda ext: pathlib.Path(FLAGS.input_path).rglob(f'*.{ext}'),
-            FLAGS.ext,
-        ))
+    audios = search_for_audios(FLAGS.input_path, FLAGS.ext)
     audios = list(map(str, audios))
 
     # load chunks
