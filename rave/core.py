@@ -346,11 +346,13 @@ def l1_distance(x, y):
 
 
 @gin.register
-def cosine_similarity(x, y, dim=1):
+def log_cosine_distance(x, y, dim=1):
     norm_x = (x * x).sum(dim).sqrt()
     norm_y = (y * y).sum(dim).sqrt()
     inner = (x * y).sum(dim)
-    return torch.mean(inner / (norm_x * norm_y))
+    sim = torch.mean(inner / (norm_x * norm_y))
+    sim = (sim + 1) / 2 + 1e-9
+    return -torch.log(sim)
 
 
 @gin.configurable

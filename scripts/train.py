@@ -35,9 +35,18 @@ flags.DEFINE_string('ckpt',
 flags.DEFINE_multi_string('gin_param', default=[], help='Override gin binding')
 
 
+def add_gin_extension(config_name: str) -> str:
+    if config_name[-4:] != '.gin':
+        config_name += '.gin'
+    return config_name
+
+
 def main(argv):
 
-    gin.parse_config_files_and_bindings(FLAGS.config, FLAGS.gin_param)
+    gin.parse_config_files_and_bindings(
+        map(add_gin_extension, FLAGS.config),
+        FLAGS.gin_param,
+    )
 
     model = rave.RAVE()
 
