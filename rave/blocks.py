@@ -110,14 +110,15 @@ class ResidualLayer(nn.Module):
         for d in dilations:
             net.append(nn.LeakyReLU(.2))
             net.append(
-                cc.Conv1d(
-                    dim,
-                    dim,
-                    kernel_size,
-                    dilation=d,
-                    padding=cc.get_padding(kernel_size, dilation=d),
-                    cumulative_delay=cd,
-                ))
+                wn(
+                    cc.Conv1d(
+                        dim,
+                        dim,
+                        kernel_size,
+                        dilation=d,
+                        padding=cc.get_padding(kernel_size, dilation=d),
+                        cumulative_delay=cd,
+                    )))
             cd = net[-1].cumulative_delay
         self.net = Residual(
             cc.CachedSequential(*net),

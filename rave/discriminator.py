@@ -31,15 +31,16 @@ class ConvNet(nn.Module):
                                      mode="centered")[0]
                 s = stride[i]
             net.append(
-                conv(
-                    channels[i],
-                    channels[i + 1],
-                    kernel_size,
-                    stride=s,
-                    padding=pad,
-                ))
+                wn(
+                    conv(
+                        channels[i],
+                        channels[i + 1],
+                        kernel_size,
+                        stride=s,
+                        padding=pad,
+                    )))
             net.append(nn.LeakyReLU(.2))
-        net.append(conv(channels[-1], out_size, 1))
+        net.append(wn(conv(channels[-1], out_size, 1)))
 
         self.net = nn.Sequential(*net)
 
