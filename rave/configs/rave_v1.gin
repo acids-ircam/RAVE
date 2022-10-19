@@ -98,3 +98,4 @@ RAVE:
     gan_loss = @core.hinge_gan
     feature_match = True
     valid_signal_crop = False
+    feature_matching_fun = @core.l1_distance

@@ -144,7 +144,6 @@ def main(argv):
     chunks = flatmap(pool, chunk_load, audios)
     chunks = enumerate(chunks)
 
-    # apply rave on dataset
     processed_samples = map(partial(process_audio_array, env=env), chunks)
 
     pbar = tqdm(processed_samples)

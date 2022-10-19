@@ -34,7 +34,7 @@ class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
                  decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match, valid_signal_crop):
+                 feature_match, valid_signal_crop, feature_matching_fun):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -58,6 +58,7 @@ class RAVE(pl.LightningModule):
         self.sr = sampling_rate
         self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop
+        self.feature_matching_fun = feature_matching_fun
 
         self.eval_number = 0
 
@@ -131,12 +132,14 @@ class RAVE(pl.LightningModule):
             pred_fake = 0
 
             for scale_true, scale_fake in zip(feature_true, feature_fake):
-                feature_matching_distance = feature_matching_distance + 10 * sum(
+                current_feature_distance = sum(
                     map(
-                        lambda x, y: abs(x - y).mean(),
+                        self.feature_matching_fun,
                         scale_true,
                         scale_fake,
                     )) / len(scale_true)
+
+                feature_matching_distance = feature_matching_distance + current_feature_distance
 
                 _dis, _adv = self.gan_loss(scale_true[-1], scale_fake[-1])
 

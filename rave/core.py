@@ -340,6 +340,19 @@ def lin_distance(x, y):
     return torch.norm(x - y) / torch.norm(x)
 
 
+@gin.register
+def l1_distance(x, y):
+    return abs(x - y).mean()
+
+
+@gin.register
+def cosine_similarity(x, y, dim=1):
+    norm_x = (x * x).sum(dim).sqrt()
+    norm_y = (y * y).sum(dim).sqrt()
+    inner = (x * y).sum(dim)
+    return torch.mean(inner / (norm_x * norm_y))
+
+
 @gin.configurable
 def log_distance(x, y, epsilon):
     return abs(torch.log(x + epsilon) - torch.log(y + epsilon)).mean()
