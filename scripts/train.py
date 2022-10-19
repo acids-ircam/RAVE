@@ -32,7 +32,7 @@ flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('ckpt',
                     None,
                     help='Path to previous checkpoint of the run')
-flags.DEFINE_multi_string('gin_param', default=[], help='Override gin binding')
+flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -45,7 +45,7 @@ def main(argv):
 
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
-        FLAGS.gin_param,
+        FLAGS.override,
     )
 
     model = rave.RAVE()

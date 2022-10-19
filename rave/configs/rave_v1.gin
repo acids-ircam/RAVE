@@ -30,7 +30,6 @@ core.Loudness:
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
-cc.get_padding.mode = "centered"
 
 # PQMF
 pqmf.CachedPQMF:
