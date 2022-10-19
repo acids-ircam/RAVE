@@ -1,0 +1,3 @@
+include "configs/onnx.gin"
+
+CAPACITY = 16

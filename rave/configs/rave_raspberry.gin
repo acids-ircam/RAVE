@@ -1,3 +1,0 @@
-include "configs/rave_onnx.gin"
-
-CAPACITY = 16

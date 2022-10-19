@@ -1,4 +1,4 @@
-include "configs/rave_v1.gin"
+include "configs/v1.gin"
 
 import rave
 from rave import core
@@ -34,3 +34,4 @@ RAVE:
     gan_loss = @core.nonsaturating_gan
     valid_signal_crop = True
     feature_matching_fun = @core.log_cosine_distance
+    num_skipped_features = 3

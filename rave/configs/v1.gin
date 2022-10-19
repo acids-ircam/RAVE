@@ -98,3 +98,4 @@ RAVE:
     feature_match = True
     valid_signal_crop = False
     feature_matching_fun = @core.l1_distance
+    num_skipped_features = 0

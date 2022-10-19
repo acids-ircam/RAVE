@@ -1,4 +1,4 @@
-include "configs/rave_v2.gin"
+include "configs/v2.gin"
 
 import rave
 from rave import blocks
