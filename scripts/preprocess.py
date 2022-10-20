@@ -81,8 +81,12 @@ def get_audio_length(path: str) -> float:
     )
     stdout, _ = process.communicate()
     if process.returncode: return None
-    stdout = stdout.decode().split('\n')[1].split('=')[-1]
-    return path, float(stdout)
+    try:
+        stdout = stdout.decode().split('\n')[1].split('=')[-1]
+        length = float(stdout)
+        return path, float(length)
+    except:
+        return None
 
 
 def flatten(iterator: Iterable):

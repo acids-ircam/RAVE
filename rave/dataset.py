@@ -116,7 +116,7 @@ class LazyAudioDataset(data.Dataset):
         with self.env.begin() as txn:
             ae = AudioExample.FromString(txn.get(key))
 
-        chunk = extract_audio(
+        audio = extract_audio(
             ae.metadata['path'],
             self._n_signal,
             self._sampling_rate,
@@ -126,7 +126,7 @@ class LazyAudioDataset(data.Dataset):
         if self._transforms is not None:
             audio = self._transforms(audio)
 
-        return chunk
+        return audio
 
 
 def get_dataset(db_path, sr, n_signal):
