@@ -16,7 +16,7 @@ from einops import rearrange
 from scipy.signal import lfilter
 from torch.utils.data import random_split
 from tqdm import tqdm
-
+from typing import Optional
 
 @gin.configurable
 def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
@@ -209,10 +209,16 @@ def get_dataset(data_dir, preprocess_dir, sr, n_signal):
 
     return dataset
 
-
-def split_dataset(dataset, percent):
+@gin.configurable
+def split_dataset(dataset, percent, max_residual:Optional[int]=None):
     split1 = max((percent * len(dataset)) // 100, 1)
     split2 = len(dataset) - split1
+    
+    if max_residual is not None:
+        split2 = min(max_residual, split2)
+        split1 = len(dataset) - split2
+
+    print('dataset splitting', split1, split2)
     split1, split2 = random_split(
         dataset,
         [split1, split2],
