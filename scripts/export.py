@@ -14,12 +14,12 @@ import nn_tilde
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from absl import flags
 
 import rave
 import rave.blocks
 import rave.core
 import rave.scripted_vq
-from absl import flags
 
 FLAGS = flags.FLAGS
 

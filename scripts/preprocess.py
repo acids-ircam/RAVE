@@ -7,11 +7,11 @@ from datetime import timedelta
 from functools import partial
 from itertools import repeat
 from typing import Callable, Iterable, Sequence, Tuple
-from absl import flags
 
 import lmdb
 import numpy as np
 import torch
+from absl import flags
 from tqdm import tqdm
 from udls.generated import AudioExample
 

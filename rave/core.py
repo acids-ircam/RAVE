@@ -1,4 +1,3 @@
-import filecmp
 import os
 from pathlib import Path
 from random import random
@@ -351,7 +350,7 @@ def log_cosine_distance(x, y, dim=1):
     norm_y = (y * y).sum(dim).sqrt()
     inner = (x * y).sum(dim)
     sim = torch.mean(inner / (norm_x * norm_y))
-    sim = (sim + 1) / 2 + 1e-9
+    sim = (sim + 1) / 2 + 1e-4
     return -torch.log(sim)
 
 

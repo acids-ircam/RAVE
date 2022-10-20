@@ -1,10 +1,10 @@
 import hashlib
 import os
-from absl import flags
 
 import gin
 import pytorch_lightning as pl
 import torch
+from absl import flags
 from torch.utils.data import DataLoader
 
 import rave
@@ -15,7 +15,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('name', None, help='Name of the run', required=True)
 flags.DEFINE_multi_string('config',
-                          default='rave_v2.gin',
+                          default='v2.gin',
                           help='RAVE configuration to use')
 flags.DEFINE_string('db_path',
                     None,
