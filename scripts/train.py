@@ -56,8 +56,8 @@ def main(argv):
         FLAGS.n_signal,
     )
     train, val = rave.dataset.split_dataset(dataset, 98)
-    train = DataLoader(train, FLAGS.batch, True, drop_last=True, num_workers=8)
-    val = DataLoader(val, FLAGS.batch, False, num_workers=8)
+    train = DataLoader(train, FLAGS.batch, True, drop_last=True, num_workers=os.cpu_count())
+    val = DataLoader(val, FLAGS.batch, False, num_workers=os.cpu_count())
 
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
