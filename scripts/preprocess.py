@@ -10,6 +10,7 @@ from typing import Callable, Iterable, Sequence, Tuple
 
 import lmdb
 import numpy as np
+import yaml
 import torch
 from absl import flags, app
 from tqdm import tqdm
@@ -157,6 +158,7 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
         for ext in extensions:
             audios.append(p.rglob(f'*.{ext}'))
     audios = flatten(audios)
+    return audios
 
 
 def main(argv):
@@ -170,7 +172,15 @@ def main(argv):
 
     # search for audio files
     audios = search_for_audios(FLAGS.input_path, FLAGS.ext)
-    audios = list(map(os.path.abspath, map(str, audios)))
+    audios = map(str, audios)
+    audios = map(os.path.abspath, audios)
+    audios = [*audios]
+
+    with open(os.path.join(
+            FLAGS.output_path,
+            'metadata.yaml',
+    ), 'w') as metadata:
+        yaml.safe_dump({'lazy': not FLAGS.preload}, metadata)
 
     if FLAGS.preload:
         # load chunks
