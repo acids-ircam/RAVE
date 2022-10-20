@@ -11,7 +11,7 @@ from typing import Callable, Iterable, Sequence, Tuple
 import lmdb
 import numpy as np
 import torch
-from absl import flags
+from absl import flags, app
 from tqdm import tqdm
 from udls.generated import AudioExample
 
@@ -40,6 +40,9 @@ flags.DEFINE_multi_string(
     'ext',
     default=['wav', 'opus', 'mp3', 'aac', 'flac'],
     help='Extension to search for in the input directory')
+flags.DEFINE_bool('preload',
+                  default=True,
+                  help='Decode and resample audio samples.')
 
 
 def float_array_to_int16_bytes(x):
@@ -64,6 +67,21 @@ def load_audio_chunk(path: str, n_signal: int,
         chunk = process.stdout.read(n_signal * 2)
 
     process.stdout.close()
+
+
+def get_audio_length(path: str) -> float:
+    process = subprocess.Popen(
+        [
+            'ffprobe', '-i', path, '-v', 'error', '-show_entries',
+            'format=duration'
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, _ = process.communicate()
+    if process.returncode: return None
+    stdout = stdout.decode().split('\n')[1].split('=')[-1]
+    return path, float(stdout)
 
 
 def flatten(iterator: Iterable):
@@ -91,6 +109,20 @@ def process_audio_array(audio: Tuple[int, bytes],
             ae.SerializeToString(),
         )
     return audio_id
+
+
+def process_audio_file(audio: Tuple[int, Tuple[str, float]],
+                       env: lmdb.Environment) -> int:
+    audio_id, (path, length) = audio
+
+    ae = AudioExample(metadata={'path': path, 'length': str(length)})
+    key = f'{audio_id:08d}'
+    with env.begin(write=True) as txn:
+        txn.put(
+            key.encode(),
+            ae.SerializeToString(),
+        )
+    return length
 
 
 def flatmap(pool: multiprocessing.Pool,
@@ -124,7 +156,7 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
     for p in paths:
         for ext in extensions:
             audios.append(p.rglob(f'*.{ext}'))
-    return flatten(audios)
+    audios = flatten(audios)
 
 
 def main(argv):
@@ -138,18 +170,36 @@ def main(argv):
 
     # search for audio files
     audios = search_for_audios(FLAGS.input_path, FLAGS.ext)
-    audios = list(map(str, audios))
+    audios = list(map(os.path.abspath, map(str, audios)))
 
-    # load chunks
-    chunks = flatmap(pool, chunk_load, audios)
-    chunks = enumerate(chunks)
+    if FLAGS.preload:
+        # load chunks
+        chunks = flatmap(pool, chunk_load, audios)
+        chunks = enumerate(chunks)
 
-    processed_samples = map(partial(process_audio_array, env=env), chunks)
+        processed_samples = map(partial(process_audio_array, env=env), chunks)
 
-    pbar = tqdm(processed_samples)
-    for audio_id in pbar:
-        n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
+        pbar = tqdm(processed_samples)
+        for audio_id in pbar:
+            n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
 
-        pbar.set_description(f'dataset length: {timedelta(seconds=n_seconds)}')
+            pbar.set_description(
+                f'dataset length: {timedelta(seconds=n_seconds)}')
+
+    else:
+        audio_lengths = pool.imap_unordered(get_audio_length, audios)
+        audio_lengths = filter(lambda x: x is not None, audio_lengths)
+        audio_lengths = enumerate(audio_lengths)
+        processed_samples = map(partial(process_audio_file, env=env),
+                                audio_lengths)
+        pbar = tqdm(processed_samples)
+        total = 0
+        for length in pbar:
+            total += length
+            pbar.set_description(f'dataset length: {timedelta(seconds=total)}')
 
     pool.close()
+
+
+if __name__ == '__main__':
+    app.run(main)
