@@ -9,52 +9,10 @@ import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
-import udls
-import udls.transforms as transforms
 import yaml
 from einops import rearrange
 from scipy.signal import lfilter
-from torch.utils.data import random_split
 from tqdm import tqdm
-from typing import Optional
-
-@gin.configurable
-def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
-
-    def preprocess(name):
-        try:
-            x, sr = li.load(name, sr=sampling_rate)
-        except KeyboardInterrupt:
-            exit()
-        except Exception as e:
-            print(e)
-            return None
-
-        if trim_silence:
-            try:
-                x = np.concatenate(
-                    [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
-                    -1,
-                )
-            except Exception as e:
-                print(e)
-                return None
-
-        if crop:
-            crop_size = len(x) % N
-            if crop_size:
-                x = x[:-crop_size]
-        else:
-            pad = (N - (len(x) % N)) % N
-            x = np.pad(x, (0, pad))
-
-        if not len(x):
-            return None
-
-        x = x.reshape(-1, N)
-        return x.astype(np.float16)
-
-    return preprocess
 
 
 def mod_sigmoid(x):
@@ -189,7 +147,6 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-
 def setup_gpu():
     return gpu.getAvailable(maxMemory=.05)
 
@@ -272,37 +229,6 @@ def valid_signal_crop(x, left_rf, right_rf):
     return x
 
 
-@torch.no_grad()
-def extract_codes(model, loader, out_path):
-    os.makedirs(out_path, exist_ok=True)
-    device = next(iter(model.parameters())).device
-    code = model.encode
-
-    x = next(iter(loader))
-    x = x.unsqueeze(1).to(device)
-    batch_size, n_code, n_frame = code(x).shape
-
-    out_array = np.memmap(
-        os.path.join(out_path, "data.npy"),
-        dtype='uint16',
-        mode='w+',
-        shape=(
-            len(loader) * batch_size,
-            n_code,
-            n_frame,
-        ),
-    )
-
-    for i, x in enumerate(tqdm(loader, desc="Extracting codes")):
-        x = x.unsqueeze(1).to(device)
-        index = code(x).cpu().numpy().astype(np.uint16)
-        out_array[i * batch_size:(i + 1) * batch_size] = index
-
-    out_array.flush()
-    with open(os.path.join(out_path, "info.yaml"), "w") as info:
-        yaml.safe_dump({"shape": out_array.shape}, info)
-
-
 @gin.configurable
 def lin_distance(x, y):
     return torch.norm(x - y) / torch.norm(x)
@@ -336,25 +262,3 @@ def multiscale_spectral_distance(x, y):
     log = sum(list(map(log_distance, x, y)))
 
     return lin + log
-
-
-def check_scripted_model(model: nn.Module, buffer_size=8192):
-    checked_methods = []
-    for n, b in model.named_buffers():
-        if "_params" in n:
-            method = n[:-7]
-            n_in, ratio_in, n_out, ratio_out = b.numpy()
-            x = torch.zeros(1, n_in, buffer_size // ratio_in)
-            y = getattr(model, method)(x)
-            assert y.shape[0] == x.shape[
-                0], f"{method}: batch size inconsistent"
-            assert y.shape[
-                1] == n_out, f"{method}: wrong output channel number"
-            assert y.shape[
-                2] == buffer_size // ratio_out, f"{method}: out_buffer is {y.shape[-1].item()}, should be {2**14 // ratio_out}"
-            checked_methods.append(method)
-
-    print(f"The following methods have passed the tests "
-          f"with buffer size {buffer_size}:")
-    for m in checked_methods:
-        print(f" - {m}")
