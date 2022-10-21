@@ -41,8 +41,8 @@ flags.DEFINE_multi_string(
     'ext',
     default=['wav', 'opus', 'mp3', 'aac', 'flac'],
     help='Extension to search for in the input directory')
-flags.DEFINE_bool('preload',
-                  default=True,
+flags.DEFINE_bool('lazy',
+                  default=False,
                   help='Decode and resample audio samples.')
 
 
@@ -184,9 +184,9 @@ def main(argv):
             FLAGS.output_path,
             'metadata.yaml',
     ), 'w') as metadata:
-        yaml.safe_dump({'lazy': not FLAGS.preload}, metadata)
+        yaml.safe_dump({'lazy': FLAGS.lazy}, metadata)
 
-    if FLAGS.preload:
+    if not FLAGS.lazy:
         # load chunks
         chunks = flatmap(pool, chunk_load, audios)
         chunks = enumerate(chunks)
