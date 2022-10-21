@@ -42,7 +42,7 @@ def add_gin_extension(config_name: str) -> str:
 
 
 def main(argv):
-
+    torch.backends.cudnn.benchmark = True
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
         FLAGS.override,
