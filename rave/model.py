@@ -89,7 +89,6 @@ class RAVE(pl.LightningModule):
         return feature_true, feature_fake
 
     def training_step(self, batch, batch_idx):
-        breakpoint()
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
         

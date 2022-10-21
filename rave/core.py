@@ -189,43 +189,6 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-def get_dataset(data_dir, preprocess_dir, sr, n_signal):
-    dataset = udls.SimpleDataset(
-        preprocess_dir,
-        data_dir,
-        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
-        split_set="full",
-        transforms=transforms.Compose([
-            lambda x: x.astype(np.float32),
-            transforms.RandomCrop(n_signal),
-            transforms.RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
-                p=.8,
-            ),
-            transforms.Dequantize(16),
-            lambda x: x.astype(np.float32),
-        ]),
-    )
-
-    return dataset
-
-@gin.configurable
-def split_dataset(dataset, percent, max_residual:Optional[int]=None):
-    split1 = max((percent * len(dataset)) // 100, 1)
-    split2 = len(dataset) - split1
-    
-    if max_residual is not None:
-        split2 = min(max_residual, split2)
-        split1 = len(dataset) - split2
-
-    print('dataset splitting', split1, split2)
-    split1, split2 = random_split(
-        dataset,
-        [split1, split2],
-        generator=torch.Generator().manual_seed(42),
-    )
-    return split1, split2
-
 
 def setup_gpu():
     return gpu.getAvailable(maxMemory=.05)
