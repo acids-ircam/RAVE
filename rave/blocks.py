@@ -186,7 +186,7 @@ class NoiseGenerator(nn.Module):
 class Generator(nn.Module):
 
     def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
-                 use_noise):
+                 use_noise, n_channels=1):
         super().__init__()
         net = [
             wn(
@@ -216,7 +216,7 @@ class Generator(nn.Module):
         self.net = cc.CachedSequential(*net)
 
         wave_gen = wn(
-            cc.Conv1d(out_dim, data_size, 7, padding=cc.get_padding(7)))
+            cc.Conv1d(out_dim, data_size * n_channels, 7, padding=cc.get_padding(7)))
 
         loud_gen = wn(
             cc.Conv1d(
@@ -230,7 +230,7 @@ class Generator(nn.Module):
         branches = [wave_gen, loud_gen]
 
         if use_noise:
-            noise_gen = NoiseGenerator(out_dim, data_size)
+            noise_gen = NoiseGenerator(out_dim, data_size * n_channels)
             branches.append(noise_gen)
 
         self.synth = cc.AlignBranches(
@@ -273,9 +273,9 @@ class Generator(nn.Module):
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios, n_out,
-                 sample_norm, repeat_layers):
+                 sample_norm, repeat_layers, n_channels=1):
         super().__init__()
-        net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
+        net = [cc.Conv1d(data_size * n_channels, capacity, 7, padding=cc.get_padding(7))]
 
         for i, r in enumerate(ratios):
             in_dim = 2**i * capacity
@@ -333,9 +333,9 @@ class Encoder(nn.Module):
 @gin.register
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder, beta):
+    def __init__(self, encoder, beta, n_channels=1):
         super().__init__()
-        self.encoder = encoder()
+        self.encoder = encoder(n_channels=n_channels)
         self.register_buffer("warmed_up", torch.tensor(0))
         self.beta = beta
 

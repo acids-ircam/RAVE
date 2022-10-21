@@ -53,11 +53,11 @@ class ConvNet(nn.Module):
 @gin.configurable
 class MultiScaleDiscriminator(nn.Module):
 
-    def __init__(self, n_discriminators, convnet) -> None:
+    def __init__(self, n_discriminators, convnet, n_channels=1) -> None:
         super().__init__()
         layers = []
         for i in range(n_discriminators):
-            layers.append(convnet())
+            layers.append(convnet(in_size=n_channels))
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
@@ -71,13 +71,13 @@ class MultiScaleDiscriminator(nn.Module):
 @gin.configurable
 class MultiPeriodDiscriminator(nn.Module):
 
-    def __init__(self, periods, convnet) -> None:
+    def __init__(self, periods, convnet, n_channels=1) -> None:
         super().__init__()
         layers = []
         self.periods = periods
 
         for _ in periods:
-            layers.append(convnet())
+            layers.append(convnet(in_size=n_channels))
 
         self.layers = nn.ModuleList(layers)
 
@@ -96,10 +96,10 @@ class MultiPeriodDiscriminator(nn.Module):
 @gin.register
 class CombineDiscriminators(nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, n_channels=1) -> None:
         super().__init__()
-        self.mpd = MultiPeriodDiscriminator()
-        self.msd = MultiScaleDiscriminator()
+        self.mpd = MultiPeriodDiscriminator(n_channels=n_channels)
+        self.msd = MultiScaleDiscriminator(n_channels=n_channels)
 
     def forward(self, x):
         features = []

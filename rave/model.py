@@ -15,14 +15,14 @@ class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
                  decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match, valid_signal_crop):
+                 feature_match, valid_signal_crop, n_channels=1):
         super().__init__()
 
-        self.pqmf = pqmf()
+        self.pqmf = pqmf(n_channels=n_channels)
         self.loudness = loudness()
-        self.encoder = encoder()
-        self.decoder = decoder()
-        self.discriminator = discriminator()
+        self.encoder = encoder(n_channels=n_channels)
+        self.decoder = decoder(n_channels=n_channels)
+        self.discriminator = discriminator(n_channels=n_channels)
 
         self.gan_loss = gan_loss
 
@@ -41,6 +41,7 @@ class RAVE(pl.LightningModule):
         self.sr = sampling_rate
         self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop
+        self.n_channels = n_channels
 
         self.register_buffer("saved_step", torch.tensor(0))
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
@@ -72,9 +73,11 @@ class RAVE(pl.LightningModule):
         self.saved_step += 1
 
         gen_opt, dis_opt = self.optimizers()
-        x = batch.unsqueeze(1)
 
+        batch_size = batch.shape[:-2]
+        x = batch.reshape(-1, 1, batch.shape[-1])
         x = self.pqmf(x)
+        x = x.reshape(*batch_size, -1, x.shape[-1])
 
         self.encoder.set_warmed_up(self.warmed_up)
         self.decoder.set_warmed_up(self.warmed_up)
@@ -92,8 +95,12 @@ class RAVE(pl.LightningModule):
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distance = rave.core.multiscale_spectral_distance(x, y)
 
+        x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
+        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
+        x = x.reshape(*batch_size, self.n_channels, -1)
+        y = y.reshape(*batch_size, self.n_channels, -1)
 
         distance = distance + rave.core.multiscale_spectral_distance(x, y)
 
@@ -176,10 +183,17 @@ class RAVE(pl.LightningModule):
     def forward(self, x):
         return self.decode(self.encode(x))
 
+    def on_train_start(self):
+        self.warmed_up = bool(self.saved_step > self.warmup)
+
     def validation_step(self, batch, batch_idx):
 
-        x = batch.unsqueeze(1)
+        # x = batch.unsqueeze(1)
+        x = batch
+        batch_size = x.shape[:-2]
+        x = x.reshape(-1, 1, x.shape[-1])
         x = self.pqmf(x)
+        x = x.reshape(*batch_size, -1, x.shape[-1])
         z = self.encoder(x)
 
         if isinstance(self.encoder, VariationalEncoder):
@@ -190,8 +204,12 @@ class RAVE(pl.LightningModule):
         z = self.encoder.reparametrize(z)[0]
         y = self.decoder(z)
 
+        x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
+        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
+        x = x.reshape(*batch_size, self.n_channels, -1)
+        y = y.reshape(*batch_size, self.n_channels, -1)
 
         distance = rave.core.multiscale_spectral_distance(x, y)
 
@@ -202,7 +220,7 @@ class RAVE(pl.LightningModule):
     def validation_epoch_end(self, out):
         if not self.receptive_field.sum():
             print("Computing receptive field for this configuration...")
-            lrf, rrf = rave.core.get_rave_receptive_field(self)
+            lrf, rrf = rave.core.get_rave_receptive_field(self, n_channels=self.n_channels)
             self.receptive_field[0] = lrf
             self.receptive_field[1] = rrf
             print(

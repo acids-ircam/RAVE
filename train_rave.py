@@ -19,6 +19,7 @@ if __name__ == "__main__":
         MAX_STEPS = 6000000
         VAL_EVERY = 10000
         N_SIGNAL = 131072
+        N_CHANNELS = 1
 
         BATCH = 8
         CKPT = None
@@ -39,13 +40,14 @@ if __name__ == "__main__":
         os.path.join("runs", args.NAME, "rave", "config.gin"),
     )
 
-    model = rave.RAVE()
+    model = rave.RAVE(n_channels=args.N_CHANNELS)
 
     dataset = rave.core.get_dataset(
         args.WAV,
         args.PREPROCESSED,
         model.sr,
         args.N_SIGNAL,
+        args.N_CHANNELS,
     )
     train, val = rave.core.split_dataset(dataset, 98)
     train = DataLoader(train, args.BATCH, True, drop_last=True, num_workers=8)
@@ -78,7 +80,11 @@ if __name__ == "__main__":
 
     run = rave.core.search_for_run(args.CKPT)
     if run is not None:
-        step = torch.load(run, map_location='cpu')["global_step"]
-        trainer.fit_loop.epoch_loop._batches_that_stepped = step
+        loaded_run = torch.load(run, map_location='cpu')
+        trainer.fit_loop.epoch_loop._batches_that_stepped = loaded_run['global_step']
+        try:
+            model = model.load_state_dict(loaded_run['state_dict'], strict=False)
+        except RuntimeError:
+            pass
 
-    trainer.fit(model, train, val, ckpt_path=run)
+    trainer.fit(model, train, val)#, ckpt_path=run)

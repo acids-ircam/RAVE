@@ -20,11 +20,16 @@ from tqdm import tqdm
 
 
 @gin.configurable
-def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
+def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False, n_channels=1):
 
     def preprocess(name):
         try:
-            x, sr = li.load(name, sr=sampling_rate)
+            x, sr = li.load(name, mono=False, sr=sampling_rate)
+            if n_channels != x.shape[0]:
+                if x.shape[0] == 1:
+                    x = np.repeat(x, n_channels, axis=0)
+                else:
+                    raise ValueError("cannot convert a signal with %d channels to %d channels"%(x.shape[0], n_channels))
         except KeyboardInterrupt:
             exit()
         except Exception as e:
@@ -34,7 +39,7 @@ def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
         if trim_silence:
             try:
                 x = np.concatenate(
-                    [x[e[0]:e[1]] for e in li.effects.split(x, 50)],
+                    [x[:, e[0]:e[1]] for e in li.effects.split(x, 50)],
                     -1,
                 )
             except Exception as e:
@@ -42,21 +47,20 @@ def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False):
                 return None
 
         if crop:
-            crop_size = len(x) % N
+            crop_size = x.shape[1] % N
             if crop_size:
-                x = x[:-crop_size]
+                x = x[:, :-crop_size]
         else:
-            pad = (N - (len(x) % N)) % N
-            x = np.pad(x, (0, pad))
+            pad = (N - (x.shape[1] % N)) % N
+            x = np.pad(x, ((0, 0), (0, pad)))
 
-        if not len(x):
+        if not x.shape[1]:
             return None
 
-        x = x.reshape(-1, N)
+        x = x.reshape(-1, x.shape[0], N)
         return x.astype(np.float16)
 
     return preprocess
-
 
 def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
@@ -142,8 +146,9 @@ class Loudness(nn.Module):
         self.register_buffer("window", torch.hann_window(self.n_fft))
 
     def forward(self, x):
+        x = x.reshape(-1, x.shape[-1])
         x = torch.stft(
-            x.squeeze(1),
+            x,
             self.n_fft,
             self.block_size,
             self.n_fft,
@@ -202,20 +207,22 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-def get_dataset(data_dir, preprocess_dir, sr, n_signal):
+def get_dataset(data_dir, preprocess_dir, sr, n_signal, n_channels=1):
     dataset = udls.SimpleDataset(
         preprocess_dir,
         data_dir,
-        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal),
+        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal, n_channels=n_channels),
         split_set="full",
+        extension="*.wav,*.aif,*.mp3,*.aiff",
         transforms=transforms.Compose([
             lambda x: x.astype(np.float32),
-            transforms.RandomCrop(n_signal),
+            lambda x: np.stack([transforms.RandomCrop(n_signal)(x[i]) for i in range(len(x))], 0),
             transforms.RandomApply(
                 lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
                 p=.8,
             ),
-            transforms.Dequantize(16),
+            # transforms.Dequantize(16),
+            lambda x: x + np.random.random(x.shape) / 2**16, 
             lambda x: x.astype(np.float32),
         ]),
     )
@@ -282,15 +289,19 @@ def nonsaturating_gan(score_real, score_fake):
 
 
 @torch.enable_grad()
-def get_rave_receptive_field(model):
+def get_rave_receptive_field(model, n_channels=1):
     N = 2**15
     model.eval()
     device = next(iter(model.parameters())).device
     while True:
-        x = torch.randn(1, 1, N, requires_grad=True, device=device)
-
-        z = model.encoder(model.pqmf(x))[:, :model.latent_size]
-        y = model.pqmf.inverse(model.decoder(z))
+        x = torch.randn(n_channels, 1, N, requires_grad=True, device=device)
+        x_tmp = model.pqmf(x)
+        x_tmp = x_tmp.reshape(1, -1, x_tmp.shape[-1])
+        z = model.encoder(x_tmp)[:, :model.latent_size]
+        y = model.decoder(z)
+        y = y.reshape(n_channels, -1, y.shape[-1])
+        y = model.pqmf.inverse(y)
+        y = y.reshape(1, n_channels, -1)
 
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"

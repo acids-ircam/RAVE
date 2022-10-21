@@ -48,7 +48,7 @@ Loudness:
 
 # DISCRIMINATOR
 ConvNet:
-    in_size = 1
+    # in_size = 1
     out_size = 1
     capacity = %capacity
     n_layers = 4
