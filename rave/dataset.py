@@ -13,7 +13,7 @@ from tqdm import tqdm
 import math
 import yaml
 import os
-
+import gin
 
 class AudioDataset(data.Dataset):
 
@@ -153,10 +153,15 @@ def get_dataset(db_path, sr, n_signal):
             transforms=transform_list,
         )
 
-
-def split_dataset(dataset, percent):
+@gin.configurable
+def split_dataset(dataset, percent, max_residual:Optional[int]=None):
     split1 = max((percent * len(dataset)) // 100, 1)
     split2 = len(dataset) - split1
+    if max_residual is not None:
+        split2 = min(max_residual, split2)
+        split1 = len(dataset) - split2
+    print(f'train set: {split1} examples')
+    print(f'val set: {split2} examples')
     split1, split2 = data.random_split(
         dataset,
         [split1, split2],
@@ -215,4 +220,5 @@ def extract_audio(path: str, n_signal: int, sr: int,
     chunk = process.communicate()[0]
 
     chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
+    chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
     return chunk[:n_signal]

@@ -77,14 +77,21 @@ def main(argv):
     RUN_NAME = f'{FLAGS.name}_{gin_hash}'
 
     os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
+    
+    if FLAGS.gpu == [-1]:
+        gpu = 0
+    else:
+        gpu = FLAGS.gpu or rave.core.setup_gpu()
+    
+    print('selected gpu:', gpu)
+    
 
-    print('FLAGS.gpu:', FLAGS.gpu)
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             "runs",
             name=RUN_NAME,
         ),
-        gpus=FLAGS.gpu or rave.core.setup_gpu(),
+        gpus=gpu,
         callbacks=[
             validation_checkpoint, last_checkpoint,
             rave.model.WarmupCallback()
