@@ -14,10 +14,6 @@ PHASE_1_DURATION = 1000000
 # CORE CONFIGURATION
 core.log_distance.epsilon = 1e-7
 
-core.simple_audio_preprocess:
-    crop = True
-    trim_silence = True
-
 core.multiscale_stft:
     scales = [2048, 1024, 512, 256, 128]
     overlap = .75
