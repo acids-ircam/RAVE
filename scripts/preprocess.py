@@ -32,7 +32,7 @@ flags.DEFINE_integer('num_signal',
                      131072,
                      help='Number of audio samples to use during training')
 flags.DEFINE_integer('sampling_rate',
-                     48000,
+                     44100,
                      help='Sampling rate to use during training')
 flags.DEFINE_integer('max_db_size',
                      100,
