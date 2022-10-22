@@ -91,7 +91,7 @@ class RAVE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
-        
+
         x = self.pqmf(x)
 
         self.encoder.set_warmed_up(self.warmed_up)
@@ -139,7 +139,7 @@ class RAVE(pl.LightningModule):
                         self.feature_matching_fun,
                         scale_true[self.num_skipped_features:],
                         scale_fake[self.num_skipped_features:],
-                    )) / len(scale_true)
+                    )) / len(scale_true[self.num_skipped_features:])
 
                 feature_matching_distance = feature_matching_distance + current_feature_distance
 
