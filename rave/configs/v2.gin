@@ -33,5 +33,5 @@ RAVE:
     discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.nonsaturating_gan
     valid_signal_crop = True
-    feature_matching_fun = @core.log_cosine_distance
+    feature_matching_fun = @core.l1_distance
     num_skipped_features = 3
