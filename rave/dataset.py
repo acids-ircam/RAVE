@@ -15,6 +15,7 @@ import yaml
 import os
 import gin
 
+
 class AudioDataset(data.Dataset):
 
     @property
@@ -153,8 +154,9 @@ def get_dataset(db_path, sr, n_signal):
             transforms=transform_list,
         )
 
+
 @gin.configurable
-def split_dataset(dataset, percent, max_residual:Optional[int]=None):
+def split_dataset(dataset, percent, max_residual: Optional[int] = None):
     split1 = max((percent * len(dataset)) // 100, 1)
     split2 = len(dataset) - split1
     if max_residual is not None:
