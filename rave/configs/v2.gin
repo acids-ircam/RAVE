@@ -6,6 +6,7 @@ from rave import blocks
 from rave import discriminator
 
 core.log_distance.epsilon = 1
+blocks.normalization.mode = 'identity'
 
 # ENCODER
 blocks.Encoder.repeat_layers = 2
@@ -31,7 +32,6 @@ discriminator.CombineDiscriminators:
 # RAVE
 RAVE:
     discriminator = @discriminator.CombineDiscriminators
-    gan_loss = @core.nonsaturating_gan
     valid_signal_crop = True
     feature_matching_fun = @core.l1_distance
-    num_skipped_features = 3
+    num_skipped_features = 2

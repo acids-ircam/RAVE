@@ -32,6 +32,8 @@ pqmf.CachedPQMF:
     attenuation = 100
     n_band = %N_BAND
 
+blocks.normalization.mode = 'weight_norm'
+
 # ENCODER
 blocks.Encoder:
     data_size = %N_BAND

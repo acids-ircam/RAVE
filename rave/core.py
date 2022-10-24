@@ -9,7 +9,6 @@ import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
-import yaml
 from einops import rearrange
 from scipy.signal import lfilter
 from tqdm import tqdm
