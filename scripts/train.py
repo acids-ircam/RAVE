@@ -33,8 +33,12 @@ flags.DEFINE_string('ckpt',
                     None,
                     help='Path to previous checkpoint of the run')
 flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
-flags.DEFINE_integer('workers', default=8, help='Number of workers to spawn for dataset loading')
+flags.DEFINE_integer('workers',
+                     default=8,
+                     help='Number of workers to spawn for dataset loading')
 flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
+
+
 def add_gin_extension(config_name: str) -> str:
     if config_name[-4:] != '.gin':
         config_name += '.gin'
@@ -56,7 +60,11 @@ def main(argv):
         FLAGS.n_signal,
     )
     train, val = rave.dataset.split_dataset(dataset, 98)
-    train = DataLoader(train, FLAGS.batch, True, drop_last=True, num_workers=FLAGS.workers)
+    train = DataLoader(train,
+                       FLAGS.batch,
+                       True,
+                       drop_last=True,
+                       num_workers=FLAGS.workers)
     val = DataLoader(val, FLAGS.batch, False, num_workers=FLAGS.workers)
 
     # CHECKPOINT CALLBACKS
@@ -77,14 +85,13 @@ def main(argv):
     RUN_NAME = f'{FLAGS.name}_{gin_hash}'
 
     os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
-    
+
     if FLAGS.gpu == [-1]:
         gpu = 0
     else:
         gpu = FLAGS.gpu or rave.core.setup_gpu()
-    
+
     print('selected gpu:', gpu)
-    
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(

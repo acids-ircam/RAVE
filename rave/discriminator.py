@@ -79,8 +79,10 @@ class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
         scales = multiscale_stft(x, amplitude_only=False)
         features = []
         for scale, layer in zip(scales, self.layers):
+            scale = scale.permute(0, 3, 1, 2)
             features.append(layer(scale))
         return features
+
 
 @gin.register
 class MultiPeriodDiscriminator(nn.Module):

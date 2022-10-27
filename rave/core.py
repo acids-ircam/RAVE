@@ -43,7 +43,7 @@ def multiscale_stft(signal, scales, overlap, amplitude_only: bool = True):
             torch.hann_window(s).to(signal),
             True,
             normalized=True,
-            return_complex=True,
+            return_complex=amplitude_only,
         )
         if amplitude_only:
             S = S.abs()

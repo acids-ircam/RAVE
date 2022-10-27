@@ -18,7 +18,7 @@ blocks.ResidualStack.kernel_sizes = [3, 5]
 # DISCRIMINATOR
 periods/discriminator.ConvNet:
     conv = @torch.nn.Conv2d
-    kernel_size = 5
+    kernel_size = (5, 1)
 
 spectral/discriminator.ConvNet:
     conv = @torch.nn.Conv2d
