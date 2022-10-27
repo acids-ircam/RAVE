@@ -19,7 +19,7 @@ def mod_sigmoid(x):
 
 
 @gin.configurable
-def multiscale_stft(signal, scales, overlap):
+def multiscale_stft(signal, scales, overlap, amplitude_only: bool = True):
     """
     Compute a stft on several scales, with a constant overlap value.
     Parameters
@@ -44,7 +44,9 @@ def multiscale_stft(signal, scales, overlap):
             True,
             normalized=True,
             return_complex=True,
-        ).abs()
+        )
+        if amplitude_only:
+            S = S.abs()
         stfts.append(S)
     return stfts
 

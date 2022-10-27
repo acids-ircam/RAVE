@@ -6,6 +6,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 
+from .core import multiscale_stft
+
 
 @gin.register
 class ConvNet(nn.Module):
@@ -69,6 +71,16 @@ class MultiScaleDiscriminator(nn.Module):
             x = nn.functional.avg_pool1d(x, 2)
         return features
 
+
+@gin.register
+class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
+
+    def forward(self, x):
+        scales = multiscale_stft(x, amplitude_only=False)
+        features = []
+        for scale, layer in zip(scales, self.layers):
+            features.append(layer(scale))
+        return features
 
 @gin.register
 class MultiPeriodDiscriminator(nn.Module):

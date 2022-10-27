@@ -9,8 +9,6 @@ core.log_distance.epsilon = 1
 core.multiscale_stft:
     scales = [8192, 4096, 2048, 1024, 512]
 
-blocks.normalization.mode = 'identity'
-
 # ENCODER
 blocks.Encoder.repeat_layers = 2
 
