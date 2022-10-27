@@ -1,3 +1,0 @@
-import rave
-
-cc.get_padding.mode = "causal"

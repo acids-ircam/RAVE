@@ -20,6 +20,15 @@ periods/discriminator.ConvNet:
     conv = @torch.nn.Conv2d
     kernel_size = 5
 
+spectral/discriminator.ConvNet:
+    conv = @torch.nn.Conv2d
+    kernel_size = 5
+    in_size = 2
+
+discriminator.MultiScaleSpectralDiscriminator:
+    n_discriminators = 5
+    convnet = @spectral/discriminator.ConvNet
+
 discriminator.MultiPeriodDiscriminator:
     periods = [2, 3, 5, 7, 11]
     convnet = @periods/discriminator.ConvNet
