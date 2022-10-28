@@ -66,18 +66,6 @@ def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
 
-def copy_config(source, destination):
-    if os.path.exists(destination):
-        assert filecmp.cmp(
-            source, destination
-        ), "Same run, incompatible configuration. Choose a different name !"
-        return
-    with open(source, "r") as source:
-        with open(destination, "w") as destination:
-            for l in source.read():
-                destination.write(l)
-
-
 @gin.configurable
 def multiscale_stft(signal, scales, overlap):
     """
@@ -201,7 +189,7 @@ def search_for_run(run_path, mode="last"):
     if run_path is None: return None
     if ".ckpt" in run_path: return run_path
     ckpts = map(str, Path(run_path).rglob("*.ckpt"))
-    ckpts = filter(lambda e: mode in e, ckpts)
+    ckpts = filter(lambda e: mode in os.path.basename(str(e)), ckpts)
     ckpts = sorted(ckpts)
     if len(ckpts): return ckpts[-1]
     else: return None

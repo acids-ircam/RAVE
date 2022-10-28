@@ -1,0 +1,31 @@
+include "configs/rave_v2.gin"
+
+import rave
+from rave import blocks
+
+NUM_QUANTIZERS = 8
+RATIOS = [4, 4, 2, 2]
+LATENT_SIZE = 512
+CODEBOOK_SIZE = 1024
+DYNAMIC_MASKING = True
+
+# ENCODER
+blocks.ResidualVectorQuantize:
+    dim = %LATENT_SIZE
+    num_quantizers = %NUM_QUANTIZERS
+    codebook_size = %CODEBOOK_SIZE
+    dynamic_masking = %DYNAMIC_MASKING
+
+discrete/blocks.Encoder.n_out = 1
+
+blocks.DiscreteEncoder:
+    encoder_cls = @discrete/blocks.Encoder
+    rvq_cls = @blocks.ResidualVectorQuantize
+    beta = .1
+    latent_size = %LATENT_SIZE
+    num_quantizers = %NUM_QUANTIZERS
+
+# RAVE
+RAVE:
+    encoder = @blocks.DiscreteEncoder  
+    phase_1_duration = 100000

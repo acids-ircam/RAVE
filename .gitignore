@@ -10,3 +10,4 @@ runs
 *.npy
 *.yaml
 *.onnx
+__version__*

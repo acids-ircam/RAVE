@@ -10,6 +10,25 @@ import rave.core
 from .blocks import VariationalEncoder
 
 
+class WarmupCallback(pl.Callback):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.state = {'training_steps': 0}
+
+    def on_train_batch_start(self, trainer, pl_module, batch,
+                             batch_idx) -> None:
+        if self.state['training_steps'] >= pl_module.warmup:
+            pl_module.warmed_up = True
+        self.state['training_steps'] += 1
+
+    def state_dict(self):
+        return self.state.copy()
+
+    def load_state_dict(self, state_dict):
+        self.state.update(state_dict)
+
+
 @gin.configurable
 class RAVE(pl.LightningModule):
 
@@ -26,8 +45,6 @@ class RAVE(pl.LightningModule):
 
         self.gan_loss = gan_loss
 
-        self.idx = 0
-
         self.register_buffer("latent_pca", torch.eye(latent_size))
         self.register_buffer("latent_mean", torch.zeros(latent_size))
         self.register_buffer("fidelity", torch.zeros(latent_size))
@@ -43,7 +60,8 @@ class RAVE(pl.LightningModule):
         self.valid_signal_crop = valid_signal_crop
         self.n_channels = n_channels
 
-        self.register_buffer("saved_step", torch.tensor(0))
+        self.eval_number = 0
+
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
     def configure_optimizers(self):
@@ -69,9 +87,6 @@ class RAVE(pl.LightningModule):
         return feature_true, feature_fake
 
     def training_step(self, batch, batch_idx):
-
-        self.saved_step += 1
-
         gen_opt, dis_opt = self.optimizers()
 
         batch_size = batch.shape[:-2]
@@ -151,7 +166,7 @@ class RAVE(pl.LightningModule):
             loss_gen = loss_gen + feature_matching_distance
 
         # OPTIMIZATION
-        if self.saved_step % 2 and self.warmed_up:
+        if batch_idx % 2 and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
@@ -228,9 +243,9 @@ class RAVE(pl.LightningModule):
             )
 
         if not len(out): return
+
         audio, z = list(zip(*out))
-        if self.saved_step > self.warmup:
-            self.warmed_up = True
+        audio = list(map(lambda x: x.cpu(), audio))
 
         # LATENT SPACE ANALYSIS
         if not self.warmed_up and isinstance(self.encoder, VariationalEncoder):
@@ -259,6 +274,6 @@ class RAVE(pl.LightningModule):
                 )
 
         y = torch.cat(audio, 0)[:8].reshape(-1)
-        self.logger.experiment.add_audio("audio_val", y,
-                                         self.saved_step.item(), self.sr)
-        self.idx += 1
+        self.logger.experiment.add_audio("audio_val", y, self.eval_number,
+                                         self.sr)
+        self.eval_number += 1

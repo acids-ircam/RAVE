@@ -8,6 +8,7 @@ from .pqmf import kaiser_filter
 
 
 class Resampling(nn.Module):
+
     def __init__(self, target_sr, source_sr):
         super().__init__()
         self.source_sr = source_sr

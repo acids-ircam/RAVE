@@ -1,6 +1,16 @@
+import os
+import pathlib
+
 import cached_conv as cc
 import gin
 import torch
+
+gin.add_config_file_search_path(os.path.dirname(__file__))
+gin.add_config_file_search_path(
+    os.path.join(
+        os.path.dirname(__file__),
+        'configs',
+    ))
 
 gin.register(torch.nn.Conv1d, module="torch.nn")
 gin.register(torch.nn.Conv2d, module="torch.nn")
@@ -13,3 +23,9 @@ from .blocks import *
 from .discriminator import *
 from .model import RAVE
 from .pqmf import *
+
+try:
+    from .__version__ import *
+except:
+    __version__ = None
+    __commit__ = None

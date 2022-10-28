@@ -1,0 +1,35 @@
+include "configs/rave_v1.gin"
+
+import rave
+from rave import core
+from rave import blocks
+from rave import discriminator
+
+core.log_distance.epsilon = 1
+
+# ENCODER
+blocks.Encoder.repeat_layers = 2
+
+# GENERATOR
+blocks.ResidualStack.kernel_sizes = [3, 5]
+
+# DISCRIMINATOR
+periods/discriminator.ConvNet:
+    conv = @torch.nn.Conv2d
+    kernel_size = 5
+
+discriminator.MultiPeriodDiscriminator:
+    periods = [2, 3, 5, 7, 11]
+    convnet = @periods/discriminator.ConvNet
+
+discriminator.CombineDiscriminators:
+    discriminators = [
+        @discriminator.MultiPeriodDiscriminator,
+        @discriminator.MultiScaleDiscriminator
+    ]
+
+# RAVE
+RAVE:
+    discriminator = @discriminator.CombineDiscriminators
+    gan_loss = @core.nonsaturating_gan
+    valid_signal_crop = True

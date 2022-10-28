@@ -1,14 +1,81 @@
+from functools import partial
 import cached_conv as cc
 import gin
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
-from vector_quantize_pytorch import ResidualVQ
+from vector_quantize_pytorch import VectorQuantize
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
-ResidualVQ = gin.external_configurable(ResidualVQ)
+
+@gin.register
+class ResidualVectorQuantize(nn.Module):
+
+    def __init__(self, dim: int, num_quantizers: int, codebook_size: int,
+                 dynamic_masking: bool) -> None:
+        super().__init__()
+        self.layers = nn.ModuleList([
+            VectorQuantize(dim, codebook_size, channel_last=False)
+            for _ in range(num_quantizers)
+        ])
+        self._dynamic_masking = dynamic_masking
+        self._num_quantizers = num_quantizers
+
+    def forward(self, x):
+        quantized_list = []
+        losses = []
+
+        for layer in self.layers:
+            quantized, _, _ = layer(x)
+
+            squared_diff = (quantized.detach() - x).pow(2)
+            loss = squared_diff.reshape(x.shape[0], -1).mean(-1)
+
+            x = x - quantized
+
+            quantized_list.append(quantized)
+            losses.append(loss)
+
+        quantized_out, losses = map(
+            partial(torch.stack, dim=-1),
+            (quantized_list, losses),
+        )
+
+        if self.training and self._dynamic_masking:
+            # BUILD MASK THRESHOLD
+            mask_threshold = torch.randint(
+                0,
+                self._num_quantizers,
+                (x.shape[0], ),
+            )[..., None]
+            quant_index = torch.arange(self._num_quantizers)[None]
+            mask = quant_index > mask_threshold
+
+            # BUILD MASK
+            mask = mask.to(x.device)
+            mask_threshold = mask_threshold.to(x.device)
+
+            # QUANTIZER DROPOUT
+            quantized_out = torch.where(
+                mask[:, None, None, :],
+                torch.zeros_like(quantized_out),
+                quantized_out,
+            )
+
+            # LOSS DROPOUT
+            losses = torch.where(
+                mask,
+                torch.zeros_like(losses),
+                losses,
+            )
+
+            losses = losses / (mask_threshold + 1)
+
+        quantized_out = quantized_out.sum(-1)
+        losses = losses.sum(-1)
+        return quantized_out, losses
 
 
 class SampleNorm(nn.Module):
@@ -364,10 +431,11 @@ class VariationalEncoder(nn.Module):
 @gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder, beta, latent_size, num_quantizers):
+    def __init__(self, encoder_cls, rvq_cls, beta, latent_size,
+                 num_quantizers):
         super().__init__()
-        self.encoder = encoder()
-        self.rvq = ResidualVQ()
+        self.encoder = encoder_cls()
+        self.rvq = rvq_cls()
         self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
@@ -380,9 +448,9 @@ class DiscreteEncoder(nn.Module):
 
     @torch.jit.ignore
     def reparametrize(self, z):
-        q, index, commmitment = self.rvq(z)
+        q, commmitment = self.rvq(z)
         q = self.add_noise_to_vector(q)
-        return q, self.beta * commmitment.mean(), index.transpose(-2, -1)
+        return q, self.beta * commmitment.mean()
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
