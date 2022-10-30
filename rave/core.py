@@ -1,4 +1,3 @@
-import filecmp
 import os
 from pathlib import Path
 from random import random
@@ -10,64 +9,17 @@ import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
-import udls
-import udls.transforms as transforms
-import yaml
 from einops import rearrange
 from scipy.signal import lfilter
-from torch.utils.data import random_split
 from tqdm import tqdm
 
-
-@gin.configurable
-def simple_audio_preprocess(sampling_rate, N, crop=False, trim_silence=False, n_channels=1):
-
-    def preprocess(name):
-        try:
-            x, sr = li.load(name, mono=False, sr=sampling_rate)
-            if n_channels != x.shape[0]:
-                if x.shape[0] == 1:
-                    x = np.repeat(x, n_channels, axis=0)
-                else:
-                    raise ValueError("cannot convert a signal with %d channels to %d channels"%(x.shape[0], n_channels))
-        except KeyboardInterrupt:
-            exit()
-        except Exception as e:
-            print(e)
-            return None
-
-        if trim_silence:
-            try:
-                x = np.concatenate(
-                    [x[:, e[0]:e[1]] for e in li.effects.split(x, 50)],
-                    -1,
-                )
-            except Exception as e:
-                print(e)
-                return None
-
-        if crop:
-            crop_size = x.shape[1] % N
-            if crop_size:
-                x = x[:, :-crop_size]
-        else:
-            pad = (N - (x.shape[1] % N)) % N
-            x = np.pad(x, ((0, 0), (0, pad)))
-
-        if not x.shape[1]:
-            return None
-
-        x = x.reshape(-1, x.shape[0], N)
-        return x.astype(np.float16)
-
-    return preprocess
 
 def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
 
 
 @gin.configurable
-def multiscale_stft(signal, scales, overlap):
+def multiscale_stft(signal, scales, overlap, amplitude_only: bool = True):
     """
     Compute a stft on several scales, with a constant overlap value.
     Parameters
@@ -91,8 +43,10 @@ def multiscale_stft(signal, scales, overlap):
             torch.hann_window(s).to(signal),
             True,
             normalized=True,
-            return_complex=True,
-        ).abs()
+            return_complex=amplitude_only,
+        )
+        if amplitude_only:
+            S = S.abs()
         stfts.append(S)
     return stfts
 
@@ -195,40 +149,6 @@ def search_for_run(run_path, mode="last"):
     else: return None
 
 
-def get_dataset(data_dir, preprocess_dir, sr, n_signal, n_channels=1):
-    dataset = udls.SimpleDataset(
-        preprocess_dir,
-        data_dir,
-        preprocess_function=simple_audio_preprocess(sr, 2 * n_signal, n_channels=n_channels),
-        split_set="full",
-        extension="*.wav,*.aif,*.mp3,*.aiff",
-        transforms=transforms.Compose([
-            lambda x: x.astype(np.float32),
-            lambda x: np.stack([transforms.RandomCrop(n_signal)(x[i]) for i in range(len(x))], 0),
-            transforms.RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
-                p=.8,
-            ),
-            # transforms.Dequantize(16),
-            lambda x: x + np.random.random(x.shape) / 2**16, 
-            lambda x: x.astype(np.float32),
-        ]),
-    )
-
-    return dataset
-
-
-def split_dataset(dataset, percent):
-    split1 = max((percent * len(dataset)) // 100, 1)
-    split2 = len(dataset) - split1
-    split1, split2 = random_split(
-        dataset,
-        [split1, split2],
-        generator=torch.Generator().manual_seed(42),
-    )
-    return split1, split2
-
-
 def setup_gpu():
     return gpu.getAvailable(maxMemory=.05)
 
@@ -315,40 +235,24 @@ def valid_signal_crop(x, left_rf, right_rf):
     return x
 
 
-@torch.no_grad()
-def extract_codes(model, loader, out_path):
-    os.makedirs(out_path, exist_ok=True)
-    device = next(iter(model.parameters())).device
-    code = model.encode
-
-    x = next(iter(loader))
-    x = x.unsqueeze(1).to(device)
-    batch_size, n_code, n_frame = code(x).shape
-
-    out_array = np.memmap(
-        os.path.join(out_path, "data.npy"),
-        dtype='uint16',
-        mode='w+',
-        shape=(
-            len(loader) * batch_size,
-            n_code,
-            n_frame,
-        ),
-    )
-
-    for i, x in enumerate(tqdm(loader, desc="Extracting codes")):
-        x = x.unsqueeze(1).to(device)
-        index = code(x).cpu().numpy().astype(np.uint16)
-        out_array[i * batch_size:(i + 1) * batch_size] = index
-
-    out_array.flush()
-    with open(os.path.join(out_path, "info.yaml"), "w") as info:
-        yaml.safe_dump({"shape": out_array.shape}, info)
-
-
 @gin.configurable
 def lin_distance(x, y):
     return torch.norm(x - y) / torch.norm(x)
+
+
+@gin.register
+def l1_distance(x, y):
+    return abs(x - y).mean()
+
+
+@gin.register
+def log_cosine_distance(x, y, dim=1):
+    norm_x = (x * x).sum(dim).sqrt()
+    norm_y = (y * y).sum(dim).sqrt()
+    inner = (x * y).sum(dim)
+    sim = torch.mean(inner / (norm_x * norm_y))
+    sim = (sim + 1) / 2 + 1e-4
+    return -torch.log(sim)
 
 
 @gin.configurable
@@ -364,25 +268,3 @@ def multiscale_spectral_distance(x, y):
     log = sum(list(map(log_distance, x, y)))
 
     return lin + log
-
-
-def check_scripted_model(model: nn.Module, buffer_size=8192):
-    checked_methods = []
-    for n, b in model.named_buffers():
-        if "_params" in n:
-            method = n[:-7]
-            n_in, ratio_in, n_out, ratio_out = b.numpy()
-            x = torch.zeros(1, n_in, buffer_size // ratio_in)
-            y = getattr(model, method)(x)
-            assert y.shape[0] == x.shape[
-                0], f"{method}: batch size inconsistent"
-            assert y.shape[
-                1] == n_out, f"{method}: wrong output channel number"
-            assert y.shape[
-                2] == buffer_size // ratio_out, f"{method}: out_buffer is {y.shape[-1].item()}, should be {2**14 // ratio_out}"
-            checked_methods.append(method)
-
-    print(f"The following methods have passed the tests "
-          f"with buffer size {buffer_size}:")
-    for m in checked_methods:
-        print(f" - {m}")

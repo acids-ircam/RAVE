@@ -34,7 +34,8 @@ class RAVE(pl.LightningModule):
 
     def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
                  decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match, valid_signal_crop, n_channels=1):
+                 feature_match, valid_signal_crop, feature_matching_fun,
+                 num_skipped_features, n_channels=1):
         super().__init__()
 
         self.pqmf = pqmf(n_channels=n_channels)
@@ -59,6 +60,8 @@ class RAVE(pl.LightningModule):
         self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop
         self.n_channels = n_channels
+        self.feature_matching_fun = feature_matching_fun
+        self.num_skipped_features = num_skipped_features
 
         self.eval_number = 0
 
@@ -138,12 +141,14 @@ class RAVE(pl.LightningModule):
             pred_fake = 0
 
             for scale_true, scale_fake in zip(feature_true, feature_fake):
-                feature_matching_distance = feature_matching_distance + 10 * sum(
+                current_feature_distance = sum(
                     map(
-                        lambda x, y: abs(x - y).mean(),
-                        scale_true,
-                        scale_fake,
-                    )) / len(scale_true)
+                        self.feature_matching_fun,
+                        scale_true[self.num_skipped_features:],
+                        scale_fake[self.num_skipped_features:],
+                    )) / len(scale_true[self.num_skipped_features:])
+
+                feature_matching_distance = feature_matching_distance + current_feature_distance
 
                 _dis, _adv = self.gan_loss(scale_true[-1], scale_fake[-1])
 
@@ -152,6 +157,9 @@ class RAVE(pl.LightningModule):
 
                 loss_dis = loss_dis + _dis
                 loss_adv = loss_adv + _adv
+
+            feature_matching_distance = feature_matching_distance / len(
+                feature_true)
 
         else:
             pred_true = torch.tensor(0.).to(x)
@@ -163,7 +171,7 @@ class RAVE(pl.LightningModule):
         loss_gen = distance + loss_adv + reg
 
         if self.feature_match:
-            loss_gen = loss_gen + feature_matching_distance
+            loss_gen = loss_gen + 10 * feature_matching_distance
 
         # OPTIMIZATION
         if batch_idx % 2 and self.warmed_up:

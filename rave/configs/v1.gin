@@ -14,10 +14,6 @@ PHASE_1_DURATION = 1000000
 # CORE CONFIGURATION
 core.log_distance.epsilon = 1e-7
 
-core.simple_audio_preprocess:
-    crop = True
-    trim_silence = True
-
 core.multiscale_stft:
     scales = [2048, 1024, 512, 256, 128]
     overlap = .75
@@ -30,12 +26,13 @@ core.Loudness:
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False
-cc.get_padding.mode = "centered"
 
 # PQMF
 pqmf.CachedPQMF:
     attenuation = 100
     n_band = %N_BAND
+
+blocks.normalization.mode = 'weight_norm'
 
 # ENCODER
 blocks.Encoder:
@@ -98,3 +95,5 @@ RAVE:
     gan_loss = @core.hinge_gan
     feature_match = True
     valid_signal_crop = False
+    feature_matching_fun = @core.l1_distance
+    num_skipped_features = 0

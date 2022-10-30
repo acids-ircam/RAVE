@@ -1,4 +1,4 @@
-include "configs/rave_v1.gin"
+include "configs/v1.gin"
 
 import rave
 from rave import core
@@ -6,6 +6,8 @@ from rave import blocks
 from rave import discriminator
 
 core.log_distance.epsilon = 1
+core.multiscale_stft:
+    scales = [8192, 4096, 2048, 1024, 512]
 
 # ENCODER
 blocks.Encoder.repeat_layers = 2
@@ -16,7 +18,16 @@ blocks.ResidualStack.kernel_sizes = [3, 5]
 # DISCRIMINATOR
 periods/discriminator.ConvNet:
     conv = @torch.nn.Conv2d
+    kernel_size = (5, 1)
+
+spectral/discriminator.ConvNet:
+    conv = @torch.nn.Conv2d
     kernel_size = 5
+    in_size = 2
+
+discriminator.MultiScaleSpectralDiscriminator:
+    n_discriminators = 5
+    convnet = @spectral/discriminator.ConvNet
 
 discriminator.MultiPeriodDiscriminator:
     periods = [2, 3, 5, 7, 11]
@@ -31,5 +42,6 @@ discriminator.CombineDiscriminators:
 # RAVE
 RAVE:
     discriminator = @discriminator.CombineDiscriminators
-    gan_loss = @core.nonsaturating_gan
     valid_signal_crop = True
+    feature_matching_fun = @core.l1_distance
+    num_skipped_features = 2

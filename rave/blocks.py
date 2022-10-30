@@ -1,13 +1,24 @@
 from functools import partial
+
 import cached_conv as cc
 import gin
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.utils.weight_norm as wn
+from torch.nn.utils import weight_norm
 from vector_quantize_pytorch import VectorQuantize
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
+
+
+@gin.configurable
+def normalization(module: nn.Module, mode: str = 'identity'):
+    if mode == 'identity':
+        return module
+    elif mode == 'weight_norm':
+        return weight_norm(module)
+    else:
+        raise Exception(f'Normalization mode {mode} not supported')
 
 
 @gin.register
@@ -110,14 +121,15 @@ class ResidualLayer(nn.Module):
         for d in dilations:
             net.append(nn.LeakyReLU(.2))
             net.append(
-                cc.Conv1d(
-                    dim,
-                    dim,
-                    kernel_size,
-                    dilation=d,
-                    padding=cc.get_padding(kernel_size, dilation=d),
-                    cumulative_delay=cd,
-                ))
+                normalization(
+                    cc.Conv1d(
+                        dim,
+                        dim,
+                        kernel_size,
+                        dilation=d,
+                        padding=cc.get_padding(kernel_size, dilation=d),
+                        cumulative_delay=cd,
+                    )))
             cd = net[-1].cumulative_delay
         self.net = Residual(
             cc.CachedSequential(*net),
@@ -187,7 +199,7 @@ class UpsampleLayer(nn.Module):
         net = [nn.LeakyReLU(.2)]
         if ratio > 1:
             net.append(
-                wn(
+                normalization(
                     cc.ConvTranspose1d(in_dim,
                                        out_dim,
                                        2 * ratio,
@@ -195,7 +207,8 @@ class UpsampleLayer(nn.Module):
                                        padding=ratio // 2)))
         else:
             net.append(
-                wn(cc.Conv1d(in_dim, out_dim, 3, padding=cc.get_padding(3))))
+                normalization(
+                    cc.Conv1d(in_dim, out_dim, 3, padding=cc.get_padding(3))))
 
         self.net = cc.CachedSequential(*net)
         self.cumulative_delay = self.net.cumulative_delay + cumulative_delay * ratio
@@ -256,7 +269,7 @@ class Generator(nn.Module):
                  use_noise, n_channels=1):
         super().__init__()
         net = [
-            wn(
+            normalization(
                 cc.Conv1d(
                     latent_size,
                     2**len(ratios) * capacity,
@@ -282,10 +295,10 @@ class Generator(nn.Module):
 
         self.net = cc.CachedSequential(*net)
 
-        wave_gen = wn(
+        wave_gen = normalization(
             cc.Conv1d(out_dim, data_size * n_channels, 7, padding=cc.get_padding(7)))
 
-        loud_gen = wn(
+        loud_gen = normalization(
             cc.Conv1d(
                 out_dim,
                 1,

@@ -1,10 +1,10 @@
 import hashlib
 import os
-from absl import flags
 
 import gin
 import pytorch_lightning as pl
 import torch
+from absl import flags
 from torch.utils.data import DataLoader
 
 import rave
@@ -15,7 +15,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('name', None, help='Name of the run', required=True)
 flags.DEFINE_multi_string('config',
-                          default='rave_v2.gin',
+                          default='v2.gin',
                           help='RAVE configuration to use')
 flags.DEFINE_string('db_path',
                     None,
@@ -28,16 +28,30 @@ flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('n_signal',
                      131072,
                      help='Number of audio samples to use during training')
+flags.DEFINE_integer('n_channels', 1, help="number of audio channels")
 flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('ckpt',
                     None,
                     help='Path to previous checkpoint of the run')
-flags.DEFINE_multi_string('gin_param', default=[], help='Override gin binding')
+flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
+flags.DEFINE_integer('workers',
+                     default=8,
+                     help='Number of workers to spawn for dataset loading')
+flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
+
+
+def add_gin_extension(config_name: str) -> str:
+    if config_name[-4:] != '.gin':
+        config_name += '.gin'
+    return config_name
 
 
 def main(argv):
-
-    gin.parse_config_files_and_bindings(FLAGS.config, FLAGS.gin_param)
+    torch.backends.cudnn.benchmark = True
+    gin.parse_config_files_and_bindings(
+        map(add_gin_extension, FLAGS.config),
+        FLAGS.override,
+    )
 
     model = rave.RAVE()
 
@@ -45,10 +59,15 @@ def main(argv):
         FLAGS.db_path,
         model.sr,
         FLAGS.n_signal,
+        FLAGS.n_channels,
     )
     train, val = rave.dataset.split_dataset(dataset, 98)
-    train = DataLoader(train, FLAGS.batch, True, drop_last=True, num_workers=8)
-    val = DataLoader(val, FLAGS.batch, False, num_workers=8)
+    train = DataLoader(train,
+                       FLAGS.batch,
+                       True,
+                       drop_last=True,
+                       num_workers=FLAGS.workers)
+    val = DataLoader(val, FLAGS.batch, False, num_workers=FLAGS.workers)
 
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
@@ -69,12 +88,19 @@ def main(argv):
 
     os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
 
+    if FLAGS.gpu == [-1]:
+        gpu = 0
+    else:
+        gpu = FLAGS.gpu or rave.core.setup_gpu()
+
+    print('selected gpu:', gpu)
+
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             "runs",
             name=RUN_NAME,
         ),
-        gpus=rave.core.setup_gpu(),
+        gpus=gpu,
         callbacks=[
             validation_checkpoint, last_checkpoint,
             rave.model.WarmupCallback()

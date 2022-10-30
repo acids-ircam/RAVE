@@ -18,7 +18,6 @@ with open('rave/__version__.py', 'w') as init:
     init.write(f"version = \"{version}\"\n")
     init.write(f"commit = \"{commit}\"\n")
 
-import rave
 
 with open("README.md", "r") as readme:
     readme = readme.read()
@@ -28,7 +27,7 @@ with open("requirements.txt", "r") as requirements:
 
 setuptools.setup(
     name="rave",
-    version=rave.__version__.version,
+    version=version,
     author="Antoine CAILLON",
     author_email="caillon@ircam.fr",
     description="RAVE: a Realtime Audio Variatione autoEncoder",

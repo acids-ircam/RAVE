@@ -1,12 +1,15 @@
 import sys
+
 from absl import app
+
+AVAILABLE_SCRIPTS = ['preprocess', 'train', 'export', 'export_onnx']
 
 
 def help():
-    print("""usage: rave [ preprocess | train | export ]
+    print(f"""usage: rave [ {' | '.join(AVAILABLE_SCRIPTS)} ]
 
 positional arguments:
-  command     Command to launch with rave. Must be either preprocess, train or export.
+  command     Command to launch with rave.
 """)
     exit()
 
@@ -14,7 +17,7 @@ positional arguments:
 def main():
     if len(sys.argv) == 1:
         help()
-    elif sys.argv[1] not in ['preprocess', 'train', 'export']:
+    elif sys.argv[1] not in AVAILABLE_SCRIPTS:
         help()
 
     command = sys.argv[1]
@@ -31,5 +34,9 @@ def main():
         from scripts import preprocess
         sys.argv[0] = preprocess.__name__
         app.run(preprocess.main)
+    elif command == 'export_onnx':
+        from scripts import export_onnx
+        sys.argv[0] = export_onnx.__name__
+        app.run(export_onnx.main)
     else:
         raise Exception(f'Command {command} not found')

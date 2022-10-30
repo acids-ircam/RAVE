@@ -6,12 +6,13 @@ import subprocess
 from datetime import timedelta
 from functools import partial
 from itertools import repeat
-from typing import Callable, Iterable, Tuple
-from absl import flags
+from typing import Callable, Iterable, Sequence, Tuple
 
 import lmdb
 import numpy as np
+import yaml
 import torch
+from absl import flags, app
 from tqdm import tqdm
 from udls.generated import AudioExample
 
@@ -19,10 +20,10 @@ torch.set_grad_enabled(False)
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('input_path',
-                    None,
-                    help='Path to a directory containing audio files',
-                    required=True)
+flags.DEFINE_multi_string('input_path',
+                          None,
+                          help='Path to a directory containing audio files',
+                          required=True)
 flags.DEFINE_string('output_path',
                     None,
                     help='Output directory for the dataset',
@@ -30,16 +31,20 @@ flags.DEFINE_string('output_path',
 flags.DEFINE_integer('num_signal',
                      131072,
                      help='Number of audio samples to use during training')
+flags.DEFINE_integer('channels', 1, help="Number of audio channels")
 flags.DEFINE_integer('sampling_rate',
-                     48000,
+                     44100,
                      help='Sampling rate to use during training')
 flags.DEFINE_integer('max_db_size',
                      100,
                      help='Maximum size (in GB) of the dataset')
 flags.DEFINE_multi_string(
     'ext',
-    default=['wav', 'opus', 'mp3', 'aac', 'flac'],
+    default=['aif', 'aiff', 'wav', 'opus', 'mp3', 'aac', 'flac', 'ogg'],
     help='Extension to search for in the input directory')
+flags.DEFINE_bool('lazy',
+                  default=False,
+                  help='Decode and resample audio samples.')
 
 
 def float_array_to_int16_bytes(x):
@@ -47,23 +52,41 @@ def float_array_to_int16_bytes(x):
 
 
 def load_audio_chunk(path: str, n_signal: int,
-                     sr: int) -> Iterable[np.ndarray]:
+                     sr: int, channels: int = 1) -> Iterable[np.ndarray]:
     process = subprocess.Popen(
         [
             'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, '-ac',
-            '1', '-ar',
+            str(channels), '-ar',
             str(sr), '-f', 's16le', '-'
         ],
         stdout=subprocess.PIPE,
     )
 
-    chunk = process.stdout.read(n_signal * 2)
-
-    while len(chunk) == n_signal * 2:
+    chunk = process.stdout.read(n_signal * 2 * channels)
+    while len(chunk) == n_signal * 2 * channels:
         yield chunk
-        chunk = process.stdout.read(n_signal * 2)
+        chunk = process.stdout.read(n_signal * 2 * channels)
 
     process.stdout.close()
+
+
+def get_audio_length(path: str) -> float:
+    process = subprocess.Popen(
+        [
+            'ffprobe', '-i', path, '-v', 'error', '-show_entries',
+            'format=duration'
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, _ = process.communicate()
+    if process.returncode: return None
+    try:
+        stdout = stdout.decode().split('\n')[1].split('=')[-1]
+        length = float(stdout)
+        return path, float(length)
+    except:
+        return None
 
 
 def flatten(iterator: Iterable):
@@ -73,11 +96,13 @@ def flatten(iterator: Iterable):
 
 
 def process_audio_array(audio: Tuple[int, bytes],
-                        env: lmdb.Environment) -> int:
+                        env: lmdb.Environment,
+                        n_channels: int = 1) -> int:
     audio_id, audio_samples = audio
 
     buffers = {}
     buffers['waveform'] = AudioExample.AudioBuffer(
+        shape=(n_channels, int(len(audio_samples)/n_channels)),
         sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,
@@ -91,6 +116,20 @@ def process_audio_array(audio: Tuple[int, bytes],
             ae.SerializeToString(),
         )
     return audio_id
+
+
+def process_audio_file(audio: Tuple[int, Tuple[str, float]],
+                       env: lmdb.Environment) -> int:
+    audio_id, (path, length) = audio
+
+    ae = AudioExample(metadata={'path': path, 'length': str(length)})
+    key = f'{audio_id:08d}'
+    with env.begin(write=True) as txn:
+        txn.put(
+            key.encode(),
+            ae.SerializeToString(),
+        )
+    return length
 
 
 def flatmap(pool: multiprocessing.Pool,
@@ -118,34 +157,66 @@ def flat_mappper(func, arg):
         queue.put(item)
 
 
+def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
+    paths = map(pathlib.Path, path_list)
+    audios = []
+    for p in paths:
+        for ext in extensions:
+            audios.append(p.rglob(f'*.{ext}'))
+    audios = flatten(audios)
+    return audios
+
+
 def main(argv):
     chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
-                         sr=FLAGS.sampling_rate)
+                         sr=FLAGS.sampling_rate,
+                         channels=FLAGS.channels)
 
     # create database
     env = lmdb.open(FLAGS.output_path, map_size=FLAGS.max_db_size * 1024**3)
     pool = multiprocessing.Pool()
 
     # search for audio files
-    audios = flatten(
-        map(
-            lambda ext: pathlib.Path(FLAGS.input_path).rglob(f'*.{ext}'),
-            FLAGS.ext,
-        ))
-    audios = list(map(str, audios))
+    audios = search_for_audios(FLAGS.input_path, FLAGS.ext)
+    audios = map(str, audios)
+    audios = map(os.path.abspath, audios)
+    audios = [*audios]
 
-    # load chunks
-    chunks = flatmap(pool, chunk_load, audios)
-    chunks = enumerate(chunks)
+    with open(os.path.join(
+            FLAGS.output_path,
+            'metadata.yaml',
+    ), 'w') as metadata:
+        yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels}, metadata)
 
-    # apply rave on dataset
-    processed_samples = map(partial(process_audio_array, env=env), chunks)
+    if not FLAGS.lazy:
+        # load chunks
+        chunks = flatmap(pool, chunk_load, audios)
+        chunks = enumerate(chunks)
 
-    pbar = tqdm(processed_samples)
-    for audio_id in pbar:
-        n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
+        processed_samples = map(partial(process_audio_array, env=env), chunks)
 
-        pbar.set_description(f'dataset length: {timedelta(seconds=n_seconds)}')
+        pbar = tqdm(processed_samples)
+        for audio_id in pbar:
+            n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
+
+            pbar.set_description(
+                f'dataset length: {timedelta(seconds=n_seconds)}')
+
+    else:
+        audio_lengths = pool.imap_unordered(get_audio_length, audios)
+        audio_lengths = filter(lambda x: x is not None, audio_lengths)
+        audio_lengths = enumerate(audio_lengths)
+        processed_samples = map(partial(process_audio_file, env=env),
+                                audio_lengths)
+        pbar = tqdm(processed_samples)
+        total = 0
+        for length in pbar:
+            total += length
+            pbar.set_description(f'dataset length: {timedelta(seconds=total)}')
 
     pool.close()
+
+
+if __name__ == '__main__':
+    app.run(main)

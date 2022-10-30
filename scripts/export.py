@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logging.info("library loading")
@@ -14,12 +15,12 @@ import nn_tilde
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from absl import flags
 
 import rave
 import rave.blocks
 import rave.core
 import rave.scripted_vq
-from absl import flags
 
 FLAGS = flags.FLAGS
 
@@ -193,7 +194,8 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
+                          skip_unknown=True)
     checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()

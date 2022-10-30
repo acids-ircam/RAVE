@@ -1,5 +1,5 @@
 from random import random
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence
 
 import lmdb
 import numpy as np
@@ -8,6 +8,12 @@ from scipy.signal import lfilter
 from torch.utils import data
 from udls import transforms
 from udls.generated import AudioExample
+import subprocess
+from tqdm import tqdm
+import math
+import yaml
+import os
+import gin
 
 
 class AudioDataset(data.Dataset):
@@ -28,13 +34,15 @@ class AudioDataset(data.Dataset):
     def __init__(self,
                  db_path: str,
                  audio_key: str = 'waveform',
-                 transforms: Optional[transforms.Transform] = None) -> None:
+                 transforms: Optional[transforms.Transform] = None, 
+                 n_channels: int = 1) -> None:
         super().__init__()
         self._db_path = db_path
         self._audio_key = audio_key
         self._env = None
         self._keys = None
         self._transforms = transforms
+        self._n_channels = n_channels
 
     def __len__(self):
         return len(self.keys)
@@ -55,25 +63,113 @@ class AudioDataset(data.Dataset):
         return audio
 
 
-def get_dataset(db_path, sr, n_signal):
-    return AudioDataset(
-        db_path,
-        transforms=transforms.Compose([
-            lambda x: x.astype(np.float32),
-            transforms.RandomCrop(n_signal),
-            transforms.RandomApply(
-                lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
-                p=.8,
-            ),
-            transforms.Dequantize(16),
-            lambda x: x.astype(np.float32),
-        ]),
-    )
+class LazyAudioDataset(data.Dataset):
+
+    @property
+    def env(self) -> lmdb.Environment:
+        if self._env is None:
+            self._env = lmdb.open(self._db_path, lock=False)
+        return self._env
+
+    @property
+    def keys(self) -> Sequence[str]:
+        if self._keys is None:
+            with self.env.begin() as txn:
+                self._keys = list(txn.cursor().iternext(values=False))
+        return self._keys
+
+    def __init__(self,
+                 db_path: str,
+                 n_signal: int,
+                 sampling_rate: int,
+                 transforms: Optional[transforms.Transform] = None,
+                 n_channels: int = 1) -> None:
+        super().__init__()
+        self._db_path = db_path
+        self._env = None
+        self._keys = None
+        self._transforms = transforms
+        self._n_signal = n_signal
+        self._sampling_rate = sampling_rate
+        self._n_channels = n_channels
+
+        self.parse_dataset()
+
+    def parse_dataset(self):
+        items = []
+        for key in tqdm(self.keys, desc='Discovering dataset'):
+            with self.env.begin() as txn:
+                ae = AudioExample.FromString(txn.get(key))
+            length = float(ae.metadata['length'])
+            n_signal = int(math.floor(length * self._sampling_rate))
+            n_chunks = n_signal // self._n_signal
+            items.append(n_chunks)
+        items = np.asarray(items)
+        items = np.cumsum(items)
+        self.items = items
+
+    def __len__(self):
+        return self.items[-1]
+
+    def __getitem__(self, index):
+        audio_id = np.where(index < self.items)[0][0]
+        if audio_id:
+            index -= self.items[audio_id - 1]
+
+        key = self.keys[audio_id]
+
+        with self.env.begin() as txn:
+            ae = AudioExample.FromString(txn.get(key))
+
+        audio = extract_audio(
+            ae.metadata['path'],
+            self._n_signal,
+            self._sampling_rate,
+            index * self._n_signal,
+            self._n_channels
+        )
+
+        if self._transforms is not None:
+            audio = self._transforms(audio)
+
+        return audio
 
 
-def split_dataset(dataset, percent):
+def get_dataset(db_path, sr, n_signal, n_channels):
+    with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
+        metadata = yaml.safe_load(metadata)
+    lazy = metadata['lazy']
+
+    transform_list = transforms.Compose([
+        lambda x: x.astype(np.float32),
+        transforms.RandomCrop(n_signal),
+        transforms.RandomApply(
+            lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
+            p=.8,
+        ),
+        transforms.Dequantize(16),
+        lambda x: x.astype(np.float32),
+    ])
+
+    if lazy:
+        return LazyAudioDataset(db_path, n_signal, sr, transform_list, n_channels)
+    else:
+        return AudioDataset(
+            db_path,
+            transforms=transform_list,
+            n_channels=n_channels
+        )
+
+
+@gin.configurable
+def split_dataset(dataset, percent, max_residual: Optional[int] = None):
     split1 = max((percent * len(dataset)) // 100, 1)
     split2 = len(dataset) - split1
+    if max_residual is not None:
+        split2 = min(max_residual, split2)
+        split1 = len(dataset) - split2
+    print(f'train set: {split1} examples')
+    print(f'val set: {split2} examples')
     split1, split2 = data.random_split(
         dataset,
         [split1, split2],
@@ -101,3 +197,36 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     angle = random_angle(min_f, max_f, sr)
     b, a = pole_to_z_filter(angle, amp)
     return lfilter(b, a, x)
+
+
+def extract_audio(path: str, n_signal: int, sr: int,
+                  start_sample: int, n_channels: int) -> Iterable[np.ndarray]:
+    start_sec = start_sample / sr
+    length = n_signal / sr + 0.1
+    process = subprocess.Popen(
+        [
+            'ffmpeg',
+            '-v',
+            'error',
+            '-ss',
+            str(start_sec),
+            '-i',
+            path,
+            '-ar',
+            str(sr),
+            '-ac',
+            str(n_channels),
+            '-t',
+            str(length),
+            '-f',
+            's16le',
+            '-',
+        ],
+        stdout=subprocess.PIPE,
+    )
+
+    chunk = process.communicate()[0]
+
+    chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
+    chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
+    return chunk[:n_signal]
