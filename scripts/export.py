@@ -194,8 +194,10 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
-                          skip_unknown=True)
+    gin.parse_config_file(
+        os.path.join(FLAGS.run, "config.gin"),
+        skip_unknown=True,
+    )
     checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
