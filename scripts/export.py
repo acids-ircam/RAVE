@@ -4,6 +4,7 @@ import os
 
 logging.basicConfig(level=logging.INFO)
 logging.info("library loading")
+logging.info("DEBUG")
 import torch
 
 torch.set_grad_enabled(False)
@@ -179,7 +180,7 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
 
     def post_process_latent(self, z):
         z = self.quantizer.residual_quantize(z)
-        return z
+        return z.float()
 
     def pre_process_latent(self, z):
         z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
