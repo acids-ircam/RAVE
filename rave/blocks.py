@@ -188,7 +188,8 @@ class ResidualStack(nn.Module):
         self.cumulative_delay = self.net.cumulative_delay
 
     def forward(self, x):
-        x = torch.stack(self.net(x), 0).sum(0)
+        x = self.net(x)
+        x = torch.stack(x, 0).sum(0)
         return x
 
 
