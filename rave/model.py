@@ -1,4 +1,5 @@
 from typing import Optional
+
 import gin
 import numpy as np
 import pytorch_lightning as pl
@@ -8,7 +9,7 @@ from sklearn.decomposition import PCA
 
 import rave.core
 
-from .blocks import VariationalEncoder, DiscreteEncoder
+from .blocks import DiscreteEncoder, VariationalEncoder
 
 
 class WarmupCallback(pl.Callback):
