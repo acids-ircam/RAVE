@@ -1,3 +1,4 @@
+from typing import Optional
 import gin
 import numpy as np
 import pytorch_lightning as pl
@@ -7,7 +8,7 @@ from sklearn.decomposition import PCA
 
 import rave.core
 
-from .blocks import VariationalEncoder
+from .blocks import VariationalEncoder, DiscreteEncoder
 
 
 class WarmupCallback(pl.Callback):
@@ -29,13 +30,38 @@ class WarmupCallback(pl.Callback):
         self.state.update(state_dict)
 
 
+class QuantizeCallback(WarmupCallback):
+
+    def on_train_batch_start(self, trainer, pl_module, batch,
+                             batch_idx) -> None:
+
+        if pl_module.warmup_quantize is None: return
+
+        if self.state['training_steps'] >= pl_module.warmup_quantize:
+            if isinstance(pl_module.encoder, DiscreteEncoder):
+                pl_module.encoder.enabled = torch.tensor(1).type_as(
+                    pl_module.encoder.enabled)
+        self.state['training_steps'] += 1
+
+
 @gin.configurable
 class RAVE(pl.LightningModule):
 
-    def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
-                 decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match, valid_signal_crop, feature_matching_fun,
-                 num_skipped_features):
+    def __init__(self,
+                 latent_size,
+                 pqmf,
+                 sampling_rate,
+                 loudness,
+                 encoder,
+                 decoder,
+                 discriminator,
+                 phase_1_duration,
+                 gan_loss,
+                 feature_match,
+                 valid_signal_crop,
+                 feature_matching_fun,
+                 num_skipped_features,
+                 warmup_quantize: Optional[int] = None):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -54,8 +80,13 @@ class RAVE(pl.LightningModule):
 
         self.automatic_optimization = False
 
+        # SCHEDULE
         self.warmup = phase_1_duration
+        self.warmup_quantize = warmup_quantize
+
         self.warmed_up = False
+
+        # CONSTANTS
         self.sr = sampling_rate
         self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop

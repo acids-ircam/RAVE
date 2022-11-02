@@ -28,8 +28,12 @@ class ResidualVectorQuantize(nn.Module):
                  dynamic_masking: bool) -> None:
         super().__init__()
         self.layers = nn.ModuleList([
-            VectorQuantize(dim, codebook_size, channel_last=False)
-            for _ in range(num_quantizers)
+            VectorQuantize(
+                dim,
+                codebook_size,
+                channel_last=False,
+                kmeans_init=True,
+            ) for _ in range(num_quantizers)
         ])
         self._dynamic_masking = dynamic_masking
         self._num_quantizers = num_quantizers
@@ -454,6 +458,7 @@ class DiscreteEncoder(nn.Module):
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
+        self.register_buffer("enabled", torch.tensor(0))
 
     def add_noise_to_vector(self, q):
         noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
@@ -462,14 +467,17 @@ class DiscreteEncoder(nn.Module):
 
     @torch.jit.ignore
     def reparametrize(self, z):
-        q, commmitment = self.rvq(z)
-        q = self.add_noise_to_vector(q)
-        return q, self.beta * commmitment.mean()
+        if self.enabled:
+            q, commmitment = self.rvq(z)
+            q = self.add_noise_to_vector(q)
+            return q, self.beta * commmitment.mean()
+        else:
+            return z, torch.zeros_like(z).mean()
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
     def forward(self, x):
-        z = self.encoder(x)
+        z = torch.tanh(self.encoder(x))
         return z
