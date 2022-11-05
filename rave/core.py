@@ -172,14 +172,14 @@ def lin_distance(x, y):
 
 
 def l1_distance(x, y):
-    return abs(x - y).sum()
+    return abs(x - y).mean()
 
 
 def l2_distance(x, y):
     diff = x - y
     square = diff * diff
     square = square.reshape(square.shape[0], -1)
-    return torch.sqrt(square.sum(-1)).mean()
+    return torch.sqrt(square.mean(-1)).mean()
 
 
 def log_cosine_distance(x, y, dim=1):
@@ -289,4 +289,4 @@ class EncodecAudioDistance(AudioDistanceV1):
             distance = distance + l2_distance(x, y)
 
         distance = distance + l1_distance(x, y)
-        return distance
+        return 20 * distance
