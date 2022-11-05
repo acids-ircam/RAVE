@@ -243,6 +243,9 @@ class MultiScaleSTFT(nn.Module):
             else:
                 self.mel_scales.append(None)
 
+        self.stfts = nn.ModuleList(self.stfts)
+        self.mel_scales = nn.ModuleList(self.mel_scales)
+
     def forward(self, x: torch.Tensor) -> Sequence[torch.Tensor]:
         x = rearrange(x, "b c t -> (b c) t")
         stfts = []
