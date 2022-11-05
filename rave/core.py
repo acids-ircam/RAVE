@@ -263,7 +263,7 @@ class AudioDistanceV1(nn.Module):
 
     def __init__(self, multiscale_stft: Callable[[], nn.Module]) -> None:
         super().__init__()
-        self.multiscale_stft = multiscale_stft
+        self.multiscale_stft = multiscale_stft()
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         stfts_x = self.multiscale_stft(x)
