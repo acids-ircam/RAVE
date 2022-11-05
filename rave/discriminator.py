@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 
 
-@gin.register
 class ConvNet(nn.Module):
 
     def __init__(self, in_size, out_size, capacity, n_layers, kernel_size,
@@ -52,7 +51,6 @@ class ConvNet(nn.Module):
         return features
 
 
-@gin.register
 class MultiScaleDiscriminator(nn.Module):
 
     def __init__(self, n_discriminators, convnet) -> None:
@@ -70,7 +68,6 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-@gin.register
 class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
 
     def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
@@ -86,7 +83,6 @@ class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
         return features
 
 
-@gin.register
 class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(self, periods, convnet) -> None:
@@ -111,7 +107,6 @@ class MultiPeriodDiscriminator(nn.Module):
         return x.reshape(*x.shape[:2], -1, n)
 
 
-@gin.register
 class CombineDiscriminators(nn.Module):
 
     def __init__(self, discriminators: Sequence[Type[nn.Module]]) -> None:

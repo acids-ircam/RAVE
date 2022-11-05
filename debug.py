@@ -1,6 +1,8 @@
-import gin
-from rave import RAVE
 import pathlib
+
+import gin
+
+from rave import RAVE
 
 configs = pathlib.Path('rave/configs').glob('*.gin')
 configs = map(str, configs)

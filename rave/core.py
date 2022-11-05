@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from random import random
-from typing import Callable, Sequence, Optional
+from typing import Callable, Optional, Sequence
 
 import gin
 import GPUtil as gpu
@@ -109,7 +109,6 @@ def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
     return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
 
 
-@gin.register
 def hinge_gan(score_real, score_fake):
     loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
     loss_dis = loss_dis.mean()
@@ -117,7 +116,6 @@ def hinge_gan(score_real, score_fake):
     return loss_dis, loss_gen
 
 
-@gin.register
 def ls_gan(score_real, score_fake):
     loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
     loss_dis = loss_dis.mean()
@@ -125,7 +123,6 @@ def ls_gan(score_real, score_fake):
     return loss_dis, loss_gen
 
 
-@gin.register
 def nonsaturating_gan(score_real, score_fake):
     score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
     score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
@@ -174,12 +171,10 @@ def lin_distance(x, y):
     return torch.norm(x - y) / torch.norm(x)
 
 
-@gin.register
 def l1_distance(x, y):
     return abs(x - y).mean()
 
 
-@gin.register
 def l2_distance(x, y):
     diff = x - y
     square = diff * diff
@@ -187,7 +182,6 @@ def l2_distance(x, y):
     return torch.sqrt(square.mean(-1)).mean()
 
 
-@gin.register
 def log_cosine_distance(x, y, dim=1):
     norm_x = (x * x).sum(dim).sqrt()
     norm_y = (y * y).sum(dim).sqrt()
@@ -265,7 +259,6 @@ class MultiScaleSTFT(nn.Module):
         return stfts
 
 
-@gin.register
 class AudioDistanceV1(nn.Module):
 
     def __init__(self, multiscale_stft: Callable[[], nn.Module]) -> None:
@@ -281,7 +274,6 @@ class AudioDistanceV1(nn.Module):
             distance = distance + lin_distance(x, y) + log_distance(x, y)
 
 
-@gin.register
 class EncodecAudioDistance(AudioDistanceV1):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):

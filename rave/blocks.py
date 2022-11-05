@@ -21,7 +21,6 @@ def normalization(module: nn.Module, mode: str = 'identity'):
         raise Exception(f'Normalization mode {mode} not supported')
 
 
-@gin.register
 class ResidualVectorQuantize(nn.Module):
 
     def __init__(self, dim: int, num_quantizers: int, codebook_size: int,
@@ -267,7 +266,6 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
-@gin.register
 class Generator(nn.Module):
 
     def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
@@ -354,7 +352,6 @@ class Generator(nn.Module):
         return waveform
 
 
-@gin.register
 class Encoder(nn.Module):
 
     def __init__(self, data_size, capacity, latent_size, ratios, n_out,
@@ -415,7 +412,6 @@ class Encoder(nn.Module):
         return z
 
 
-@gin.register
 class VariationalEncoder(nn.Module):
 
     def __init__(self, encoder, beta):
@@ -446,7 +442,6 @@ class VariationalEncoder(nn.Module):
         return z
 
 
-@gin.register
 class DiscreteEncoder(nn.Module):
 
     def __init__(self, encoder_cls, rvq_cls, beta, latent_size,
