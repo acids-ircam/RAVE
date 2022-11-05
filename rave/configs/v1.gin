@@ -23,7 +23,7 @@ core.Loudness:
     block_size = 512
     n_fft = 2048
 
-core.audio_distance:
+core.AudioDistance:
     distances = [
         @core.multiscale_stft
     ]
@@ -92,7 +92,6 @@ RAVE:
     latent_size = %LATENT_SIZE
     pqmf = @pqmf.CachedPQMF
     sampling_rate = %SAMPLING_RATE
-    loudness = @core.Loudness
     encoder = @blocks.VariationalEncoder  
     decoder = @blocks.Generator
     discriminator = @discriminator.MultiScaleDiscriminator
@@ -102,3 +101,4 @@ RAVE:
     valid_signal_crop = False
     feature_matching_fun = @core.l1_distance
     num_skipped_features = 0
+    audio_distance = @core.AudioDistance

@@ -256,6 +256,7 @@ def log_distance(x, y, epsilon):
     return abs(torch.log(x + epsilon) - torch.log(y + epsilon)).mean()
 
 
+@gin.register
 def multiscale_spectral_distance(x, y):
     x = multiscale_stft(x)
     y = multiscale_stft(y)
@@ -267,21 +268,28 @@ def multiscale_spectral_distance(x, y):
 
 
 @gin.register
-def audio_distance(
-    x: torch.Tensor,
-    y: torch.Tensor,
-    distances: Sequence[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
-    average: bool = True,
-) -> torch.Tensor:
-    distance_list = []
+def complex_mel_distance(x, y, scale):
+    # taken from the encodec paper
+    pass
 
-    for dist in distances:
-        distance_list.append(dist(x, y))
 
-    distance = torch.stack(distance_list, 0)
-    if average:
-        distance = distance.mean(0)
-    else:
-        distance = distance.sum(0)
+class AudioDistance(nn.Module):
 
-    return distance
+    def __init__(self, distances: Sequence[Callable[[], nn.Module]], average:bool=True) -> None:
+        super().__init__()
+        self.distances = nn.ModuleList(distances)
+        self.average = average
+    
+    def forward(self, x:torch.Tensor, y:torch.Tensor)->torch.Tensor:
+        distance_list = []
+
+        for dist in self.distances:
+            distance_list.append(dist(x, y))
+
+        distance = torch.stack(distance_list, 0)
+        if self.average:
+            distance = distance.mean(0)
+        else:
+            distance = distance.sum(0)
+
+        return distance

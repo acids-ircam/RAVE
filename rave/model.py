@@ -4,6 +4,7 @@ import gin
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import torch.nn as nn
 from einops import rearrange
 from sklearn.decomposition import PCA
 
@@ -53,7 +54,6 @@ class RAVE(pl.LightningModule):
         latent_size,
         pqmf,
         sampling_rate,
-        loudness,
         encoder,
         decoder,
         discriminator,
@@ -63,19 +63,18 @@ class RAVE(pl.LightningModule):
         valid_signal_crop,
         feature_matching_fun,
         num_skipped_features,
-        audio_distance: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+        audio_distance: Callable[[], nn.Module],
         warmup_quantize: Optional[int] = None,
         update_discriminator_every: int = 2,
     ):
         super().__init__()
 
         self.pqmf = pqmf()
-        self.loudness = loudness()
         self.encoder = encoder()
         self.decoder = decoder()
         self.discriminator = discriminator()
+        self.audio_distance = audio_distance()
 
-        self.audio_distance = audio_distance
         self.gan_loss = gan_loss
 
         self.register_buffer("latent_pca", torch.eye(latent_size))
