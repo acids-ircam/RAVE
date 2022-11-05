@@ -230,7 +230,7 @@ class MultiScaleSTFT(nn.Module):
                     n_fft=scale,
                     win_length=scale,
                     hop_length=scale // 4,
-                    normalized=True,
+                    normalized=False,
                     power=None,
                 ))
             if num_mels is not None:
