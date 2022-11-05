@@ -251,7 +251,7 @@ class RAVE(pl.LightningModule):
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
 
-        distance = rave.core.multiscale_spectral_distance(x, y)
+        distance = self.audio_distance(x, y)
 
         if self.trainer is not None:
             self.log("validation", distance)
