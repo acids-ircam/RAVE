@@ -1,6 +1,9 @@
+from __gin__ import dynamic_registration
+
 include "configs/v2.gin"
 
 import rave
+from rave import core
 from rave import blocks
 
 NUM_QUANTIZERS = 8
@@ -35,7 +38,7 @@ core.EncodecAudioDistance:
     multiscale_stft = @encodec/core.MultiScaleSTFT
 
 # RAVE
-RAVE:
+rave.RAVE:
     encoder = @blocks.DiscreteEncoder  
     phase_1_duration = 100000
     warmup_quantize = 20000

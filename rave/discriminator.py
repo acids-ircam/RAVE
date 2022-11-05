@@ -6,8 +6,6 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 
-from .core import multiscale_stft
-
 
 @gin.register
 class ConvNet(nn.Module):
@@ -75,8 +73,12 @@ class MultiScaleDiscriminator(nn.Module):
 @gin.register
 class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
 
+    def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
+        super().__init__(n_discriminators, convnet)
+        self.multiscale_stft = multiscale_stft
+
     def forward(self, x):
-        scales = multiscale_stft(x, amplitude_only=False)
+        scales = self.multiscale_stft(x)
         features = []
         for scale, layer in zip(scales, self.layers):
             scale = scale.permute(0, 3, 1, 2)

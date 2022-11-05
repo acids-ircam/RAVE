@@ -1,9 +1,13 @@
-include "configs/v1.gin"
+from __gin__ import dynamic_registration
 
 import rave
 from rave import core
 from rave import blocks
 from rave import discriminator
+
+import torch.nn as nn
+
+include "configs/v1.gin"
 
 core.log_distance.epsilon = 1
 
@@ -13,6 +17,9 @@ fullband/core.MultiScaleSTFT:
 fullband/core.AudioDistanceV1:
     multiscale_stft = @fullband/core.MultiScaleSTFT
 
+discriminator/core.MultiScaleSTFT:
+    magnitude = False
+
 # ENCODER
 blocks.Encoder.repeat_layers = 2
 
@@ -21,15 +28,16 @@ blocks.ResidualStack.kernel_sizes = [3, 5]
 
 # DISCRIMINATOR
 periods/discriminator.ConvNet:
-    conv = @torch.nn.Conv2d
+    conv = @nn.Conv2d
     kernel_size = (5, 1)
 
 spectral/discriminator.ConvNet:
-    conv = @torch.nn.Conv2d
+    conv = @nn.Conv2d
     kernel_size = 5
     in_size = 2
 
 discriminator.MultiScaleSpectralDiscriminator:
+    multiscale_stft = @discriminator/core.MultiScaleSTFT
     n_discriminators = 5
     convnet = @spectral/discriminator.ConvNet
 
@@ -44,9 +52,9 @@ discriminator.CombineDiscriminators:
     ]
 
 # RAVE
-RAVE:
+rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
     valid_signal_crop = True
     feature_matching_fun = @core.l1_distance
     num_skipped_features = 2
-    audio_distance = @fullband/AudioDistanceV1
+    audio_distance = @fullband/core.AudioDistanceV1

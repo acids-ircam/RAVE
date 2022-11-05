@@ -1,3 +1,5 @@
+from __gin__ import dynamic_registration
+
 include "configs/v1.gin"
 
 import rave

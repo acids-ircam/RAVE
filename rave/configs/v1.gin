@@ -1,8 +1,13 @@
+from __gin__ import dynamic_registration
+
 import rave
 from rave import pqmf
 from rave import core
 from rave import blocks
 from rave import discriminator
+
+import cached_conv as cc
+import torch
 
 SAMPLING_RATE = 44100
 CAPACITY = 64
@@ -82,7 +87,7 @@ discriminator.MultiScaleDiscriminator:
     convnet = @scales/discriminator.ConvNet
 
 # MODEL ASSEMBLING
-RAVE:
+rave.RAVE:
     latent_size = %LATENT_SIZE
     pqmf = @pqmf.CachedPQMF
     sampling_rate = %SAMPLING_RATE

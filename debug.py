@@ -1,15 +1,17 @@
-import torchaudio
-import torch
-from rave.core import MultiScaleSTFT
-import numpy as np
+import gin
+from rave import RAVE
+import pathlib
 
-x = torch.randn(1, 1, 2**16)
-stft = MultiScaleSTFT(
-    2**np.arange(5, 12),
-    44100,
-    magnitude=False,
-    num_mels=64,
-)
+configs = pathlib.Path('rave/configs').glob('*.gin')
+configs = map(str, configs)
 
-for y in stft(x):
-    print(y.dtype, y.shape)
+for config in configs:
+    print(f'testing {config}')
+    gin.clear_config()
+    gin.parse_config_file(config)
+    model = RAVE()
+    numel = 0
+    for p in model.parameters():
+        if p.requires_grad:
+            numel += p.numel()
+    print(numel / 1000000)
