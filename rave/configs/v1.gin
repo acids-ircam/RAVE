@@ -14,19 +14,13 @@ PHASE_1_DURATION = 1000000
 # CORE CONFIGURATION
 core.log_distance.epsilon = 1e-7
 
-core.multiscale_stft:
+core.AudioDistanceV1:
+    multiscale_stft = @core.MultiScaleSTFT
+
+core.MultiScaleSTFT:
     scales = [2048, 1024, 512, 256, 128]
-    overlap = .75
-
-core.Loudness:
-    sr = %SAMPLING_RATE
-    block_size = 512
-    n_fft = 2048
-
-core.AudioDistance:
-    distances = [
-        @core.multiscale_stft
-    ]
+    sample_rate = %SAMPLING_RATE
+    magnitude = True
 
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
@@ -101,4 +95,5 @@ RAVE:
     valid_signal_crop = False
     feature_matching_fun = @core.l1_distance
     num_skipped_features = 0
-    audio_distance = @core.AudioDistance
+    audio_distance = @core.AudioDistanceV1
+    multiband_audio_distance = @core.AudioDistanceV1

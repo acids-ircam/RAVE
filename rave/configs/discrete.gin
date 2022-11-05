@@ -25,8 +25,19 @@ blocks.DiscreteEncoder:
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
 
+# DISTANCES
+encodec/core.MultiScaleSTFT:
+    magnitude = False
+    num_mels = 64
+    scales = [32, 64, 128, 256, 512, 1024, 2048]
+
+core.EncodecAudioDistance:
+    multiscale_stft = @encodec/core.MultiScaleSTFT
+
 # RAVE
 RAVE:
     encoder = @blocks.DiscreteEncoder  
     phase_1_duration = 100000
     warmup_quantize = 20000
+    audio_distance = @core.EncodecAudioDistance
+    multiband_audio_distance = @core.EncodecAudioDistance

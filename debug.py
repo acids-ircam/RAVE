@@ -1,13 +1,15 @@
-# %%
-import matplotlib.pyplot as plt
+import torchaudio
 import torch
+from rave.core import MultiScaleSTFT
+import numpy as np
 
-torch.set_grad_enabled(False)
+x = torch.randn(1, 1, 2**16)
+stft = MultiScaleSTFT(
+    2**np.arange(5, 12),
+    44100,
+    magnitude=False,
+    num_mels=64,
+)
 
-model = torch.jit.load(
-    '../ppo/runs/ppv_spec_cd324d5008/ppv_spec_cd324d5008_streaming.ts').eval()
-x = torch.zeros(1, 1, 2**17)
-y = model(x).reshape(-1).numpy()
-
-plt.plot(y)
-# %%
+for y in stft(x):
+    print(y.dtype, y.shape)

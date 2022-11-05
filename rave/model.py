@@ -64,6 +64,7 @@ class RAVE(pl.LightningModule):
         feature_matching_fun,
         num_skipped_features,
         audio_distance: Callable[[], nn.Module],
+        multiband_audio_distance: Callable[[], nn.Module],
         warmup_quantize: Optional[int] = None,
         update_discriminator_every: int = 2,
     ):
@@ -73,7 +74,9 @@ class RAVE(pl.LightningModule):
         self.encoder = encoder()
         self.decoder = decoder()
         self.discriminator = discriminator()
+
         self.audio_distance = audio_distance()
+        self.multiband_audio_distance = multiband_audio_distance()
 
         self.gan_loss = gan_loss
 
@@ -145,7 +148,7 @@ class RAVE(pl.LightningModule):
             y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        distance = self.audio_distance(x, y)
+        distance = self.multiband_audio_distance(x, y)
 
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
