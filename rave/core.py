@@ -172,14 +172,14 @@ def lin_distance(x, y):
 
 
 def l1_distance(x, y):
-    return abs(x - y).mean()
+    return abs(x - y).sum()
 
 
 def l2_distance(x, y):
     diff = x - y
     square = diff * diff
     square = square.reshape(square.shape[0], -1)
-    return torch.sqrt(square.mean(-1)).mean()
+    return torch.sqrt(square.sum(-1)).mean()
 
 
 def log_cosine_distance(x, y, dim=1):
