@@ -23,6 +23,11 @@ core.Loudness:
     block_size = 512
     n_fft = 2048
 
+core.audio_distance:
+    distances = [
+        @core.multiscale_stft
+    ]
+
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
 cc.ConvTranspose1d.bias = False

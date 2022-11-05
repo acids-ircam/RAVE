@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from random import random
+from typing import Callable, Sequence
 
 import gin
 import GPUtil as gpu
@@ -9,9 +10,9 @@ import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
+import torchaudio
 from einops import rearrange
 from scipy.signal import lfilter
-from tqdm import tqdm
 
 
 def mod_sigmoid(x):
@@ -263,3 +264,24 @@ def multiscale_spectral_distance(x, y):
     log = sum(list(map(log_distance, x, y)))
 
     return lin + log
+
+
+@gin.register
+def audio_distance(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    distances: Sequence[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
+    average: bool = True,
+) -> torch.Tensor:
+    distance_list = []
+
+    for dist in distances:
+        distance_list.append(dist(x, y))
+
+    distance = torch.stack(distance_list, 0)
+    if average:
+        distance = distance.mean(0)
+    else:
+        distance = distance.sum(0)
+
+    return distance

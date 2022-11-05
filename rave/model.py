@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 
 import gin
 import numpy as np
@@ -48,21 +48,25 @@ class QuantizeCallback(WarmupCallback):
 @gin.configurable
 class RAVE(pl.LightningModule):
 
-    def __init__(self,
-                 latent_size,
-                 pqmf,
-                 sampling_rate,
-                 loudness,
-                 encoder,
-                 decoder,
-                 discriminator,
-                 phase_1_duration,
-                 gan_loss,
-                 feature_match,
-                 valid_signal_crop,
-                 feature_matching_fun,
-                 num_skipped_features,
-                 warmup_quantize: Optional[int] = None):
+    def __init__(
+        self,
+        latent_size,
+        pqmf,
+        sampling_rate,
+        loudness,
+        encoder,
+        decoder,
+        discriminator,
+        phase_1_duration,
+        gan_loss,
+        feature_match,
+        valid_signal_crop,
+        feature_matching_fun,
+        num_skipped_features,
+        audio_distance: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+        warmup_quantize: Optional[int] = None,
+        update_discriminator_every: int = 2,
+    ):
         super().__init__()
 
         self.pqmf = pqmf()
@@ -71,6 +75,7 @@ class RAVE(pl.LightningModule):
         self.decoder = decoder()
         self.discriminator = discriminator()
 
+        self.audio_distance = audio_distance
         self.gan_loss = gan_loss
 
         self.register_buffer("latent_pca", torch.eye(latent_size))
@@ -93,6 +98,7 @@ class RAVE(pl.LightningModule):
         self.valid_signal_crop = valid_signal_crop
         self.feature_matching_fun = feature_matching_fun
         self.num_skipped_features = num_skipped_features
+        self.update_discriminator_every = update_discriminator_every
 
         self.eval_number = 0
 
@@ -140,19 +146,15 @@ class RAVE(pl.LightningModule):
             y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        distance = rave.core.multiscale_spectral_distance(x, y)
+        distance = self.audio_distance(x, y)
 
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
 
-        distance = distance + rave.core.multiscale_spectral_distance(x, y)
-
-        loud_x = self.loudness(x)
-        loud_y = self.loudness(y)
-        loud_dist = (loud_x - loud_y).pow(2).mean()
-        distance = distance + loud_dist
+        distance = distance + self.audio_distance(x, y)
 
         feature_matching_distance = 0.
+
         if self.warmed_up:  # DISCRIMINATION
             xy = torch.cat([x, y], 0)
             features = self.discriminator(xy)
@@ -199,7 +201,7 @@ class RAVE(pl.LightningModule):
             loss_gen = loss_gen + 10 * feature_matching_distance
 
         # OPTIMIZATION
-        if batch_idx % 2 and self.warmed_up:
+        if batch_idx % self.update_discriminator_every and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
@@ -211,7 +213,6 @@ class RAVE(pl.LightningModule):
         # LOGGING
         self.log("loss_dis", loss_dis)
         self.log("loss_gen", loss_gen)
-        self.log("loud_dist", loud_dist)
         self.log("regularization", reg)
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
