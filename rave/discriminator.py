@@ -72,7 +72,7 @@ class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
 
     def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
         super().__init__(n_discriminators, convnet)
-        self.multiscale_stft = multiscale_stft
+        self.multiscale_stft = multiscale_stft()
 
     def forward(self, x):
         scales = self.multiscale_stft(x)
