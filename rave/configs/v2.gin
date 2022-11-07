@@ -55,6 +55,5 @@ discriminator.CombineDiscriminators:
 rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
     valid_signal_crop = True
-    feature_matching_fun = @core.l1_distance
     num_skipped_features = 2
     audio_distance = @fullband/core.AudioDistanceV1

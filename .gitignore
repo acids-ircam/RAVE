@@ -11,3 +11,4 @@ runs
 *.yaml
 *.onnx
 __version__*
+PKG-INFO

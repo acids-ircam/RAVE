@@ -6,6 +6,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.utils.weight_norm as wn
 
+from .blocks import normalization
+
 
 class ConvNet(nn.Module):
 
@@ -30,13 +32,14 @@ class ConvNet(nn.Module):
                                      mode="centered")[0]
                 s = stride[i]
             net.append(
-                conv(
-                    channels[i],
-                    channels[i + 1],
-                    kernel_size,
-                    stride=s,
-                    padding=pad,
-                ))
+                normalization(
+                    conv(
+                        channels[i],
+                        channels[i + 1],
+                        kernel_size,
+                        stride=s,
+                        padding=pad,
+                    )))
             net.append(nn.LeakyReLU(.2))
         net.append(conv(channels[-1], out_size, 1))
 
