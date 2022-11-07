@@ -30,12 +30,15 @@ blocks.DiscreteEncoder:
 
 # DISTANCES
 encodec/core.MultiScaleSTFT:
-    magnitude = False
     num_mels = 64
     scales = [32, 64, 128, 256, 512, 1024, 2048]
 
 core.EncodecAudioDistance:
     multiscale_stft = @encodec/core.MultiScaleSTFT
+    log_epsilon = 1
+
+feature_matching/core.mean_difference:
+    relative = True
 
 # RAVE
 rave.RAVE:
@@ -43,5 +46,4 @@ rave.RAVE:
     phase_1_duration = 200000
     warmup_quantize = 20000
     audio_distance = @core.EncodecAudioDistance
-    feature_matching_fun = @core.l1_distance
     update_discriminator_every = 4

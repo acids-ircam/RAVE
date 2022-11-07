@@ -166,34 +166,31 @@ def valid_signal_crop(x, left_rf, right_rf):
     return x
 
 
-@gin.configurable
-def lin_distance(x, y):
-    return torch.norm(x - y) / torch.norm(x)
+def relative_distance(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    norm: Callable[[torch.Tensor], torch.Tensor],
+) -> torch.Tensor:
+    return norm(x - y) / norm(x)
 
 
-def l1_distance(x, y):
-    return abs(x - y).mean()
-
-
-def l2_distance(x, y):
-    diff = x - y
-    square = diff * diff
-    square = square.reshape(square.shape[0], -1)
-    return torch.sqrt(square.mean(-1)).mean()
-
-
-def log_cosine_distance(x, y, dim=1):
-    norm_x = (x * x).sum(dim).sqrt()
-    norm_y = (y * y).sum(dim).sqrt()
-    inner = (x * y).sum(dim)
-    sim = torch.mean(inner / (norm_x * norm_y))
-    sim = (sim + 1) / 2 + 1e-4
-    return -torch.log(sim)
-
-
-@gin.configurable
-def log_distance(x, y, epsilon):
-    return abs(torch.log(x + epsilon) - torch.log(y + epsilon)).mean()
+def mean_difference(target: torch.Tensor,
+                    value: torch.Tensor,
+                    norm: str = 'L1',
+                    relative: bool = False):
+    diff = target - value
+    if norm == 'L1':
+        diff = diff.abs().mean()
+        if relative:
+            diff = diff / target.abs().mean()
+        return diff
+    elif norm == 'L2':
+        diff = (diff * diff).mean()
+        if relative:
+            diff = diff / (target * target).mean()
+        return diff
+    else:
+        raise Exception(f'Norm must be either L1 or L2, got {norm}')
 
 
 class MelScale(nn.Module):
@@ -264,9 +261,11 @@ class MultiScaleSTFT(nn.Module):
 
 class AudioDistanceV1(nn.Module):
 
-    def __init__(self, multiscale_stft: Callable[[], nn.Module]) -> None:
+    def __init__(self, multiscale_stft: Callable[[], nn.Module],
+                 log_epsilon: float) -> None:
         super().__init__()
         self.multiscale_stft = multiscale_stft()
+        self.log_epsilon = log_epsilon
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         stfts_x = self.multiscale_stft(x)
@@ -274,7 +273,13 @@ class AudioDistanceV1(nn.Module):
         distance = 0.
 
         for x, y in zip(stfts_x, stfts_y):
-            distance = distance + lin_distance(x, y) + log_distance(x, y)
+            logx = torch.log(x + self.log_epsilon)
+            logy = torch.log(y + self.log_epsilon)
+
+            lin_distance = mean_difference(x, y, norm='L2', relative=True)
+            log_distance = mean_difference(logx, logy, norm='L1')
+
+            distance = distance + lin_distance + log_distance
 
         return distance
 
@@ -284,11 +289,16 @@ class EncodecAudioDistance(AudioDistanceV1):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         stfts_x = self.multiscale_stft(x)
         stfts_y = self.multiscale_stft(y)
-        distance = 0.
 
-        for x, y in zip(stfts_x, stfts_y):
-            distance = distance + l1_distance(x, y)
-            distance = distance + l2_distance(x, y)
+        waveform_distance = mean_difference(x, y)
 
-        distance = distance + l1_distance(x, y)
-        return 20 * distance
+        spectral_distance = 0.
+        for sx, sy in zip(stfts_x, stfts_y):
+            l1_spec = mean_difference(sx, sy, norm='L1')
+            l2_spec = mean_difference(sx, sy, norm='L2')
+
+            spectral_distance = spectral_distance + l1_spec + l2_spec
+
+        spectral_distance = spectral_distance / len(stfts_x)
+
+        return waveform_distance + spectral_distance

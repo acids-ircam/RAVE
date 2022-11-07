@@ -18,7 +18,7 @@ RATIOS = [4, 4, 4, 2]
 PHASE_1_DURATION = 1000000
 
 # CORE CONFIGURATION
-core.log_distance.epsilon = 1e-7
+core.AudioDistanceV1.log_epsilon = 1e-7
 
 core.AudioDistanceV1:
     multiscale_stft = @core.MultiScaleSTFT
@@ -89,6 +89,9 @@ discriminator.MultiScaleDiscriminator:
     n_discriminators = 3
     convnet = @scales/discriminator.ConvNet
 
+feature_matching/core.mean_difference:
+    norm = 'L1'
+
 # MODEL ASSEMBLING
 rave.RAVE:
     latent_size = %LATENT_SIZE
@@ -101,7 +104,7 @@ rave.RAVE:
     gan_loss = @core.hinge_gan
     feature_match = True
     valid_signal_crop = False
-    feature_matching_fun = @core.l1_distance
+    feature_matching_fun = @feature_matching/core.mean_difference
     num_skipped_features = 0
     audio_distance = @core.AudioDistanceV1
     multiband_audio_distance = @core.AudioDistanceV1
