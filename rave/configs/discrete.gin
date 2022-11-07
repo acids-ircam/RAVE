@@ -45,4 +45,5 @@ rave.RAVE:
     phase_1_duration = 200000
     warmup_quantize = 20000
     audio_distance = @core.EncodecAudioDistance
+    multiband_audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4

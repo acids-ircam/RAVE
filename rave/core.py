@@ -303,5 +303,5 @@ class EncodecAudioDistance(AudioDistanceV1):
 
         return {
             'waveform_distance': waveform_distance,
-            'spectral_ditance': spectral_distance,
+            'spectral_distance': spectral_distance,
         }
