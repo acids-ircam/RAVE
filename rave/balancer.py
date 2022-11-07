@@ -74,4 +74,4 @@ class Balancer:
             for k in self.deny_list:
                 if k in losses:
                     (losses[k] *
-                    self.weights.get(k, 1)).backward(retain_graph=True)
+                     self.weights.get(k, 1)).backward(retain_graph=True)

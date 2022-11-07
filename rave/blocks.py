@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Callable, Optional
 
 import cached_conv as cc
 import gin
@@ -266,10 +267,62 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
+class GRU(nn.Module):
+
+    def __init__(self,
+                 dim: int,
+                 num_layers: int,
+                 dropout=0,
+                 cumulative_delay=0) -> None:
+        super().__init__()
+
+        self.gru = nn.GRU(
+            input_size=dim,
+            hidden_size=dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.register_buffer(
+            'gru_state',
+            torch.zeros(num_layers, cc.MAX_BATCH_SIZE, dim),
+        )
+
+        self.cumulative_delay = cumulative_delay
+        self.enabled = True
+
+    def disable(self):
+        self.enabled = False
+
+    def enable(self):
+        self.enabled = True
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.enabled: return x
+
+        x = x.permute(0, 2, 1)
+        if cc.USE_BUFFER_CONV:
+            x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
+            self.gru_state[:, :x.shape[0]] = state
+        else:
+            x = self.gru(x)[0]
+        x = x.permute(0, 2, 1)
+        return x
+
+
 class Generator(nn.Module):
 
-    def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
-                 use_noise):
+    def __init__(
+        self,
+        latent_size,
+        capacity,
+        data_size,
+        ratios,
+        loud_stride,
+        use_noise,
+        recurrent_layer: Optional[Callable[[], GRU]] = None,
+    ):
         super().__init__()
         net = [
             normalization(
@@ -280,6 +333,13 @@ class Generator(nn.Module):
                     padding=cc.get_padding(7),
                 ))
         ]
+
+        if recurrent_layer is not None:
+            net.append(
+                recurrent_layer(
+                    dim=2**len(ratios) * capacity,
+                    cumulative_delay=net[0].cumulative_delay,
+                ))
 
         for i, r in enumerate(ratios):
             in_dim = 2**(len(ratios) - i) * capacity
@@ -354,8 +414,17 @@ class Generator(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self, data_size, capacity, latent_size, ratios, n_out,
-                 sample_norm, repeat_layers):
+    def __init__(
+        self,
+        data_size,
+        capacity,
+        latent_size,
+        ratios,
+        n_out,
+        sample_norm,
+        repeat_layers,
+        recurrent_layer: Optional[Callable[[], GRU]] = None,
+    ):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
 
@@ -394,6 +463,15 @@ class Encoder(nn.Module):
                     ))
 
         net.append(nn.LeakyReLU(.2))
+
+        if recurrent_layer is not None:
+            net.append(
+                recurrent_layer(
+                    dim=out_dim,
+                    cumulative_delay=net[-2].cumulative_delay,
+                ))
+            net.append(nn.LeakyReLU(.2))
+
         net.append(
             cc.Conv1d(
                 out_dim,

@@ -132,10 +132,15 @@ def nonsaturating_gan(score_real, score_fake):
 
 
 @torch.enable_grad()
-def get_rave_receptive_field(model):
+def get_rave_receptive_field(model: nn.Module):
     N = 2**15
     model.eval()
     device = next(iter(model.parameters())).device
+
+    for module in model.modules():
+        if hasattr(module, 'gru_state'):
+            module.disable()
+
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
 
@@ -155,6 +160,10 @@ def get_rave_receptive_field(model):
     left_receptive_field = len(left_grad[left_grad != 0])
     right_receptive_field = len(right_grad[right_grad != 0])
     model.zero_grad()
+
+    for module in model.modules():
+        if hasattr(module, 'gru_state'):
+            module.enable()
     return left_receptive_field, right_receptive_field
 
 
