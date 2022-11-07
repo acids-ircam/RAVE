@@ -173,9 +173,9 @@ class RAVE(pl.LightningModule):
                 current_feature_distance = sum(
                     map(
                         self.feature_matching_fun,
-                        scale_true[self.num_skipped_features:],
-                        scale_fake[self.num_skipped_features:],
-                    )) / len(scale_true[self.num_skipped_features:])
+                        scale_true[self.num_skipped_features:-1],
+                        scale_fake[self.num_skipped_features:-1],
+                    )) / len(scale_true[self.num_skipped_features:-1])
 
                 feature_matching_distance = feature_matching_distance + current_feature_distance
 

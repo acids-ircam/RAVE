@@ -1,5 +1,6 @@
-import torch
 import gin
+import torch
+
 from rave.core import EncodecAudioDistance
 
 
