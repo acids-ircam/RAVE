@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 
 import rave.core
 
+from .balancer import Balancer
 from .blocks import DiscreteEncoder, VariationalEncoder
 
 
@@ -59,12 +60,12 @@ class RAVE(pl.LightningModule):
         discriminator,
         phase_1_duration,
         gan_loss,
-        feature_match,
         valid_signal_crop,
         feature_matching_fun,
         num_skipped_features,
         audio_distance: Callable[[], nn.Module],
         multiband_audio_distance: Callable[[], nn.Module],
+        balancer: Callable[[], Balancer],
         warmup_quantize: Optional[int] = None,
         update_discriminator_every: int = 2,
     ):
@@ -91,12 +92,12 @@ class RAVE(pl.LightningModule):
         # SCHEDULE
         self.warmup = phase_1_duration
         self.warmup_quantize = warmup_quantize
+        self.balancer = balancer()
 
         self.warmed_up = False
 
         # CONSTANTS
         self.sr = sampling_rate
-        self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop
         self.feature_matching_fun = feature_matching_fun
         self.num_skipped_features = num_skipped_features
@@ -131,6 +132,7 @@ class RAVE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
+        x.requires_grad = True
 
         x = self.pqmf(x)
 
@@ -148,12 +150,12 @@ class RAVE(pl.LightningModule):
             y = rave.core.valid_signal_crop(y, *self.receptive_field)
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        distance = self.multiband_audio_distance(x, y)
+        multiband_distance = self.multiband_audio_distance(x, y)
 
         x = self.pqmf.inverse(x)
         y = self.pqmf.inverse(y)
 
-        distance = distance + self.audio_distance(x, y)
+        waveform_distance = self.audio_distance(x, y)
 
         feature_matching_distance = 0.
 
@@ -197,10 +199,14 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        loss_gen = distance + loss_adv + reg
+        loss_gen = {}
+        loss_gen['waveform_distance'] = waveform_distance
+        loss_gen['multiband_distance'] = multiband_distance
+        loss_gen['regularization'] = reg
 
-        if self.feature_match:
-            loss_gen = loss_gen + 10 * feature_matching_distance
+        if self.warmed_up:
+            loss_gen['feature_matching'] = feature_matching_distance
+            loss_gen['adversarial'] = loss_adv
 
         # OPTIMIZATION
         if batch_idx % self.update_discriminator_every and self.warmed_up:
@@ -209,7 +215,7 @@ class RAVE(pl.LightningModule):
             dis_opt.step()
         else:
             gen_opt.zero_grad()
-            loss_gen.backward()
+            self.balancer.backward(loss_gen, x)
             gen_opt.step()
 
         # LOGGING
@@ -218,7 +224,8 @@ class RAVE(pl.LightningModule):
         self.log("regularization", reg)
         self.log("pred_true", pred_true.mean())
         self.log("pred_fake", pred_fake.mean())
-        self.log("distance", distance)
+        self.log("waveform_distance", waveform_distance)
+        self.log("multiband_distance", multiband_distance)
         self.log("feature_matching", feature_matching_distance)
 
     def encode(self, x):

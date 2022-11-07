@@ -4,6 +4,7 @@ import rave
 from rave import core
 from rave import blocks
 from rave import discriminator
+from rave import balancer
 
 import torch.nn as nn
 
@@ -50,6 +51,17 @@ discriminator.CombineDiscriminators:
         @discriminator.MultiPeriodDiscriminator,
         @discriminator.MultiScaleDiscriminator
     ]
+
+# BALANCER
+balancer.Balancer:
+    weights = {
+        'waveform_distance': 2,
+        'multiband_distance': 1,
+        'regularization': .1,
+        'feature_matching': 1,
+        'adversarial': 2,
+    }
+    scale_gradients = True
 
 # RAVE
 rave.RAVE:

@@ -1,20 +1,22 @@
-import gin
+import matplotlib.pyplot as plt
 import torch
 
-from rave.core import EncodecAudioDistance
+from rave.balancer import EMA
+from rave.core import mean_difference
 
+ema = EMA()
 
-@gin.configurable
-def get_distance(dist: EncodecAudioDistance) -> EncodecAudioDistance:
-    return dist
+inputs = {'x': torch.randn(10, 10), 'y': torch.randn(100)}
+other_inputs = {'x': torch.randn(10, 10), 'y': torch.randn(100)}
 
+ema(inputs)
 
-gin.parse_config_file('rave/configs/discrete.gin')
-gin.parse_config('get_distance.dist = @core.EncodecAudioDistance()')
+for i in range(10000):
+    out = ema(other_inputs)
 
-dist = get_distance()
+    dist = 0
 
-x = torch.randn(1, 1, 2**16)
-y = torch.randn(1, 1, 2**16)
+    for v1, v2 in zip(other_inputs.values(), out.values()):
+        dist = dist + mean_difference(v1, v2)
 
-print(dist(x, y))
+    print(dist)
