@@ -281,7 +281,7 @@ class AudioDistanceV1(nn.Module):
 
             distance = distance + lin_distance + log_distance
 
-        return distance
+        return {'spectral_distance': distance}
 
 
 class EncodecAudioDistance(AudioDistanceV1):
@@ -301,4 +301,7 @@ class EncodecAudioDistance(AudioDistanceV1):
 
         spectral_distance = spectral_distance / len(stfts_x)
 
-        return waveform_distance + spectral_distance
+        return {
+            'waveform_distance': waveform_distance,
+            'spectral_ditance': spectral_distance,
+        }

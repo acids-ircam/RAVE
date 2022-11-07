@@ -1,22 +1,17 @@
-import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
 
-from rave.balancer import EMA
-from rave.core import mean_difference
+model = nn.Linear(16, 16)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-ema = EMA()
+while True:
+    x = torch.randn(16, 16, requires_grad=True)
+    y = model(x)
+    loss = (x - y).abs().mean()
+    grad, = torch.autograd.grad(loss, [y])
 
-inputs = {'x': torch.randn(10, 10), 'y': torch.randn(100)}
-other_inputs = {'x': torch.randn(10, 10), 'y': torch.randn(100)}
+    optimizer.zero_grad()
+    y.backward(grad)
+    optimizer.step()
 
-ema(inputs)
-
-for i in range(10000):
-    out = ema(other_inputs)
-
-    dist = 0
-
-    for v1, v2 in zip(other_inputs.values(), out.values()):
-        dist = dist + mean_difference(v1, v2)
-
-    print(dist)
+    print(loss)

@@ -1,6 +1,6 @@
 # Balancer - credit to https://github.com/facebookresearch/encodec
 
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional, Sequence
 
 import torch
 
@@ -30,16 +30,26 @@ class Balancer:
     def __init__(self,
                  ema_averager: Callable[[], EMA],
                  weights: Dict[str, float],
-                 scale_gradients: bool = False) -> None:
+                 scale_gradients: bool = False,
+                 deny_list: Optional[Sequence[str]] = None) -> None:
         self.ema_averager = ema_averager()
         self.weights = weights
         self.scale_gradients = scale_gradients
+        self.deny_list = deny_list
 
-    def backward(self, losses: Dict[str, torch.Tensor], x: torch.Tensor):
+    def backward(self, losses: Dict[str, torch.Tensor],
+                 model_output: Dict[str, torch.Tensor]):
         grads = {}
         norms = {}
+
         for k, v in losses.items():
-            grads[k] = torch.autograd.grad(v, [x], retain_graph=True)
+            if k in self.deny_list: continue
+
+            grads[k], = torch.autograd.grad(
+                v,
+                [model_output.get(k, model_output['default'])],
+                retain_graph=True,
+            )
             norms[k] = grads[k].norm()
 
         avg_norms = self.ema_averager(norms)
@@ -54,5 +64,12 @@ class Balancer:
             else:
                 grads[name] *= self.weights.get(name, 1)
 
-        full_grad = sum(grads.values())
-        x.backward(full_grad)
+            model_output.get(name, model_output['default']).backward(
+                grads[name],
+                retain_graph=True,
+            )
+
+        for k in self.deny_list:
+            if k in losses:
+                (losses[k] *
+                 self.weights.get(k, 1)).backward(retain_graph=True)

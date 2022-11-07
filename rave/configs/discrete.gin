@@ -24,7 +24,6 @@ discrete/blocks.Encoder.n_out = 1
 blocks.DiscreteEncoder:
     encoder_cls = @discrete/blocks.Encoder
     rvq_cls = @blocks.ResidualVectorQuantize
-    beta = .1
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
 

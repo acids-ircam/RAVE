@@ -55,7 +55,6 @@ variational/blocks.Encoder.n_out = 2
 
 blocks.VariationalEncoder:
     encoder = @variational/blocks.Encoder
-    beta = .1
 
 # DECODER
 blocks.Generator:
@@ -97,11 +96,8 @@ feature_matching/core.mean_difference:
 balancer.Balancer:
     ema_averager = @balancer.EMA
     weights = {
-        'waveform_distance': 1,
-        'multiband_distance': 1,
         'regularization': .1,
         'feature_matching': 10,
-        'adversarial': 1,
     }
     scale_gradients = False
 

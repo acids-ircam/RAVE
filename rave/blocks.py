@@ -418,7 +418,6 @@ class VariationalEncoder(nn.Module):
         super().__init__()
         self.encoder = encoder()
         self.register_buffer("warmed_up", torch.tensor(0))
-        self.beta = beta
 
     def reparametrize(self, z):
         mean, scale = z.chunk(2, 1)
@@ -429,7 +428,7 @@ class VariationalEncoder(nn.Module):
         z = torch.randn_like(mean) * std + mean
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
-        return z, self.beta * kl
+        return z, kl
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
@@ -444,12 +443,10 @@ class VariationalEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, rvq_cls, beta, latent_size,
-                 num_quantizers):
+    def __init__(self, encoder_cls, rvq_cls, latent_size, num_quantizers):
         super().__init__()
         self.encoder = encoder_cls()
         self.rvq = rvq_cls()
-        self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
@@ -465,7 +462,7 @@ class DiscreteEncoder(nn.Module):
         if self.enabled:
             q, commmitment = self.rvq(z)
             q = self.add_noise_to_vector(q)
-            return q, self.beta * commmitment.mean()
+            return q, commmitment.mean()
         else:
             return z, torch.zeros_like(z).mean()
 
