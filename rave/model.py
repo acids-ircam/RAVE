@@ -140,7 +140,8 @@ class RAVE(pl.LightningModule):
         self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
-        z, reg = self.encoder.reparametrize(self.encoder(x_multiband))[:2]
+        z_pre_reg = self.encoder(x_multiband)
+        z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
 
         # DECODE LATENT
         y_multiband = self.decoder(z)
@@ -237,6 +238,7 @@ class RAVE(pl.LightningModule):
                     'default': y,
                     'multiband_waveform_distance': y_multiband,
                     'multiband_spectral_distance': y_multiband,
+                    'regularization': z_pre_reg,
                 },
             )
             gen_opt.step()
@@ -247,8 +249,7 @@ class RAVE(pl.LightningModule):
             self.log("pred_true", pred_true.mean())
             self.log("pred_fake", pred_fake.mean())
 
-        for k, v in loss_gen.items():
-            self.log(k, v)
+        self.log_dict(loss_gen)
 
     def encode(self, x):
         x = self.pqmf(x)
@@ -282,8 +283,11 @@ class RAVE(pl.LightningModule):
 
         distance = self.audio_distance(x, y)
 
+        full_distance = sum(distance.values())
+
         if self.trainer is not None:
-            self.log("validation", distance)
+            self.log('validation', full_distance)
+
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):

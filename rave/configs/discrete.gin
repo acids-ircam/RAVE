@@ -43,7 +43,7 @@ feature_matching/core.mean_difference:
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder  
     phase_1_duration = 200000
-    warmup_quantize = 20000
+    warmup_quantize = 1000
     audio_distance = @core.EncodecAudioDistance
     multiband_audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4

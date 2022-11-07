@@ -43,7 +43,8 @@ class Balancer:
         norms = {}
 
         for k, v in losses.items():
-            if k in self.deny_list: continue
+            if self.deny_list is not None:
+                if self.k in self.deny_list: continue
 
             grads[k], = torch.autograd.grad(
                 v,
@@ -69,7 +70,8 @@ class Balancer:
                 retain_graph=True,
             )
 
-        for k in self.deny_list:
-            if k in losses:
-                (losses[k] *
-                 self.weights.get(k, 1)).backward(retain_graph=True)
+        if self.deny_list is not None:
+            for k in self.deny_list:
+                if k in losses:
+                    (losses[k] *
+                    self.weights.get(k, 1)).backward(retain_graph=True)
