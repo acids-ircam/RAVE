@@ -276,6 +276,8 @@ class AudioDistanceV1(nn.Module):
         for x, y in zip(stfts_x, stfts_y):
             distance = distance + lin_distance(x, y) + log_distance(x, y)
 
+        return distance
+
 
 class EncodecAudioDistance(AudioDistanceV1):
 

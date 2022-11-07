@@ -5,6 +5,7 @@ from rave import pqmf
 from rave import core
 from rave import blocks
 from rave import discriminator
+from rave import dataset
 
 import cached_conv as cc
 import torch
@@ -26,6 +27,8 @@ core.MultiScaleSTFT:
     scales = [2048, 1024, 512, 256, 128]
     sample_rate = %SAMPLING_RATE
     magnitude = True
+
+dataset.split_dataset.max_residual = 1000
 
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False

@@ -43,5 +43,5 @@ rave.RAVE:
     phase_1_duration = 200000
     warmup_quantize = 20000
     audio_distance = @core.EncodecAudioDistance
-    feature_match_fun = @core.l1_distance
+    feature_matching_fun = @core.l1_distance
     update_discriminator_every = 4
