@@ -97,12 +97,12 @@ def flatten(iterator: Iterable):
 
 def process_audio_array(audio: Tuple[int, bytes],
                         env: lmdb.Environment,
-                        n_channels: int = 1) -> int:
+                        channels: int = 1) -> int:
     audio_id, audio_samples = audio
 
     buffers = {}
     buffers['waveform'] = AudioExample.AudioBuffer(
-        shape=(n_channels, int(len(audio_samples)/n_channels)),
+        shape=(channels, int(len(audio_samples)/channels)),
         sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,
@@ -194,7 +194,7 @@ def main(argv):
         chunks = flatmap(pool, chunk_load, audios)
         chunks = enumerate(chunks)
 
-        processed_samples = map(partial(process_audio_array, env=env), chunks)
+        processed_samples = map(partial(process_audio_array, env=env, channels=FLAGS.channels), chunks)
 
         pbar = tqdm(processed_samples)
         for audio_id in pbar:

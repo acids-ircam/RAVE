@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from scipy.signal import lfilter
 from torch.utils import data
-from udls import transforms
+from . import transforms
 from udls.generated import AudioExample
 import subprocess
 from tqdm import tqdm
@@ -56,6 +56,7 @@ class AudioDataset(data.Dataset):
 
         audio = np.frombuffer(buffer.data, dtype=np.int16)
         audio = audio.astype(np.float) / (2**15 - 1)
+        audio = audio.reshape(self._n_channels, -1)
 
         if self._transforms is not None:
             audio = self._transforms(audio)
@@ -134,13 +135,17 @@ class LazyAudioDataset(data.Dataset):
 
         return audio
 
+def get_channels_from_dataset(db_path):
+    with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
+        metadata = yaml.safe_load(metadata)
+    return metadata.get('channels', 1)
 
 def get_dataset(db_path, sr, n_signal, n_channels):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
     lazy = metadata['lazy']
-
-    transform_list = transforms.Compose([
+    
+    transform_list = [
         lambda x: x.astype(np.float32),
         transforms.RandomCrop(n_signal),
         transforms.RandomApply(
@@ -149,7 +154,16 @@ def get_dataset(db_path, sr, n_signal, n_channels):
         ),
         transforms.Dequantize(16),
         lambda x: x.astype(np.float32),
-    ])
+    ]
+    input_channels = int(metadata.get('channels', 1))
+    if input_channels != n_channels:
+        if input_channels == 1 and n_channels > 1:
+            transform_list.append(lambda x: x.repeat(n_channels, axis=0))
+        elif n_channels == 1 and input_channels > 1:
+            transform_list.append(lambda x: x[0])
+        else:
+            raise ValueError('could not transform %d channels into %d channels.'%(input_channels, n_channels))
+    transform_list = transforms.Compose(transform_list)
 
     if lazy:
         return LazyAudioDataset(db_path, n_signal, sr, transform_list, n_channels)
@@ -157,7 +171,7 @@ def get_dataset(db_path, sr, n_signal, n_channels):
         return AudioDataset(
             db_path,
             transforms=transform_list,
-            n_channels=n_channels
+            n_channels=input_channels
         )
 
 

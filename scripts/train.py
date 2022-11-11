@@ -4,12 +4,16 @@ import os
 import gin
 import pytorch_lightning as pl
 import torch
-from absl import flags
+from absl import flags, app
 from torch.utils.data import DataLoader
+
+import sys
+sys.path.append('/u/repmus/chemla/rave_develop')
 
 import rave
 import rave.core
 import rave.dataset
+
 
 FLAGS = flags.FLAGS
 
@@ -28,7 +32,7 @@ flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('n_signal',
                      131072,
                      help='Number of audio samples to use during training')
-flags.DEFINE_integer('n_channels', 1, help="number of audio channels")
+flags.DEFINE_integer('n_channels', None, help="number of audio channels")
 flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('ckpt',
                     None,
@@ -53,13 +57,15 @@ def main(argv):
         FLAGS.override,
     )
 
-    model = rave.RAVE()
+    # check dataset channels
+    n_channels = FLAGS.n_channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
+    model = rave.RAVE(n_channels=n_channels)
 
     dataset = rave.dataset.get_dataset(
         FLAGS.db_path,
         model.sr,
         FLAGS.n_signal,
-        FLAGS.n_channels,
+        n_channels,
     )
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
@@ -123,3 +129,7 @@ def main(argv):
         training_commit.write(rave.__version__.commit)
 
     trainer.fit(model, train, val, ckpt_path=run)
+
+
+if __name__ == "__main__": 
+    app.run(main)
