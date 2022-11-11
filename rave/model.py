@@ -1,13 +1,17 @@
+from typing import Callable, Optional
+
 import gin
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import torch.nn as nn
 from einops import rearrange
 from sklearn.decomposition import PCA
 
 import rave.core
 
-from .blocks import VariationalEncoder
+from .balancer import Balancer
+from .blocks import DiscreteEncoder, VariationalEncoder
 
 
 class WarmupCallback(pl.Callback):
@@ -29,20 +33,52 @@ class WarmupCallback(pl.Callback):
         self.state.update(state_dict)
 
 
+class QuantizeCallback(WarmupCallback):
+
+    def on_train_batch_start(self, trainer, pl_module, batch,
+                             batch_idx) -> None:
+
+        if pl_module.warmup_quantize is None: return
+
+        if self.state['training_steps'] >= pl_module.warmup_quantize:
+            if isinstance(pl_module.encoder, DiscreteEncoder):
+                pl_module.encoder.enabled = torch.tensor(1).type_as(
+                    pl_module.encoder.enabled)
+        self.state['training_steps'] += 1
+
+
 @gin.configurable
 class RAVE(pl.LightningModule):
 
-    def __init__(self, latent_size, pqmf, sampling_rate, loudness, encoder,
-                 decoder, discriminator, phase_1_duration, gan_loss,
-                 feature_match, valid_signal_crop, feature_matching_fun,
-                 num_skipped_features, n_channels=1):
+    def __init__(
+        self,
+        latent_size,
+        pqmf,
+        sampling_rate,
+        encoder,
+        decoder,
+        discriminator,
+        phase_1_duration,
+        gan_loss,
+        valid_signal_crop,
+        feature_matching_fun,
+        num_skipped_features,
+        audio_distance: Callable[[], nn.Module],
+        multiband_audio_distance: Callable[[], nn.Module],
+        balancer: Callable[[], Balancer],
+        warmup_quantize: Optional[int] = None,
+        update_discriminator_every: int = 2,
+        n_channels: int = 1
+    ):
         super().__init__()
 
         self.pqmf = pqmf(n_channels=n_channels)
-        self.loudness = loudness()
-        self.encoder = encoder(n_channels=n_channels)
+        self.encoder = encoder(beta=1.0, n_channels=n_channels)
         self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)
+
+        self.audio_distance = audio_distance()
+        self.multiband_audio_distance = multiband_audio_distance()
 
         self.gan_loss = gan_loss
 
@@ -54,14 +90,20 @@ class RAVE(pl.LightningModule):
 
         self.automatic_optimization = False
 
+        # SCHEDULE
         self.warmup = phase_1_duration
+        self.warmup_quantize = warmup_quantize
+        self.balancer = balancer()
+
         self.warmed_up = False
+
+        # CONSTANTS
         self.sr = sampling_rate
-        self.feature_match = feature_match
         self.valid_signal_crop = valid_signal_crop
         self.n_channels = n_channels
         self.feature_matching_fun = feature_matching_fun
         self.num_skipped_features = num_skipped_features
+        self.update_discriminator_every = update_discriminator_every
 
         self.eval_number = 0
 
@@ -91,43 +133,57 @@ class RAVE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         gen_opt, dis_opt = self.optimizers()
+        # x = batch.unsqueeze(1)
+        x = batch
+        x.requires_grad = True
 
         batch_size = batch.shape[:-2]
         x = batch.reshape(-1, 1, batch.shape[-1])
-        x = self.pqmf(x)
-        x = x.reshape(*batch_size, -1, x.shape[-1])
+        x_multiband = self.pqmf(x)
+        x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
 
         self.encoder.set_warmed_up(self.warmed_up)
         self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
-        z, reg = self.encoder.reparametrize(self.encoder(x))[:2]
+        z_pre_reg = self.encoder(x_multiband)
+        z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
 
         # DECODE LATENT
-        y = self.decoder(z)
+        y_multiband = self.decoder(z)
 
         if self.valid_signal_crop and self.receptive_field.sum():
-            x = rave.core.valid_signal_crop(x, *self.receptive_field)
-            y = rave.core.valid_signal_crop(y, *self.receptive_field)
+            x_multiband = rave.core.valid_signal_crop(
+                x_multiband,
+                *self.receptive_field,
+            )
+            y_multiband = rave.core.valid_signal_crop(
+                y_multiband,
+                *self.receptive_field,
+            )
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        distance = rave.core.multiscale_spectral_distance(x, y)
+        multiband_distance = self.multiband_audio_distance(
+            x_multiband, y_multiband)
 
-        x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
-        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
-        x = self.pqmf.inverse(x)
-        y = self.pqmf.inverse(y)
+        x_multiband_tmp = x_multiband.reshape(x_multiband.shape[0] * self.n_channels, -1, x_multiband.shape[-1])
+        y_multiband_tmp = y_multiband.reshape(y_multiband.shape[0] * self.n_channels, -1, y_multiband.shape[-1])
+        x = self.pqmf.inverse(x_multiband_tmp)
+        y = self.pqmf.inverse(y_multiband_tmp)
         x = x.reshape(*batch_size, self.n_channels, -1)
         y = y.reshape(*batch_size, self.n_channels, -1)
 
-        distance = distance + rave.core.multiscale_spectral_distance(x, y)
+        fullband_distance = self.audio_distance(x, y)
 
-        loud_x = self.loudness(x)
-        loud_y = self.loudness(y)
-        loud_dist = (loud_x - loud_y).pow(2).mean()
-        distance = distance + loud_dist
+        distances = {}
+
+        for k, v in multiband_distance.items():
+            distances[f'multiband_{k}'] = v
+        for k, v in fullband_distance.items():
+            distances[f'fullband_{k}'] = v
 
         feature_matching_distance = 0.
+
         if self.warmed_up:  # DISCRIMINATION
             xy = torch.cat([x, y], 0)
             features = self.discriminator(xy)
@@ -144,9 +200,9 @@ class RAVE(pl.LightningModule):
                 current_feature_distance = sum(
                     map(
                         self.feature_matching_fun,
-                        scale_true[self.num_skipped_features:],
-                        scale_fake[self.num_skipped_features:],
-                    )) / len(scale_true[self.num_skipped_features:])
+                        scale_true[self.num_skipped_features:-1],
+                        scale_fake[self.num_skipped_features:-1],
+                    )) / len(scale_true[self.num_skipped_features:-1])
 
                 feature_matching_distance = feature_matching_distance + current_feature_distance
 
@@ -168,30 +224,42 @@ class RAVE(pl.LightningModule):
             loss_adv = torch.tensor(0.).to(x)
 
         # COMPOSE GEN LOSS
-        loss_gen = distance + loss_adv + reg
+        loss_gen = {}
 
-        if self.feature_match:
-            loss_gen = loss_gen + 10 * feature_matching_distance
+        loss_gen.update(distances)
+
+        if reg.item():
+            loss_gen['regularization'] = reg
+
+        if self.warmed_up:
+            loss_gen['feature_matching'] = feature_matching_distance
+            loss_gen['adversarial'] = loss_adv
 
         # OPTIMIZATION
-        if batch_idx % 2 and self.warmed_up:
+        if batch_idx % self.update_discriminator_every and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
         else:
             gen_opt.zero_grad()
-            loss_gen.backward()
+            self.balancer.backward(
+                loss_gen,
+                {
+                    'default': y,
+                    'multiband_waveform_distance': y_multiband,
+                    'multiband_spectral_distance': y_multiband,
+                    'regularization': z_pre_reg,
+                },
+            )
             gen_opt.step()
 
         # LOGGING
-        self.log("loss_dis", loss_dis)
-        self.log("loss_gen", loss_gen)
-        self.log("loud_dist", loud_dist)
-        self.log("regularization", reg)
-        self.log("pred_true", pred_true.mean())
-        self.log("pred_fake", pred_fake.mean())
-        self.log("distance", distance)
-        self.log("feature_matching", feature_matching_distance)
+        if self.warmed_up:
+            self.log("loss_dis", loss_dis)
+            self.log("pred_true", pred_true.mean())
+            self.log("pred_fake", pred_fake.mean())
+
+        self.log_dict(loss_gen)
 
     def encode(self, x):
         x = self.pqmf(x)
@@ -206,11 +274,7 @@ class RAVE(pl.LightningModule):
     def forward(self, x):
         return self.decode(self.encode(x))
 
-    def on_train_start(self):
-        self.warmed_up = bool(self.saved_step > self.warmup)
-
     def validation_step(self, batch, batch_idx):
-
         # x = batch.unsqueeze(1)
         x = batch
         batch_size = x.shape[:-2]
@@ -234,10 +298,13 @@ class RAVE(pl.LightningModule):
         x = x.reshape(*batch_size, self.n_channels, -1)
         y = y.reshape(*batch_size, self.n_channels, -1)
 
-        distance = rave.core.multiscale_spectral_distance(x, y)
+        distance = self.audio_distance(x, y)
+
+        full_distance = sum(distance.values())
 
         if self.trainer is not None:
-            self.log("validation", distance)
+            self.log('validation', full_distance)
+
         return torch.cat([x, y], -1), mean
 
     def validation_epoch_end(self, out):

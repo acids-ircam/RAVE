@@ -42,6 +42,9 @@ flags.DEFINE_integer('workers',
                      default=8,
                      help='Number of workers to spawn for dataset loading')
 flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
+flags.DEFINE_bool('progress',
+                  default=True,
+                  help='Display training progress bar')
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -108,12 +111,15 @@ def main(argv):
         ),
         gpus=gpu,
         callbacks=[
-            validation_checkpoint, last_checkpoint,
-            rave.model.WarmupCallback()
+            validation_checkpoint,
+            last_checkpoint,
+            rave.model.WarmupCallback(),
+            rave.model.QuantizeCallback(),
         ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,
         profiler="simple",
+        enable_progress_bar=FLAGS.progress,
         **val_check,
     )
 

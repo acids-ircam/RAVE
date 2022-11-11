@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from random import random
+from typing import Callable, Optional, Sequence
 
 import gin
 import GPUtil as gpu
@@ -9,46 +10,13 @@ import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
+import torchaudio
 from einops import rearrange
 from scipy.signal import lfilter
-from tqdm import tqdm
 
 
 def mod_sigmoid(x):
     return 2 * torch.sigmoid(x)**2.3 + 1e-7
-
-
-@gin.configurable
-def multiscale_stft(signal, scales, overlap, amplitude_only: bool = True):
-    """
-    Compute a stft on several scales, with a constant overlap value.
-    Parameters
-    ----------
-    signal: torch.Tensor
-        input signal to process ( B X C X T )
-    
-    scales: list
-        scales to use
-    overlap: float
-        overlap between windows ( 0 - 1 )
-    """
-    signal = rearrange(signal, "b c t -> (b c) t")
-    stfts = []
-    for s in scales:
-        S = torch.stft(
-            signal,
-            s,
-            int(s * (1 - overlap)),
-            s,
-            torch.hann_window(s).to(signal),
-            True,
-            normalized=True,
-            return_complex=amplitude_only,
-        )
-        if amplitude_only:
-            S = S.abs()
-        stfts.append(S)
-    return stfts
 
 
 def random_angle(min_f=20, max_f=8000, sr=24000):
@@ -70,36 +38,6 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     angle = random_angle(min_f, max_f, sr)
     b, a = pole_to_z_filter(angle, amp)
     return lfilter(b, a, x)
-
-
-@gin.configurable
-class Loudness(nn.Module):
-
-    def __init__(self, sr, block_size, n_fft=2048):
-        super().__init__()
-        self.sr = sr
-        self.block_size = block_size
-        self.n_fft = n_fft
-
-        f = np.linspace(0, sr / 2, n_fft // 2 + 1) + 1e-7
-        a_weight = li.A_weighting(f).reshape(-1, 1)
-
-        self.register_buffer("a_weight", torch.from_numpy(a_weight).float())
-        self.register_buffer("window", torch.hann_window(self.n_fft))
-
-    def forward(self, x):
-        x = x.reshape(-1, x.shape[-1])
-        x = torch.stft(
-            x,
-            self.n_fft,
-            self.block_size,
-            self.n_fft,
-            center=True,
-            window=self.window,
-            return_complex=True,
-        ).abs()
-        x = torch.log(x + 1e-7) + self.a_weight
-        return torch.mean(x, 1, keepdim=True)
 
 
 def amp_to_impulse_response(amp, target_size):
@@ -171,7 +109,6 @@ def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
     return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
 
 
-@gin.register
 def hinge_gan(score_real, score_fake):
     loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
     loss_dis = loss_dis.mean()
@@ -179,7 +116,6 @@ def hinge_gan(score_real, score_fake):
     return loss_dis, loss_gen
 
 
-@gin.register
 def ls_gan(score_real, score_fake):
     loss_dis = (score_real - 1).pow(2) + score_fake.pow(2)
     loss_dis = loss_dis.mean()
@@ -187,7 +123,6 @@ def ls_gan(score_real, score_fake):
     return loss_dis, loss_gen
 
 
-@gin.register
 def nonsaturating_gan(score_real, score_fake):
     score_real = torch.clamp(torch.sigmoid(score_real), 1e-7, 1 - 1e-7)
     score_fake = torch.clamp(torch.sigmoid(score_fake), 1e-7, 1 - 1e-7)
@@ -201,6 +136,11 @@ def get_rave_receptive_field(model, n_channels=1):
     N = 2**15
     model.eval()
     device = next(iter(model.parameters())).device
+
+    for module in model.modules():
+        if hasattr(module, 'gru_state'):
+            module.disable()
+
     while True:
         x = torch.randn(n_channels, 1, N, requires_grad=True, device=device)
         x_tmp = model.pqmf(x)
@@ -224,6 +164,10 @@ def get_rave_receptive_field(model, n_channels=1):
     left_receptive_field = len(left_grad[left_grad != 0])
     right_receptive_field = len(right_grad[right_grad != 0])
     model.zero_grad()
+
+    for module in model.modules():
+        if hasattr(module, 'gru_state'):
+            module.enable()
     return left_receptive_field, right_receptive_field
 
 
@@ -235,36 +179,142 @@ def valid_signal_crop(x, left_rf, right_rf):
     return x
 
 
-@gin.configurable
-def lin_distance(x, y):
-    return torch.norm(x - y) / torch.norm(x)
+def relative_distance(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    norm: Callable[[torch.Tensor], torch.Tensor],
+) -> torch.Tensor:
+    return norm(x - y) / norm(x)
 
 
-@gin.register
-def l1_distance(x, y):
-    return abs(x - y).mean()
+def mean_difference(target: torch.Tensor,
+                    value: torch.Tensor,
+                    norm: str = 'L1',
+                    relative: bool = False):
+    diff = target - value
+    if norm == 'L1':
+        diff = diff.abs().mean()
+        if relative:
+            diff = diff / target.abs().mean()
+        return diff
+    elif norm == 'L2':
+        diff = (diff * diff).mean()
+        if relative:
+            diff = diff / (target * target).mean()
+        return diff
+    else:
+        raise Exception(f'Norm must be either L1 or L2, got {norm}')
 
 
-@gin.register
-def log_cosine_distance(x, y, dim=1):
-    norm_x = (x * x).sum(dim).sqrt()
-    norm_y = (y * y).sum(dim).sqrt()
-    inner = (x * y).sum(dim)
-    sim = torch.mean(inner / (norm_x * norm_y))
-    sim = (sim + 1) / 2 + 1e-4
-    return -torch.log(sim)
+class MelScale(nn.Module):
+
+    def __init__(self, sample_rate: int, n_fft: int, n_mels: int) -> None:
+        super().__init__()
+        mel = li.filters.mel(sr=sample_rate, n_fft=n_fft, n_mels=n_mels)
+        mel = torch.from_numpy(mel).float()
+        self.register_buffer('mel', mel)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        mel = self.mel.type_as(x)
+        y = torch.einsum('bft,mf->bmt', x, mel)
+        return y
 
 
-@gin.configurable
-def log_distance(x, y, epsilon):
-    return abs(torch.log(x + epsilon) - torch.log(y + epsilon)).mean()
+class MultiScaleSTFT(nn.Module):
+
+    def __init__(self,
+                 scales: Sequence[int],
+                 sample_rate: int,
+                 magnitude: bool = True,
+                 num_mels: Optional[int] = None) -> None:
+        super().__init__()
+        self.scales = scales
+        self.magnitude = magnitude
+        self.num_mels = num_mels
+
+        self.stfts = []
+        self.mel_scales = []
+        for scale in scales:
+            self.stfts.append(
+                torchaudio.transforms.Spectrogram(
+                    n_fft=scale,
+                    win_length=scale,
+                    hop_length=scale // 4,
+                    normalized=False,
+                    power=None,
+                ))
+            if num_mels is not None:
+                self.mel_scales.append(
+                    MelScale(
+                        sample_rate=sample_rate,
+                        n_fft=scale,
+                        n_mels=num_mels,
+                    ))
+            else:
+                self.mel_scales.append(None)
+
+        self.stfts = nn.ModuleList(self.stfts)
+        self.mel_scales = nn.ModuleList(self.mel_scales)
+
+    def forward(self, x: torch.Tensor) -> Sequence[torch.Tensor]:
+        x = rearrange(x, "b c t -> (b c) t")
+        stfts = []
+        for stft, mel in zip(self.stfts, self.mel_scales):
+            y = stft(x)
+            if mel is not None:
+                y = mel(y)
+            if self.magnitude:
+                y = y.abs()
+            else:
+                y = torch.stack([y.real, y.imag], -1)
+            stfts.append(y)
+
+        return stfts
 
 
-def multiscale_spectral_distance(x, y):
-    x = multiscale_stft(x)
-    y = multiscale_stft(y)
+class AudioDistanceV1(nn.Module):
 
-    lin = sum(list(map(lin_distance, x, y)))
-    log = sum(list(map(log_distance, x, y)))
+    def __init__(self, multiscale_stft: Callable[[], nn.Module],
+                 log_epsilon: float) -> None:
+        super().__init__()
+        self.multiscale_stft = multiscale_stft()
+        self.log_epsilon = log_epsilon
 
-    return lin + log
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        stfts_x = self.multiscale_stft(x)
+        stfts_y = self.multiscale_stft(y)
+        distance = 0.
+
+        for x, y in zip(stfts_x, stfts_y):
+            logx = torch.log(x + self.log_epsilon)
+            logy = torch.log(y + self.log_epsilon)
+
+            lin_distance = mean_difference(x, y, norm='L2', relative=True)
+            log_distance = mean_difference(logx, logy, norm='L1')
+
+            distance = distance + lin_distance + log_distance
+
+        return {'spectral_distance': distance}
+
+
+class EncodecAudioDistance(AudioDistanceV1):
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        stfts_x = self.multiscale_stft(x)
+        stfts_y = self.multiscale_stft(y)
+
+        waveform_distance = mean_difference(x, y)
+
+        spectral_distance = 0.
+        for sx, sy in zip(stfts_x, stfts_y):
+            l1_spec = mean_difference(sx, sy, norm='L1')
+            l2_spec = mean_difference(sx, sy, norm='L2')
+
+            spectral_distance = spectral_distance + l1_spec + l2_spec
+
+        spectral_distance = spectral_distance / len(stfts_x)
+
+        return {
+            'waveform_distance': waveform_distance,
+            'spectral_distance': spectral_distance,
+        }

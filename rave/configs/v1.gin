@@ -1,8 +1,15 @@
+from __gin__ import dynamic_registration
+
 import rave
 from rave import pqmf
 from rave import core
 from rave import blocks
 from rave import discriminator
+from rave import dataset
+from rave import balancer
+
+import cached_conv as cc
+import torch
 
 SAMPLING_RATE = 44100
 CAPACITY = 64
@@ -12,16 +19,17 @@ RATIOS = [4, 4, 4, 2]
 PHASE_1_DURATION = 1000000
 
 # CORE CONFIGURATION
-core.log_distance.epsilon = 1e-7
+core.AudioDistanceV1.log_epsilon = 1e-7
 
-core.multiscale_stft:
+core.AudioDistanceV1:
+    multiscale_stft = @core.MultiScaleSTFT
+
+core.MultiScaleSTFT:
     scales = [2048, 1024, 512, 256, 128]
-    overlap = .75
+    sample_rate = %SAMPLING_RATE
+    magnitude = True
 
-core.Loudness:
-    sr = %SAMPLING_RATE
-    block_size = 512
-    n_fft = 2048
+dataset.split_dataset.max_residual = 1000
 
 # CONVOLUTION CONFIGURATION
 cc.Conv1d.bias = False
@@ -47,7 +55,6 @@ variational/blocks.Encoder.n_out = 2
 
 blocks.VariationalEncoder:
     encoder = @variational/blocks.Encoder
-    beta = .1
 
 # DECODER
 blocks.Generator:
@@ -82,18 +89,34 @@ discriminator.MultiScaleDiscriminator:
     n_discriminators = 3
     convnet = @scales/discriminator.ConvNet
 
+feature_matching/core.mean_difference:
+    norm = 'L1'
+
+# BALANCER
+balancer.Balancer:
+    ema_averager = @balancer.EMA
+    weights = {
+        'regularization': .1,
+        'feature_matching': 10,
+    }
+    scale_gradients = False
+
+balancer.EMA:
+    beta = 0.999
+
 # MODEL ASSEMBLING
-RAVE:
+rave.RAVE:
     latent_size = %LATENT_SIZE
     pqmf = @pqmf.CachedPQMF
     sampling_rate = %SAMPLING_RATE
-    loudness = @core.Loudness
     encoder = @blocks.VariationalEncoder  
     decoder = @blocks.Generator
     discriminator = @discriminator.MultiScaleDiscriminator
     phase_1_duration = %PHASE_1_DURATION
     gan_loss = @core.hinge_gan
-    feature_match = True
     valid_signal_crop = False
-    feature_matching_fun = @core.l1_distance
+    feature_matching_fun = @feature_matching/core.mean_difference
     num_skipped_features = 0
+    audio_distance = @core.AudioDistanceV1
+    multiband_audio_distance = @core.AudioDistanceV1
+    balancer = @balancer.Balancer

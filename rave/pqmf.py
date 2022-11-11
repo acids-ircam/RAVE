@@ -241,7 +241,6 @@ class PQMF(nn.Module):
             return classic_inverse(x, self.hk)
 
 
-@gin.register
 class CachedPQMF(PQMF):
 
     def __init__(self, *args, **kwargs):

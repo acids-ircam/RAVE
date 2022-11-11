@@ -10,9 +10,9 @@ from typing import Callable, Iterable, Sequence, Tuple
 
 import lmdb
 import numpy as np
-import yaml
 import torch
-from absl import flags, app
+import yaml
+from absl import app, flags
 from tqdm import tqdm
 from udls.generated import AudioExample
 

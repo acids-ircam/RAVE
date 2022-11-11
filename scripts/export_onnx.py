@@ -6,11 +6,10 @@ import os
 import cached_conv as cc
 import gin
 import torch.nn as nn
+from absl import app, flags
 from effortless_config import Config
 
 import rave
-
-from absl import flags, app
 
 flags.DEFINE_string('run', default=None, required=True, help='Run to export')
 FLAGS = flags.FLAGS

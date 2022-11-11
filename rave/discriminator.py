@@ -4,12 +4,10 @@ import cached_conv as cc
 import gin
 import numpy as np
 import torch.nn as nn
-import torch.nn.utils.weight_norm as wn
 
-from .core import multiscale_stft
+from .blocks import normalization
 
 
-@gin.register
 class ConvNet(nn.Module):
 
     def __init__(self, in_size, out_size, capacity, n_layers, kernel_size,
@@ -33,13 +31,14 @@ class ConvNet(nn.Module):
                                      mode="centered")[0]
                 s = stride[i]
             net.append(
-                conv(
-                    channels[i],
-                    channels[i + 1],
-                    kernel_size,
-                    stride=s,
-                    padding=pad,
-                ))
+                normalization(
+                    conv(
+                        channels[i],
+                        channels[i + 1],
+                        kernel_size,
+                        stride=s,
+                        padding=pad,
+                    )))
             net.append(nn.LeakyReLU(.2))
         net.append(conv(channels[-1], out_size, 1))
 
@@ -54,7 +53,6 @@ class ConvNet(nn.Module):
         return features
 
 
-@gin.register
 class MultiScaleDiscriminator(nn.Module):
 
     def __init__(self, n_discriminators, convnet, n_channels=1) -> None:
@@ -72,11 +70,14 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-@gin.register
 class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
 
+    def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
+        super().__init__(n_discriminators, convnet)
+        self.multiscale_stft = multiscale_stft()
+
     def forward(self, x):
-        scales = multiscale_stft(x, amplitude_only=False)
+        scales = self.multiscale_stft(x)
         features = []
         for scale, layer in zip(scales, self.layers):
             scale = scale.permute(0, 3, 1, 2)
@@ -84,7 +85,6 @@ class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
         return features
 
 
-@gin.register
 class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(self, periods, convnet, n_channels=1) -> None:
@@ -109,7 +109,6 @@ class MultiPeriodDiscriminator(nn.Module):
         return x.reshape(*x.shape[:2], -1, n)
 
 
-@gin.register
 class CombineDiscriminators(nn.Module):
 
     def __init__(self, discriminators: Sequence[Type[nn.Module]], n_channels=1) -> None:

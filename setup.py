@@ -18,7 +18,6 @@ with open('rave/__version__.py', 'w') as init:
     init.write(f"version = \"{version}\"\n")
     init.write(f"commit = \"{commit}\"\n")
 
-
 with open("README.md", "r") as readme:
     readme = readme.read()
 

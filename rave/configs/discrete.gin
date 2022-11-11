@@ -1,7 +1,11 @@
+from __gin__ import dynamic_registration
+
 include "configs/v2.gin"
 
 import rave
+from rave import core
 from rave import blocks
+from rave import balancer
 
 NUM_QUANTIZERS = 8
 RATIOS = [4, 4, 2, 2]
@@ -21,11 +25,35 @@ discrete/blocks.Encoder.n_out = 1
 blocks.DiscreteEncoder:
     encoder_cls = @discrete/blocks.Encoder
     rvq_cls = @blocks.ResidualVectorQuantize
-    beta = .1
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
 
+# DISTANCES
+encodec/core.MultiScaleSTFT:
+    num_mels = 64
+    scales = [32, 64, 128, 256, 512, 1024, 2048]
+
+core.EncodecAudioDistance:
+    multiscale_stft = @encodec/core.MultiScaleSTFT
+    log_epsilon = 1
+
+feature_matching/core.mean_difference:
+    relative = True
+
+# BALANCER
+balancer.Balancer:
+    weights = {
+        'fullband_spectral_distance': 2,
+        'multiband_spectral_distance': 2,
+        'regularization': .01,
+        'adversarial': 2,
+    }
+
 # RAVE
-RAVE:
+rave.RAVE:
     encoder = @blocks.DiscreteEncoder  
-    phase_1_duration = 100000
+    phase_1_duration = 200000
+    warmup_quantize = -1
+    audio_distance = @core.EncodecAudioDistance
+    multiband_audio_distance = @core.EncodecAudioDistance
+    update_discriminator_every = 4

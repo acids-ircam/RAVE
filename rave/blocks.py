@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Callable, Optional
 
 import cached_conv as cc
 import gin
@@ -21,15 +22,18 @@ def normalization(module: nn.Module, mode: str = 'identity'):
         raise Exception(f'Normalization mode {mode} not supported')
 
 
-@gin.register
 class ResidualVectorQuantize(nn.Module):
 
     def __init__(self, dim: int, num_quantizers: int, codebook_size: int,
                  dynamic_masking: bool) -> None:
         super().__init__()
         self.layers = nn.ModuleList([
-            VectorQuantize(dim, codebook_size, channel_last=False)
-            for _ in range(num_quantizers)
+            VectorQuantize(
+                dim,
+                codebook_size,
+                channel_last=False,
+                kmeans_init=True,
+            ) for _ in range(num_quantizers)
         ])
         self._dynamic_masking = dynamic_masking
         self._num_quantizers = num_quantizers
@@ -188,7 +192,8 @@ class ResidualStack(nn.Module):
         self.cumulative_delay = self.net.cumulative_delay
 
     def forward(self, x):
-        x = torch.stack(self.net(x), 0).sum(0)
+        x = self.net(x)
+        x = torch.stack(x, 0).sum(0)
         return x
 
 
@@ -262,11 +267,63 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
-@gin.register
+class GRU(nn.Module):
+
+    def __init__(self,
+                 dim: int,
+                 num_layers: int,
+                 dropout=0,
+                 cumulative_delay=0) -> None:
+        super().__init__()
+
+        self.gru = nn.GRU(
+            input_size=dim,
+            hidden_size=dim,
+            num_layers=num_layers,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.register_buffer(
+            'gru_state',
+            torch.zeros(num_layers, cc.MAX_BATCH_SIZE, dim),
+        )
+
+        self.cumulative_delay = cumulative_delay
+        self.enabled = True
+
+    def disable(self):
+        self.enabled = False
+
+    def enable(self):
+        self.enabled = True
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.enabled: return x
+
+        x = x.permute(0, 2, 1)
+        if cc.USE_BUFFER_CONV:
+            x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
+            self.gru_state[:, :x.shape[0]] = state
+        else:
+            x = self.gru(x)[0]
+        x = x.permute(0, 2, 1)
+        return x
+
+
 class Generator(nn.Module):
 
-    def __init__(self, latent_size, capacity, data_size, ratios, loud_stride,
-                 use_noise, n_channels=1):
+    def __init__(
+        self,
+        latent_size,
+        capacity,
+        data_size,
+        ratios,
+        loud_stride,
+        use_noise,
+        n_channels: int = 1,
+        recurrent_layer: Optional[Callable[[], GRU]] = None,
+    ):
         super().__init__()
         net = [
             normalization(
@@ -277,6 +334,13 @@ class Generator(nn.Module):
                     padding=cc.get_padding(7),
                 ))
         ]
+
+        if recurrent_layer is not None:
+            net.append(
+                recurrent_layer(
+                    dim=2**len(ratios) * capacity,
+                    cumulative_delay=net[0].cumulative_delay,
+                ))
 
         for i, r in enumerate(ratios):
             in_dim = 2**(len(ratios) - i) * capacity
@@ -349,11 +413,20 @@ class Generator(nn.Module):
         return waveform
 
 
-@gin.register
 class Encoder(nn.Module):
 
-    def __init__(self, data_size, capacity, latent_size, ratios, n_out,
-                 sample_norm, repeat_layers, n_channels=1):
+    def __init__(
+        self,
+        data_size,
+        capacity,
+        latent_size,
+        ratios,
+        n_out,
+        sample_norm,
+        repeat_layers,
+        n_channels: int = 1,
+        recurrent_layer: Optional[Callable[[], GRU]] = None,
+    ):
         super().__init__()
         net = [cc.Conv1d(data_size * n_channels, capacity, 7, padding=cc.get_padding(7))]
 
@@ -392,6 +465,15 @@ class Encoder(nn.Module):
                     ))
 
         net.append(nn.LeakyReLU(.2))
+
+        if recurrent_layer is not None:
+            net.append(
+                recurrent_layer(
+                    dim=out_dim,
+                    cumulative_delay=net[-2].cumulative_delay,
+                ))
+            net.append(nn.LeakyReLU(.2))
+
         net.append(
             cc.Conv1d(
                 out_dim,
@@ -410,14 +492,13 @@ class Encoder(nn.Module):
         return z
 
 
-@gin.register
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder, beta, n_channels=1):
+    def __init__(self, encoder, beta: float = 1.0, n_channels=1):
         super().__init__()
         self.encoder = encoder(n_channels=n_channels)
-        self.register_buffer("warmed_up", torch.tensor(0))
         self.beta = beta
+        self.register_buffer("warmed_up", torch.tensor(0))
 
     def reparametrize(self, z):
         mean, scale = z.chunk(2, 1)
@@ -441,18 +522,16 @@ class VariationalEncoder(nn.Module):
         return z
 
 
-@gin.register
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, rvq_cls, beta, latent_size,
-                 num_quantizers):
+    def __init__(self, encoder_cls, rvq_cls, latent_size, num_quantizers):
         super().__init__()
         self.encoder = encoder_cls()
         self.rvq = rvq_cls()
-        self.beta = beta
         self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
+        self.register_buffer("enabled", torch.tensor(0))
 
     def add_noise_to_vector(self, q):
         noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
@@ -461,14 +540,17 @@ class DiscreteEncoder(nn.Module):
 
     @torch.jit.ignore
     def reparametrize(self, z):
-        q, commmitment = self.rvq(z)
-        q = self.add_noise_to_vector(q)
-        return q, self.beta * commmitment.mean()
+        if self.enabled:
+            q, commmitment = self.rvq(z)
+            q = self.add_noise_to_vector(q)
+            return q, commmitment.mean()
+        else:
+            return z, torch.zeros_like(z).mean()
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
     def forward(self, x):
-        z = self.encoder(x)
+        z = torch.tanh(self.encoder(x))
         return z
