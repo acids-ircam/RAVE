@@ -16,10 +16,9 @@ class EMA:
         for k, v in inputs.items():
             if not k in self.shadows:
                 self.shadows[k] = v
-                continue
-
-            self.shadows[k] *= self.beta
-            self.shadows[k] += (1 - self.beta) * v
+            else:
+                self.shadows[k] *= self.beta
+                self.shadows[k] += (1 - self.beta) * v
 
             outputs[k] = self.shadows[k].clone()
         return outputs
@@ -38,17 +37,17 @@ class Balancer:
         self.deny_list = deny_list
 
     def backward(self, losses: Dict[str, torch.Tensor],
-                 model_output: Dict[str, torch.Tensor]):
+                 model_output: torch.Tensor):
         grads = {}
         norms = {}
 
         for k, v in losses.items():
             if self.deny_list is not None:
-                if self.k in self.deny_list: continue
+                if k in self.deny_list: continue
 
             grads[k], = torch.autograd.grad(
                 v,
-                [model_output.get(k, model_output['default'])],
+                [model_output],
                 retain_graph=True,
             )
             norms[k] = grads[k].norm()
@@ -65,13 +64,10 @@ class Balancer:
             else:
                 grads[name] *= self.weights.get(name, 1)
 
-            model_output.get(name, model_output['default']).backward(
-                grads[name],
-                retain_graph=True,
-            )
+        full_grad = sum([grads[name] for name in avg_norms.keys()])
+        model_output.backward(full_grad, retain_graph=True)
 
         if self.deny_list is not None:
             for k in self.deny_list:
                 if k in losses:
-                    (losses[k] *
-                     self.weights.get(k, 1)).backward(retain_graph=True)
+                    losses[k].backward(retain_graph=True)

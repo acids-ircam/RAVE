@@ -6,6 +6,7 @@ import rave
 from rave import core
 from rave import blocks
 from rave import balancer
+from rave import discriminator
 
 NUM_QUANTIZERS = 8
 RATIOS = [4, 4, 2, 2]
@@ -52,8 +53,9 @@ balancer.Balancer:
 # RAVE
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder  
-    phase_1_duration = 200000
+    phase_1_duration = -1
     warmup_quantize = -1
     audio_distance = @core.EncodecAudioDistance
     multiband_audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4
+    discriminator = @discriminator.MultiScaleSpectralDiscriminator

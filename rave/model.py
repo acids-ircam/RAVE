@@ -118,16 +118,16 @@ class RAVE(pl.LightningModule):
         return gen_opt, dis_opt
 
     def split_features(self, features):
-        feature_true = []
+        feature_real = []
         feature_fake = []
         for scale in features:
             true, fake = zip(*map(
                 lambda x: torch.split(x, x.shape[0] // 2, 0),
                 scale,
             ))
-            feature_true.append(true)
+            feature_real.append(true)
             feature_fake.append(fake)
-        return feature_true, feature_fake
+        return feature_real, feature_fake
 
     def training_step(self, batch, batch_idx):
         gen_opt, dis_opt = self.optimizers()
@@ -178,37 +178,37 @@ class RAVE(pl.LightningModule):
             xy = torch.cat([x, y], 0)
             features = self.discriminator(xy)
 
-            feature_true, feature_fake = self.split_features(features)
+            feature_real, feature_fake = self.split_features(features)
 
             loss_dis = 0
             loss_adv = 0
 
-            pred_true = 0
+            pred_real = 0
             pred_fake = 0
 
-            for scale_true, scale_fake in zip(feature_true, feature_fake):
+            for scale_real, scale_fake in zip(feature_real, feature_fake):
                 current_feature_distance = sum(
                     map(
                         self.feature_matching_fun,
-                        scale_true[self.num_skipped_features:-1],
-                        scale_fake[self.num_skipped_features:-1],
-                    )) / len(scale_true[self.num_skipped_features:-1])
+                        scale_real[self.num_skipped_features:],
+                        scale_fake[self.num_skipped_features:],
+                    )) / len(scale_real[self.num_skipped_features:])
 
                 feature_matching_distance = feature_matching_distance + current_feature_distance
 
-                _dis, _adv = self.gan_loss(scale_true[-1], scale_fake[-1])
+                _dis, _adv = self.gan_loss(scale_real[-1], scale_fake[-1])
 
-                pred_true = pred_true + scale_true[-1].mean()
+                pred_real = pred_real + scale_real[-1].mean()
                 pred_fake = pred_fake + scale_fake[-1].mean()
 
                 loss_dis = loss_dis + _dis
                 loss_adv = loss_adv + _adv
 
             feature_matching_distance = feature_matching_distance / len(
-                feature_true)
+                feature_real)
 
         else:
-            pred_true = torch.tensor(0.).to(x)
+            pred_real = torch.tensor(0.).to(x)
             pred_fake = torch.tensor(0.).to(x)
             loss_dis = torch.tensor(0.).to(x)
             loss_adv = torch.tensor(0.).to(x)
@@ -226,27 +226,19 @@ class RAVE(pl.LightningModule):
             loss_gen['adversarial'] = loss_adv
 
         # OPTIMIZATION
-        if batch_idx % self.update_discriminator_every and self.warmed_up:
+        if not (batch_idx % self.update_discriminator_every) and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(
-                loss_gen,
-                {
-                    'default': y,
-                    'multiband_waveform_distance': y_multiband,
-                    'multiband_spectral_distance': y_multiband,
-                    'regularization': z_pre_reg,
-                },
-            )
+            self.balancer.backward(loss_gen, y_multiband)
             gen_opt.step()
 
         # LOGGING
         if self.warmed_up:
             self.log("loss_dis", loss_dis)
-            self.log("pred_true", pred_true.mean())
+            self.log("pred_real", pred_real.mean())
             self.log("pred_fake", pred_fake.mean())
 
         self.log_dict(loss_gen)
