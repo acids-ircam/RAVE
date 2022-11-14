@@ -1,7 +1,6 @@
 from typing import Sequence, Type
 
 import cached_conv as cc
-import gin
 import numpy as np
 import torch.nn as nn
 

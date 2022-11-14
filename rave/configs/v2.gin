@@ -12,12 +12,6 @@ include "configs/v1.gin"
 
 core.AudioDistanceV1.log_epsilon = 1
 
-fullband/core.MultiScaleSTFT:
-    scales = [8192, 4096, 2048, 1024, 512]
-
-fullband/core.AudioDistanceV1:
-    multiscale_stft = @fullband/core.MultiScaleSTFT
-
 discriminator/core.MultiScaleSTFT:
     magnitude = False
 
@@ -67,4 +61,3 @@ rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
     valid_signal_crop = True
     num_skipped_features = 2
-    audio_distance = @fullband/core.AudioDistanceV1
