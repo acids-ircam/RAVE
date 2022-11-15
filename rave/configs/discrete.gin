@@ -47,15 +47,16 @@ balancer.Balancer:
         'fullband_spectral_distance': 2,
         'multiband_spectral_distance': 2,
         'regularization': .01,
-        'adversarial': 2,
+        'adversarial': 10,
+        'feature_matching': 10
     }
+    scale_gradients = True
 
 # RAVE
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder  
     phase_1_duration = -1
     warmup_quantize = -1
-    audio_distance = @core.EncodecAudioDistance
-    multiband_audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4
     discriminator = @discriminator.MultiScaleSpectralDiscriminator
+    gan_loss = @core.nonsaturating_gan

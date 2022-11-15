@@ -63,4 +63,4 @@ balancer.Balancer:
 rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
     valid_signal_crop = True
-    num_skipped_features = 2
+    num_skipped_features = 1

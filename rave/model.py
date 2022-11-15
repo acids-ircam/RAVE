@@ -226,13 +226,14 @@ class RAVE(pl.LightningModule):
             loss_gen['adversarial'] = loss_adv
 
         # OPTIMIZATION
-        if not (batch_idx % self.update_discriminator_every) and self.warmed_up:
+        if not (batch_idx %
+                self.update_discriminator_every) and self.warmed_up:
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(loss_gen, y_multiband)
+            self.balancer.backward(loss_gen, y_multiband, self.log)
             gen_opt.step()
 
         # LOGGING

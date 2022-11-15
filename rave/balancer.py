@@ -26,18 +26,24 @@ class EMA:
 
 class Balancer:
 
-    def __init__(self,
-                 ema_averager: Callable[[], EMA],
-                 weights: Dict[str, float],
-                 scale_gradients: bool = False,
-                 deny_list: Optional[Sequence[str]] = None) -> None:
+    def __init__(
+        self,
+        ema_averager: Callable[[], EMA],
+        weights: Dict[str, float],
+        scale_gradients: bool = False,
+        deny_list: Optional[Sequence[str]] = None,
+    ) -> None:
         self.ema_averager = ema_averager()
         self.weights = weights
         self.scale_gradients = scale_gradients
         self.deny_list = deny_list
 
-    def backward(self, losses: Dict[str, torch.Tensor],
-                 model_output: torch.Tensor):
+    def backward(
+        self,
+        losses: Dict[str, torch.Tensor],
+        model_output: torch.Tensor,
+        logger=Optional[Callable[[str, float], None]],
+    ):
         grads = {}
         norms = {}
 
@@ -50,7 +56,8 @@ class Balancer:
                 [model_output],
                 retain_graph=True,
             )
-            norms[k] = grads[k].norm()
+            norms[k] = grads[k].norm(
+                dim=tuple(range(1, grads[k].dim()))).mean()
 
         avg_norms = self.ema_averager(norms)
 
@@ -59,10 +66,21 @@ class Balancer:
         for name, norm in avg_norms.items():
             if self.scale_gradients:
                 ratio = self.weights.get(name, 1) / sum_weights
-                grads[name] *= ratio
-                grads[name] /= norm + 1e-6
+                scale = ratio / (norm + 1e-6)
+                grads[name] *= scale
+
+                if logger is not None:
+                    logger(f'scale_{name}', scale)
+                    logger(f'grad_norm_{name}', grads[name].norm())
+                    logger(f'target_norm_{name}', ratio)
             else:
-                grads[name] *= self.weights.get(name, 1)
+                scale = self.weights.get(name, 1)
+                grads[name] *= scale
+
+            if logger is not None:
+                logger(f'scale_{name}', scale)
+                logger(f'grad_norm_{name}', grads[name].norm())
+
 
         full_grad = sum([grads[name] for name in avg_norms.keys()])
         model_output.backward(full_grad, retain_graph=True)
