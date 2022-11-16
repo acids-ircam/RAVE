@@ -16,10 +16,9 @@ class EMA:
         for k, v in inputs.items():
             if not k in self.shadows:
                 self.shadows[k] = v
-                continue
-
-            self.shadows[k] *= self.beta
-            self.shadows[k] += (1 - self.beta) * v
+            else:
+                self.shadows[k] *= self.beta
+                self.shadows[k] += (1 - self.beta) * v
 
             outputs[k] = self.shadows[k].clone()
         return outputs
@@ -27,31 +26,38 @@ class EMA:
 
 class Balancer:
 
-    def __init__(self,
-                 ema_averager: Callable[[], EMA],
-                 weights: Dict[str, float],
-                 scale_gradients: bool = False,
-                 deny_list: Optional[Sequence[str]] = None) -> None:
+    def __init__(
+        self,
+        ema_averager: Callable[[], EMA],
+        weights: Dict[str, float],
+        scale_gradients: bool = False,
+        deny_list: Optional[Sequence[str]] = None,
+    ) -> None:
         self.ema_averager = ema_averager()
         self.weights = weights
         self.scale_gradients = scale_gradients
         self.deny_list = deny_list
 
-    def backward(self, losses: Dict[str, torch.Tensor],
-                 model_output: Dict[str, torch.Tensor]):
+    def backward(
+        self,
+        losses: Dict[str, torch.Tensor],
+        model_output: torch.Tensor,
+        logger=Optional[Callable[[str, float], None]],
+    ):
         grads = {}
         norms = {}
 
         for k, v in losses.items():
             if self.deny_list is not None:
-                if self.k in self.deny_list: continue
+                if k in self.deny_list: continue
 
             grads[k], = torch.autograd.grad(
                 v,
-                [model_output.get(k, model_output['default'])],
+                [model_output],
                 retain_graph=True,
             )
-            norms[k] = grads[k].norm()
+            norms[k] = grads[k].norm(
+                dim=tuple(range(1, grads[k].dim()))).mean()
 
         avg_norms = self.ema_averager(norms)
 
@@ -60,18 +66,26 @@ class Balancer:
         for name, norm in avg_norms.items():
             if self.scale_gradients:
                 ratio = self.weights.get(name, 1) / sum_weights
-                grads[name] *= ratio
-                grads[name] /= norm + 1e-6
-            else:
-                grads[name] *= self.weights.get(name, 1)
+                scale = ratio / (norm + 1e-6)
+                grads[name] *= scale
 
-            model_output.get(name, model_output['default']).backward(
-                grads[name],
-                retain_graph=True,
-            )
+                if logger is not None:
+                    logger(f'scale_{name}', scale)
+                    logger(f'grad_norm_{name}', grads[name].norm())
+                    logger(f'target_norm_{name}', ratio)
+            else:
+                scale = self.weights.get(name, 1)
+                grads[name] *= scale
+
+            if logger is not None:
+                logger(f'scale_{name}', scale)
+                logger(f'grad_norm_{name}', grads[name].norm())
+
+
+        full_grad = sum([grads[name] for name in avg_norms.keys()])
+        model_output.backward(full_grad, retain_graph=True)
 
         if self.deny_list is not None:
             for k in self.deny_list:
                 if k in losses:
-                    (losses[k] *
-                     self.weights.get(k, 1)).backward(retain_graph=True)
+                    losses[k].backward(retain_graph=True)
