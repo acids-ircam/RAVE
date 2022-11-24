@@ -47,7 +47,7 @@ balancer.Balancer:
         'fullband_spectral_distance': 2,
         'multiband_spectral_distance': 2,
         'regularization': .01,
-        'adversarial': 10,
+        'adversarial': 20,
         'feature_matching': 10
     }
     scale_gradients = True

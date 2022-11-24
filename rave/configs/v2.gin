@@ -54,7 +54,7 @@ balancer.Balancer:
         'regularization': .1,
         'adversarial': 2,
     }
-    scale_gradients = True
+    scale_gradients = False
     deny_list = [
         'regularization'
     ]

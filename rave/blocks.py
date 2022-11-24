@@ -492,7 +492,7 @@ class Encoder(nn.Module):
 
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder, beta):
+    def __init__(self, encoder):
         super().__init__()
         self.encoder = encoder()
         self.register_buffer("warmed_up", torch.tensor(0))
@@ -507,6 +507,46 @@ class VariationalEncoder(nn.Module):
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
         return z, kl
+
+    def set_warmed_up(self, state: bool):
+        state = torch.tensor(int(state), device=self.warmed_up.device)
+        self.warmed_up = state
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        if self.warmed_up:
+            z = z.detach()
+        return z
+
+
+class WasserteinEncoder(nn.Module):
+
+    def __init__(self, encoder):
+        super().__init__()
+        self.encoder = encoder()
+        self.register_buffer("warmed_up", torch.tensor(0))
+
+    def compute_kernel(self, x, y):
+        x_size = x.size(0)
+        y_size = y.size(0)
+        dim = x.size(1)
+        x = x.unsqueeze(1)  # (x_size, 1, dim)
+        y = y.unsqueeze(0)  # (1, y_size, dim)
+        tiled_x = x.expand(x_size, y_size, dim)
+        tiled_y = y.expand(x_size, y_size, dim)
+        kernel_input = (tiled_x - tiled_y).pow(2).mean(2) / float(dim)
+        return torch.exp(-kernel_input)  # (x_size, y_size)
+
+    def compute_mmd(self, x, y):
+        x_kernel = self.compute_kernel(x, x)
+        y_kernel = self.compute_kernel(y, y)
+        xy_kernel = self.compute_kernel(x, y)
+        mmd = x_kernel.mean() + y_kernel.mean() - 2 * xy_kernel.mean()
+        return mmd
+
+    def reparametrize(self, z):
+        reg = self.compute_mmd(z, torch.randn_like(z))
+        return z, reg
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
