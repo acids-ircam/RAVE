@@ -81,11 +81,11 @@ class Balancer:
                 logger(f'scale_{name}', scale)
                 logger(f'grad_norm_{name}', grads[name].norm())
 
-
         full_grad = sum([grads[name] for name in avg_norms.keys()])
         model_output.backward(full_grad, retain_graph=True)
 
         if self.deny_list is not None:
             for k in self.deny_list:
                 if k in losses:
-                    losses[k].backward(retain_graph=True)
+                    loss = losses[k] * self.weights.get(k, 1)
+                    loss.backward(retain_graph=True)

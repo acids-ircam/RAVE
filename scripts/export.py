@@ -196,7 +196,7 @@ def main(argv):
 
     gin.parse_config_file(
         os.path.join(FLAGS.run, "config.gin"),
-        skip_unknown=True,
+  #      skip_unknown=True,
     )
     checkpoint = rave.core.search_for_run(FLAGS.run)
 

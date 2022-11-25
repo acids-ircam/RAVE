@@ -54,10 +54,6 @@ balancer.Balancer:
         'regularization': .1,
         'adversarial': 2,
     }
-    scale_gradients = False
-    deny_list = [
-        'regularization'
-    ]
 
 # RAVE
 rave.RAVE:

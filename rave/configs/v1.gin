@@ -99,6 +99,9 @@ balancer.Balancer:
         'regularization': .1,
         'feature_matching': 10,
     }
+    deny_list = [
+        'regularization'
+    ]
     scale_gradients = False
 
 balancer.EMA:
