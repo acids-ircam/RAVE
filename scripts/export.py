@@ -77,6 +77,14 @@ class ScriptedRAVE(nn_tilde.Module):
             ])
             del self.encoder.rvq
 
+        elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
+            self.latent_size = pretrained.latent_size
+
+        else:
+            raise ValueError(
+                f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
+            )
+
         x = torch.zeros(1, 1, 2**14)
         z = self.encoder(self.pqmf(x))
         ratio_encode = x.shape[-1] // z.shape[-1]
@@ -186,6 +194,15 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
         z = self.quantizer.residual_dequantize(z)
         z = self.encoder.add_noise_to_vector(z)
+        return
+
+
+class WasserteinScriptedRAVE(ScriptedRAVE):
+
+    def post_process_latent(self, z):
+        return z
+
+    def pre_process_latent(self, z):
         return z
 
 
@@ -194,10 +211,9 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(
-        os.path.join(FLAGS.run, "config.gin"),
-  #      skip_unknown=True,
-    )
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
+                          #      skip_unknown=True,
+                          )
     checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
@@ -212,6 +228,8 @@ def main(argv):
         script_class = VariationalScriptedRAVE
     elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
         script_class = DiscreteScriptedRAVE
+    elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
+        script_class = WasserteinScriptedRAVE
     else:
         raise ValueError(f"Encoder type {type(pretrained.encoder)} "
                          "not supported for export.")
