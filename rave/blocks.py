@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 from vector_quantize_pytorch import VectorQuantize
+from typing import Sequence
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -488,6 +489,56 @@ class Encoder(nn.Module):
     def forward(self, x):
         z = self.net(x)
         return z
+
+
+class ResidualEncoder(nn.Module):
+
+    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
+                 latent_size: int, n_out: int, kernel_size: int,
+                 dilations: Sequence[int]) -> None:
+        super().__init__()
+        net = [
+            normalization(
+                cc.Conv1d(
+                    data_size,
+                    capacity,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )),
+        ]
+
+        num_channels = capacity
+        for r in ratios:
+            net.append(
+                ResidualLayer(
+                    dim=num_channels,
+                    kernel_size=kernel_size,
+                    dilations=dilations,
+                ))
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                cc.Conv1d(
+                    num_channels,
+                    num_channels * r,
+                    kernel_size=2 * r,
+                    stride=r,
+                    padding=(r // 2, r // 2),
+                ))
+            num_channels *= r
+
+        net.append(nn.LeakyReLU(.2))
+        net.append(
+            cc.Conv1d(
+                num_channels,
+                latent_size * n_out,
+                kernel_size=kernel_size,
+                padding=cc.get_padding(kernel_size),
+            ))
+
+        self.net = cc.CachedSequential(*net)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
 
 
 class VariationalEncoder(nn.Module):

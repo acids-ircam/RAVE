@@ -16,6 +16,6 @@ balancer.Balancer:
     weights = {
         'fullband_spectral_distance': 2,
         'multiband_spectral_distance': 2,
-        'regularization': 10,
+        'regularization': 100,
         'adversarial': 2,
     }

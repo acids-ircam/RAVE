@@ -103,7 +103,6 @@ class ScriptedRAVE(nn_tilde.Module):
                 for i in range(self.latent_size)
             ],
         )
-
         self.register_method(
             "decode",
             in_channels=self.latent_size,
@@ -194,7 +193,7 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
         z = self.quantizer.residual_dequantize(z)
         z = self.encoder.add_noise_to_vector(z)
-        return
+        return z
 
 
 class WasserteinScriptedRAVE(ScriptedRAVE):

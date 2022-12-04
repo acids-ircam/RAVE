@@ -59,3 +59,4 @@ rave.RAVE:
     update_discriminator_every = 4
     discriminator = @discriminator.MultiScaleSpectralDiscriminator
     gan_loss = @core.nonsaturating_gan
+    audio_distance = @core.EncodecAudioDistance
