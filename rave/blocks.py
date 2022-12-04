@@ -146,6 +146,28 @@ class ResidualLayer(nn.Module):
         return self.net(x)
 
 
+class DilatedUnit(nn.Module):
+
+    def __init__(self, dim: int, kernel_size: int, dilation: int) -> None:
+        super().__init__()
+        net = [
+            nn.LeakyReLU(.2),
+            normalization(
+                cc.Conv1d(dim,
+                          dim,
+                          kernel_size=kernel_size,
+                          padding=cc.get_padding(kernel_size))),
+            nn.LeakyReLU(.2),
+            normalization(cc.Conv1d(dim, dim, kernel_size=1)),
+        ]
+
+        self.net = cc.CachedSequential(*net)
+        self.cumulative_delay = net[1].cumulative_delay
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
 class ResidualBlock(nn.Module):
 
     def __init__(self,
@@ -491,7 +513,7 @@ class Encoder(nn.Module):
         return z
 
 
-class ResidualEncoder(nn.Module):
+class EncoderV2(nn.Module):
 
     def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
                  latent_size: int, n_out: int, kernel_size: int,
@@ -509,28 +531,91 @@ class ResidualEncoder(nn.Module):
 
         num_channels = capacity
         for r in ratios:
-            net.append(
-                ResidualLayer(
-                    dim=num_channels,
-                    kernel_size=kernel_size,
-                    dilations=dilations,
-                ))
+            # ADD RESIDUAL DILATED UNITS
+            for d in dilations:
+                net.append(
+                    Residual(
+                        DilatedUnit(
+                            dim=num_channels,
+                            kernel_size=kernel_size,
+                            dilation=d,
+                        )))
+
+            # ADD DOWNSAMPLING UNIT
             net.append(nn.LeakyReLU(.2))
             net.append(
+                normalization(
+                    cc.Conv1d(
+                        num_channels,
+                        num_channels * r,
+                        kernel_size=2 * r,
+                        stride=r,
+                        padding=(r // 2, r // 2),
+                    )))
+
+            num_channels *= r
+
+        net.append(nn.LeakyReLU(.2))
+        net.append(
+            normalization(
                 cc.Conv1d(
                     num_channels,
-                    num_channels * r,
-                    kernel_size=2 * r,
-                    stride=r,
-                    padding=(r // 2, r // 2),
-                ))
-            num_channels *= r
+                    latent_size * n_out,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )))
+
+        self.net = cc.CachedSequential(*net)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class GeneratorV2(nn.Module):
+
+    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
+                 latent_size: int, kernel_size: int,
+                 dilations: Sequence[int]) -> None:
+        super().__init__()
+        num_channels = np.prod(ratios) * capacity
+        net = [
+            normalization(
+                cc.Conv1d(
+                    latent_size,
+                    num_channels,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )),
+        ]
+
+        for r in ratios:
+            # ADD DOWNSAMPLING UNIT
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                normalization(
+                    cc.ConvTranspose1d(num_channels,
+                                       num_channels // r,
+                                       2 * r,
+                                       stride=r,
+                                       padding=r // 2)))
+
+            num_channels = num_channels // r
+
+            # ADD RESIDUAL DILATED UNITS
+            for d in dilations:
+                net.append(
+                    Residual(
+                        DilatedUnit(
+                            dim=num_channels,
+                            kernel_size=kernel_size,
+                            dilation=d,
+                        )))
 
         net.append(nn.LeakyReLU(.2))
         net.append(
             cc.Conv1d(
                 num_channels,
-                latent_size * n_out,
+                data_size,
                 kernel_size=kernel_size,
                 padding=cc.get_padding(kernel_size),
             ))

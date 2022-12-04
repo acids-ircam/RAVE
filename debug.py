@@ -1,12 +1,18 @@
 import torch
-from rave.blocks import ResidualEncoder
+import gin
+from rave.model import RAVE
 
-re = ResidualEncoder(16, 32, [4, 4, 2, 2], 512, 1, 7, [1, 3, 9])
-#
-x = torch.randn(1, 16, 2048)
+gin.parse_config_file('discrete.gin')
 
-print(re(x).shape)
-#
-import cached_conv as cc
+model = RAVE()
 
-print(cc.get_padding(4,2))
+
+x = torch.randn(1,1,2**16)
+
+z = model.encode(x)
+
+print(z.shape)
+
+y = model.decode(z)
+
+print(y.shape)
