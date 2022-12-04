@@ -18,6 +18,9 @@ CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = True
 KERNEL_SIZE = 3
 
+CAPACITY = 32
+DISCRIMINATOR_CAPACITY = 64
+
 # ENCODER
 blocks.ResidualVectorQuantize:
     dim = %LATENT_SIZE
@@ -66,6 +69,9 @@ feature_matching/core.mean_difference:
     relative = True
 
 # DISCRIMINATOR
+discriminator.ConvNet:
+    capacity = %DISCRIMINATOR_CAPACITY
+
 discriminator/core.MultiScaleSTFT:
     magnitude = False
 

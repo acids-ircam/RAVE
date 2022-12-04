@@ -577,7 +577,7 @@ class GeneratorV2(nn.Module):
                  latent_size: int, kernel_size: int,
                  dilations: Sequence[int]) -> None:
         super().__init__()
-        num_channels = np.prod(ratios) * capacity
+        num_channels = np.prod(ratios) * capacity * 2
         net = [
             normalization(
                 cc.Conv1d(
@@ -624,6 +624,9 @@ class GeneratorV2(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+    
+    def set_warmed_up(self, state: bool):
+        pass
 
 
 class VariationalEncoder(nn.Module):

@@ -22,7 +22,7 @@ PHASE_1_DURATION = 1000000
 core.AudioDistanceV1:
     multiscale_stft = @core.MultiScaleSTFT
     log_epsilon = 1e-7
-    
+
 core.MultiScaleSTFT:
     scales = [2048, 1024, 512, 256, 128]
     sample_rate = %SAMPLING_RATE
