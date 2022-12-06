@@ -52,23 +52,26 @@ def float_array_to_int16_bytes(x):
 
 
 def load_audio_chunk(path: str, n_signal: int,
-                     sr: int, channels: int = 1) -> Iterable[np.ndarray]:
+                     sr: int, channel: int = 1) -> Iterable[np.ndarray]:
     process = subprocess.Popen(
         [
             'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, '-ac',
-            str(channels), '-ar',
-            str(sr), '-f', 's16le', '-'
+            '1', '-ar', '-filter_complex',
+            '[0:a]channelmap=%d[0]'%channel,
+            str(sr), '-f', 's16le', '-map',
+            '[0]', '-'
         ],
         stdout=subprocess.PIPE,
     )
 
-    chunk = process.stdout.read(n_signal * 2 * channels)
-    while len(chunk) == n_signal * 2 * channels:
+    chunk = process.stdout.read(n_signal)
+    while len(chunk) == n_signal * 2:
         yield chunk
-        chunk = process.stdout.read(n_signal * 2 * channels)
-
+        chunk = process.stdout.read(n_signal * 2) 
     process.stdout.close()
 
+def load_audio_chunk_mc(path: str, n_signal: int, sr: int, channels: int = 1):
+    return torch.stack([load_audio_chunk(path, n_signal, sr, i) for i in range(channels)])
 
 def get_audio_length(path: str) -> float:
     process = subprocess.Popen(
@@ -163,12 +166,13 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
     for p in paths:
         for ext in extensions:
             audios.append(p.rglob(f'*.{ext}'))
+            audios.append(p.rglob(f'*.{ext.upper()}'))
     audios = flatten(audios)
     return audios
 
 
 def main(argv):
-    chunk_load = partial(load_audio_chunk,
+    chunk_load = partial(load_audio_chunk_mc,
                          n_signal=FLAGS.num_signal,
                          sr=FLAGS.sampling_rate,
                          channels=FLAGS.channels)

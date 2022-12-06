@@ -1,0 +1,21 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import blocks
+from rave import balancer
+
+blocks.Encoder.n_out = 1
+
+blocks.WasserteinEncoder:
+    encoder_cls = @blocks.Encoder
+
+rave.RAVE:
+    encoder = @blocks.WasserteinEncoder
+
+balancer.Balancer:
+    weights = {
+        'fullband_spectral_distance': 2,
+        'multiband_spectral_distance': 2,
+        'regularization': 100,
+        'adversarial': 2,
+    }

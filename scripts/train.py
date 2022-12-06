@@ -70,6 +70,7 @@ def main(argv):
         FLAGS.n_signal,
         n_channels,
     )
+    
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
                        FLAGS.batch,

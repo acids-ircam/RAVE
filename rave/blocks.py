@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 from vector_quantize_pytorch import VectorQuantize
+from typing import Sequence
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -142,6 +143,28 @@ class ResidualLayer(nn.Module):
         self.cumulative_delay = self.net.cumulative_delay
 
     def forward(self, x):
+        return self.net(x)
+
+
+class DilatedUnit(nn.Module):
+
+    def __init__(self, dim: int, kernel_size: int, dilation: int) -> None:
+        super().__init__()
+        net = [
+            nn.LeakyReLU(.2),
+            normalization(
+                cc.Conv1d(dim,
+                          dim,
+                          kernel_size=kernel_size,
+                          padding=cc.get_padding(kernel_size))),
+            nn.LeakyReLU(.2),
+            normalization(cc.Conv1d(dim, dim, kernel_size=1)),
+        ]
+
+        self.net = cc.CachedSequential(*net)
+        self.cumulative_delay = net[1].cumulative_delay
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
 
@@ -492,6 +515,122 @@ class Encoder(nn.Module):
         return z
 
 
+class EncoderV2(nn.Module):
+
+    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
+                 latent_size: int, n_out: int, kernel_size: int,
+                 dilations: Sequence[int]) -> None:
+        super().__init__()
+        net = [
+            normalization(
+                cc.Conv1d(
+                    data_size,
+                    capacity,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )),
+        ]
+
+        num_channels = capacity
+        for r in ratios:
+            # ADD RESIDUAL DILATED UNITS
+            for d in dilations:
+                net.append(
+                    Residual(
+                        DilatedUnit(
+                            dim=num_channels,
+                            kernel_size=kernel_size,
+                            dilation=d,
+                        )))
+
+            # ADD DOWNSAMPLING UNIT
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                normalization(
+                    cc.Conv1d(
+                        num_channels,
+                        num_channels * r,
+                        kernel_size=2 * r,
+                        stride=r,
+                        padding=(r // 2, r // 2),
+                    )))
+
+            num_channels *= r
+
+        net.append(nn.LeakyReLU(.2))
+        net.append(
+            normalization(
+                cc.Conv1d(
+                    num_channels,
+                    latent_size * n_out,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )))
+
+        self.net = cc.CachedSequential(*net)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class GeneratorV2(nn.Module):
+
+    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
+                 latent_size: int, kernel_size: int,
+                 dilations: Sequence[int]) -> None:
+        super().__init__()
+        num_channels = np.prod(ratios) * capacity * 2
+        net = [
+            normalization(
+                cc.Conv1d(
+                    latent_size,
+                    num_channels,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )),
+        ]
+
+        for r in ratios:
+            # ADD DOWNSAMPLING UNIT
+            net.append(nn.LeakyReLU(.2))
+            net.append(
+                normalization(
+                    cc.ConvTranspose1d(num_channels,
+                                       num_channels // r,
+                                       2 * r,
+                                       stride=r,
+                                       padding=r // 2)))
+
+            num_channels = num_channels // r
+
+            # ADD RESIDUAL DILATED UNITS
+            for d in dilations:
+                net.append(
+                    Residual(
+                        DilatedUnit(
+                            dim=num_channels,
+                            kernel_size=kernel_size,
+                            dilation=d,
+                        )))
+
+        net.append(nn.LeakyReLU(.2))
+        net.append(
+            cc.Conv1d(
+                num_channels,
+                data_size,
+                kernel_size=kernel_size,
+                padding=cc.get_padding(kernel_size),
+            ))
+
+        self.net = cc.CachedSequential(*net)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+    
+    def set_warmed_up(self, state: bool):
+        pass
+
+
 class VariationalEncoder(nn.Module):
 
     def __init__(self, encoder, beta: float = 1.0, n_channels=1):
@@ -510,6 +649,40 @@ class VariationalEncoder(nn.Module):
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
 
         return z, self.beta * kl
+
+    def set_warmed_up(self, state: bool):
+        state = torch.tensor(int(state), device=self.warmed_up.device)
+        self.warmed_up = state
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        if self.warmed_up:
+            z = z.detach()
+        return z
+
+
+class WasserteinEncoder(nn.Module):
+
+    def __init__(self, encoder_cls):
+        super().__init__()
+        self.encoder = encoder_cls()
+        self.register_buffer("warmed_up", torch.tensor(0))
+
+    def compute_mean_kernel(self, x, y):
+        kernel_input = (x[:, None] - y[None]).pow(2).mean(2) / x.shape[-1]
+        return torch.exp(-kernel_input).mean()
+
+    def compute_mmd(self, x, y):
+        x_kernel = self.compute_mean_kernel(x, x)
+        y_kernel = self.compute_mean_kernel(y, y)
+        xy_kernel = self.compute_mean_kernel(x, y)
+        mmd = x_kernel + y_kernel - 2 * xy_kernel
+        return mmd
+
+    def reparametrize(self, z):
+        z_reshaped = z.permute(0, 2, 1).reshape(-1, z.shape[1])
+        reg = self.compute_mmd(z_reshaped, torch.randn_like(z_reshaped))
+        return z, reg.mean()
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
