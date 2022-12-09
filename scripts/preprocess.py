@@ -180,12 +180,6 @@ def main(argv):
     audios = map(os.path.abspath, audios)
     audios = [*audios]
 
-    with open(os.path.join(
-            FLAGS.output_path,
-            'metadata.yaml',
-    ), 'w') as metadata:
-        yaml.safe_dump({'lazy': FLAGS.lazy}, metadata)
-
     if not FLAGS.lazy:
         # load chunks
         chunks = flatmap(pool, chunk_load, audios)
@@ -207,11 +201,17 @@ def main(argv):
         processed_samples = map(partial(process_audio_file, env=env),
                                 audio_lengths)
         pbar = tqdm(processed_samples)
-        total = 0
+        n_seconds = 0
         for length in pbar:
-            total += length
-            pbar.set_description(f'dataset length: {timedelta(seconds=total)}')
+            n_seconds += length
+            pbar.set_description(
+                f'dataset length: {timedelta(seconds=n_seconds)}')
 
+    with open(os.path.join(
+            FLAGS.output_path,
+            'metadata.yaml',
+    ), 'w') as metadata:
+        yaml.safe_dump({'lazy': FLAGS.lazy, 'n_seconds': n_seconds}, metadata)
     pool.close()
 
 

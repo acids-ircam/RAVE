@@ -1,10 +1,58 @@
-from typing import Sequence, Type
+from typing import Sequence, Type, Optional, Tuple
 
 import cached_conv as cc
 import numpy as np
 import torch.nn as nn
 
 from .blocks import normalization
+
+
+def rectified_2d_conv_block(
+    capacity,
+    kernel_sizes,
+    strides: Optional[Tuple[int, int]] = None,
+    dilations: Optional[Tuple[int, int]] = None,
+    in_size: Optional[int] = None,
+    out_size: Optional[int] = None,
+):
+    if dilations is None:
+        paddings = kernel_sizes[0] // 2, kernel_sizes[1] // 2
+    else:
+        fks = (kernel_sizes[0] - 1) * dilations[0], (kernel_sizes[1] -
+                                                     1) * dilations[1]
+        paddings = fks[0] // 2, fks[1] // 2
+
+    conv = normalization(
+        nn.Conv2d(
+            in_size or capacity,
+            out_size or capacity,
+            kernel_size=kernel_sizes,
+            stride=strides or (1, 1),
+            dilation=dilations or (1,1),
+            padding=paddings,
+        ))
+    return nn.Sequential(conv, nn.LeakyReLU(.2))
+
+
+class EncodecConvNet(nn.Module):
+
+    def __init__(self, capacity: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            rectified_2d_conv_block(capacity, (9, 3), in_size=2),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 1)),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 2)),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 4)),
+            rectified_2d_conv_block(capacity, (3, 3)),
+            rectified_2d_conv_block(capacity, (3, 3), out_size=1),
+        )
+
+    def forward(self, x):
+        features = []
+        for layer in self.net:
+            x = layer(x)
+            features.append(x)
+        return features
 
 
 class ConvNet(nn.Module):

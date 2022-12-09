@@ -57,6 +57,8 @@ def main(argv):
 
     model = rave.RAVE()
 
+    print(model)
+    
     dataset = rave.dataset.get_dataset(
         FLAGS.db_path,
         model.sr,

@@ -1,18 +1,16 @@
 import torch
-import gin
-from rave.model import RAVE
-
-gin.parse_config_file('discrete.gin')
-
-model = RAVE()
+from rave.discriminator import EncodecConvNet
+import torchsummary
 
 
-x = torch.randn(1,1,2**16)
+x = torch.randn(1, 2, 64, 256)
+net = EncodecConvNet(32)
 
-z = model.encode(x)
 
-print(z.shape)
+numel = 0
 
-y = model.decode(z)
+for p in net.parameters():
+    if p.requires_grad:
+        numel += p.numel()
 
-print(y.shape)
+print(numel/1e6)

@@ -13,6 +13,26 @@ import rave.core
 from .balancer import Balancer
 from .blocks import DiscreteEncoder, VariationalEncoder
 
+from time import time
+
+
+class Profiler:
+
+    def __init__(self):
+        self.ticks = [[time(), None]]
+
+    def tick(self, msg):
+        self.ticks.append([time(), msg])
+
+    def __repr__(self):
+        rep = 80 * "=" + "\n"
+        for i in range(1, len(self.ticks)):
+            msg = self.ticks[i][1]
+            ellapsed = self.ticks[i][0] - self.ticks[i - 1][0]
+            rep += msg + f": {ellapsed*1000:.2f}ms\n"
+        rep += 80 * "=" + "\n\n\n"
+        return rep
+
 
 class WarmupCallback(pl.Callback):
 
@@ -130,11 +150,13 @@ class RAVE(pl.LightningModule):
         return feature_real, feature_fake
 
     def training_step(self, batch, batch_idx):
+        p = Profiler()
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
         x.requires_grad = True
 
         x_multiband = self.pqmf(x)
+        p.tick('decompose')
 
         self.encoder.set_warmed_up(self.warmed_up)
         self.decoder.set_warmed_up(self.warmed_up)
@@ -142,9 +164,11 @@ class RAVE(pl.LightningModule):
         # ENCODE INPUT
         z_pre_reg = self.encoder(x_multiband)
         z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
+        p.tick('encode')
 
         # DECODE LATENT
         y_multiband = self.decoder(z)
+        p.tick('decode')
 
         if self.valid_signal_crop and self.receptive_field.sum():
             x_multiband = rave.core.valid_signal_crop(
@@ -155,15 +179,19 @@ class RAVE(pl.LightningModule):
                 y_multiband,
                 *self.receptive_field,
             )
+        p.tick('crop')
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
         multiband_distance = self.multiband_audio_distance(
             x_multiband, y_multiband)
+        p.tick('mb distance')
 
         x = self.pqmf.inverse(x_multiband)
         y = self.pqmf.inverse(y_multiband)
+        p.tick('recompose')
 
         fullband_distance = self.audio_distance(x, y)
+        p.tick('fb distance')
 
         distances = {}
 
@@ -212,11 +240,12 @@ class RAVE(pl.LightningModule):
             pred_fake = torch.tensor(0.).to(x)
             loss_dis = torch.tensor(0.).to(x)
             loss_adv = torch.tensor(0.).to(x)
+        p.tick('discrimination')
 
         # COMPOSE GEN LOSS
         loss_gen = {}
-
         loss_gen.update(distances)
+        p.tick('update loss gen dict')
 
         if reg.item():
             loss_gen['regularization'] = reg
@@ -233,7 +262,11 @@ class RAVE(pl.LightningModule):
             dis_opt.step()
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(loss_gen, y_multiband, self.log)
+            self.balancer.backward(
+                loss_gen,
+                y_multiband,
+                None, 
+            )
             gen_opt.step()
 
         # LOGGING
@@ -243,6 +276,8 @@ class RAVE(pl.LightningModule):
             self.log("pred_fake", pred_fake.mean())
 
         self.log_dict(loss_gen)
+        p.tick('logging')
+
 
     def encode(self, x):
         x = self.pqmf(x)

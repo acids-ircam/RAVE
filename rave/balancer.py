@@ -1,6 +1,6 @@
 # Balancer - credit to https://github.com/facebookresearch/encodec
 
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Dict, Optional, Sequence, Any
 
 import torch
 
@@ -43,6 +43,7 @@ class Balancer:
         losses: Dict[str, torch.Tensor],
         model_output: torch.Tensor,
         logger=Optional[Callable[[str, float], None]],
+        profiler: Optional[Any] = None,
     ):
         grads = {}
         norms = {}
@@ -59,7 +60,13 @@ class Balancer:
             norms[k] = grads[k].norm(
                 dim=tuple(range(1, grads[k].dim()))).mean()
 
+            if profiler is not None:
+                profiler(f'partial backward {k}')
+
         avg_norms = self.ema_averager(norms)
+
+        if profiler is not None:
+            profiler('grad norm estimation')
 
         sum_weights = sum([self.weights.get(k, 1) for k in avg_norms])
 
@@ -81,8 +88,14 @@ class Balancer:
                 logger(f'scale_{name}', scale)
                 logger(f'grad_norm_{name}', grads[name].norm())
 
+        if profiler is not None:
+            profiler('norm scaling')
+
         full_grad = sum([grads[name] for name in avg_norms.keys()])
         model_output.backward(full_grad, retain_graph=True)
+
+        if profiler is not None:
+            profiler('scaled backward')
 
         if self.deny_list is not None:
             for k in self.deny_list:
@@ -90,3 +103,6 @@ class Balancer:
                     loss = losses[k] * self.weights.get(k, 1)
                     if loss.requires_grad:
                         loss.backward(retain_graph=True)
+
+        if profiler is not None:
+            profiler('denied backward')

@@ -10,8 +10,8 @@ from rave import discriminator
 
 import torch.nn as nn
 
-NUM_QUANTIZERS = 8
-RATIOS = [4, 4, 2, 2]
+NUM_QUANTIZERS = 16
+RATIOS = [4, 2, 2, 2, 2]
 DILATIONS = [1, 3, 9]
 LATENT_SIZE = 512
 CODEBOOK_SIZE = 1024
@@ -19,7 +19,6 @@ DYNAMIC_MASKING = True
 KERNEL_SIZE = 3
 
 CAPACITY = 32
-DISCRIMINATOR_CAPACITY = 64
 
 # ENCODER
 blocks.ResidualVectorQuantize:
@@ -56,34 +55,19 @@ blocks.GeneratorV2:
 core.AudioDistanceV1:
     log_epsilon = 1
 
-encodec/core.MultiScaleSTFT:
-    num_mels = 64
-    scales = [32, 64, 128, 256, 512, 1024, 2048]
-    magnitude = False
-
-core.EncodecAudioDistance:
-    multiscale_stft = @encodec/core.MultiScaleSTFT
-    log_epsilon = 1
-
 feature_matching/core.mean_difference:
     relative = True
 
 # DISCRIMINATOR
-discriminator.ConvNet:
-    capacity = %DISCRIMINATOR_CAPACITY
+discriminator.EncodecConvNet.capacity = %CAPACITY
 
 discriminator/core.MultiScaleSTFT:
     magnitude = False
 
-spectral/discriminator.ConvNet:
-    conv = @nn.Conv2d
-    kernel_size = 5
-    in_size = 2
-
 discriminator.MultiScaleSpectralDiscriminator:
     multiscale_stft = @discriminator/core.MultiScaleSTFT
     n_discriminators = 5
-    convnet = @spectral/discriminator.ConvNet
+    convnet = @spectral/discriminator.EncodecConvNet
 
 # BALANCER
 balancer.Balancer:
@@ -91,7 +75,7 @@ balancer.Balancer:
         'fullband_spectral_distance': 2,
         'multiband_spectral_distance': 2,
         'adversarial': 20,
-        'feature_matching': 20,
+        'feature_matching': 10,
     }
     scale_gradients = True
 
@@ -99,11 +83,10 @@ balancer.Balancer:
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
     decoder = @blocks.GeneratorV2
-    phase_1_duration = -1
+    phase_1_duration = 100000
     warmup_quantize = -1
-    update_discriminator_every = 4
+    update_discriminator_every = 2
     discriminator = @discriminator.MultiScaleSpectralDiscriminator
-    gan_loss = @core.nonsaturating_gan
-    audio_distance = @core.EncodecAudioDistance
+    gan_loss = @core.hinge_gan
     valid_signal_crop =  True
     num_skipped_features = 1
