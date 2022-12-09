@@ -265,7 +265,7 @@ class RAVE(pl.LightningModule):
             self.balancer.backward(
                 loss_gen,
                 y_multiband,
-                None, 
+                None,
             )
             gen_opt.step()
 
@@ -277,7 +277,6 @@ class RAVE(pl.LightningModule):
 
         self.log_dict(loss_gen)
         p.tick('logging')
-
 
     def encode(self, x):
         x = self.pqmf(x)
@@ -363,3 +362,11 @@ class RAVE(pl.LightningModule):
         self.logger.experiment.add_audio("audio_val", y, self.eval_number,
                                          self.sr)
         self.eval_number += 1
+
+    def on_fit_start(self):
+        tb = self.logger.experiment
+        config = gin.operative_config_str()
+        config = config.split('\n')
+        config = ['```'] + config + ['```']
+        config = '\n'.join(config)
+        tb.add_text("config", config)
