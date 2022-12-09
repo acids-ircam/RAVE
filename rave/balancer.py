@@ -1,6 +1,6 @@
 # Balancer - credit to https://github.com/facebookresearch/encodec
 
-from typing import Callable, Dict, Optional, Sequence, Any
+from typing import Any, Callable, Dict, Optional, Sequence
 
 import torch
 

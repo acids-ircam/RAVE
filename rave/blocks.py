@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 import cached_conv as cc
 import gin
@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 from vector_quantize_pytorch import VectorQuantize
-from typing import Sequence
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -156,7 +155,11 @@ class DilatedUnit(nn.Module):
                 cc.Conv1d(dim,
                           dim,
                           kernel_size=kernel_size,
-                          padding=cc.get_padding(kernel_size))),
+                          dilation=dilation,
+                          padding=cc.get_padding(
+                              kernel_size,
+                              dilation=dilation,
+                          ))),
             nn.LeakyReLU(.2),
             normalization(cc.Conv1d(dim, dim, kernel_size=1)),
         ]
@@ -590,7 +593,7 @@ class GeneratorV2(nn.Module):
         ]
 
         for r in ratios:
-            # ADD DOWNSAMPLING UNIT
+            # ADD UPSAMPLING UNIT
             net.append(nn.LeakyReLU(.2))
             net.append(
                 normalization(
@@ -614,12 +617,13 @@ class GeneratorV2(nn.Module):
 
         net.append(nn.LeakyReLU(.2))
         net.append(
-            cc.Conv1d(
-                num_channels,
-                data_size,
-                kernel_size=kernel_size,
-                padding=cc.get_padding(kernel_size),
-            ))
+            normalization(
+                cc.Conv1d(
+                    num_channels,
+                    data_size,
+                    kernel_size=kernel_size,
+                    padding=cc.get_padding(kernel_size),
+                )))
 
         self.net = cc.CachedSequential(*net)
 

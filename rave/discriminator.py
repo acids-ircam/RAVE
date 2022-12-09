@@ -1,4 +1,4 @@
-from typing import Sequence, Type, Optional, Tuple
+from typing import Optional, Sequence, Tuple, Type
 
 import cached_conv as cc
 import numpy as np
@@ -28,7 +28,7 @@ def rectified_2d_conv_block(
             out_size or capacity,
             kernel_size=kernel_sizes,
             stride=strides or (1, 1),
-            dilation=dilations or (1,1),
+            dilation=dilations or (1, 1),
             padding=paddings,
         ))
     return nn.Sequential(conv, nn.LeakyReLU(.2))

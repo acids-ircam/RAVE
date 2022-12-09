@@ -1,3 +1,4 @@
+from time import time
 from typing import Callable, Optional
 
 import gin
@@ -12,8 +13,6 @@ import rave.core
 
 from .balancer import Balancer
 from .blocks import DiscreteEncoder, VariationalEncoder
-
-from time import time
 
 
 class Profiler:
@@ -365,8 +364,15 @@ class RAVE(pl.LightningModule):
 
     def on_fit_start(self):
         tb = self.logger.experiment
+
         config = gin.operative_config_str()
         config = config.split('\n')
         config = ['```'] + config + ['```']
         config = '\n'.join(config)
         tb.add_text("config", config)
+
+        model = str(self)
+        model = model.split('\n')
+        model = ['```'] + model + ['```']
+        model = '\n'.join(model)
+        tb.add_text("model", model)
