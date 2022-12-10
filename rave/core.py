@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from random import random
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 import gin
 import GPUtil as gpu
@@ -144,9 +144,8 @@ def get_rave_receptive_field(model: nn.Module):
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
 
-        z = model.encoder(model.pqmf(x))[:, :model.latent_size]
-        y = model.pqmf.inverse(model.decoder(z))
-
+        y = model.decode(model.encode(x))
+        
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"
 
@@ -293,24 +292,79 @@ class AudioDistanceV1(nn.Module):
         return {'spectral_distance': distance}
 
 
-class EncodecAudioDistance(AudioDistanceV1):
+class EncodecAudioDistance(nn.Module):
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        stfts_x = self.multiscale_stft(x)
-        stfts_y = self.multiscale_stft(y)
+    def __init__(self, scales: int,
+                 spectral_distance: Callable[[int], nn.Module]) -> None:
+        super().__init__()
+        self.waveform_distance = WaveformDistance(norm='L1')
+        self.spectral_distances = nn.ModuleList(
+            [spectral_distance(scale) for scale in scales])
 
-        waveform_distance = mean_difference(x, y)
-
-        spectral_distance = 0.
-        for sx, sy in zip(stfts_x, stfts_y):
-            l1_spec = mean_difference(sx, sy, norm='L1')
-            l2_spec = mean_difference(sx, sy, norm='L2')
-
-            spectral_distance = spectral_distance + l1_spec + l2_spec
-
-        spectral_distance = spectral_distance / len(stfts_x)
+    def forward(self, x, y):
+        waveform_distance = self.waveform_distance(x, y)
+        spectral_distance = 0
+        for dist in self.spectral_distances:
+            spectral_distance = spectral_distance + dist(x, y)
 
         return {
             'waveform_distance': waveform_distance,
-            'spectral_distance': spectral_distance,
+            'spectral_distance': spectral_distance
         }
+
+
+class WaveformDistance(nn.Module):
+
+    def __init__(self, norm: str) -> None:
+        super().__init__()
+        self.norm = norm
+
+    def forward(self, x, y):
+        return mean_difference(y, x, self.norm)
+
+
+class SpectralDistance(nn.Module):
+
+    def __init__(
+        self,
+        n_fft: int,
+        sampling_rate: int,
+        norm: Union[str, Sequence[str]],
+        power: Union[int, None],
+        normalized: bool,
+        mel: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        if mel:
+            self.spec = torchaudio.transforms.MelSpectrogram(
+                sampling_rate,
+                n_fft,
+                hop_length=n_fft // 4,
+                n_mels=mel,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+        else:
+            self.spec = torchaudio.transforms.Spectrogram(
+                n_fft,
+                hop_length=n_fft // 4,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+
+        if isinstance(norm, str):
+            norm = (norm, )
+        self.norm = norm
+
+    def forward(self, x, y):
+        x = self.spec(x)
+        y = self.spec(y)
+
+        distance = 0
+        for norm in self.norm:
+            distance = distance + mean_difference(y, x, norm)
+        return distance

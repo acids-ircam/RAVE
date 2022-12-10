@@ -518,17 +518,23 @@ class Encoder(nn.Module):
 
 class EncoderV2(nn.Module):
 
-    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
-                 latent_size: int, n_out: int, kernel_size: int,
-                 dilations: Sequence[int]) -> None:
+    def __init__(self,
+                 data_size: int,
+                 capacity: int,
+                 ratios: Sequence[int],
+                 latent_size: int,
+                 n_out: int,
+                 kernel_size: int,
+                 dilations: Sequence[int],
+                 keep_dim: bool = False) -> None:
         super().__init__()
         net = [
             normalization(
                 cc.Conv1d(
                     data_size,
                     capacity,
-                    kernel_size=kernel_size,
-                    padding=cc.get_padding(kernel_size),
+                    kernel_size=kernel_size * 2 + 1,
+                    padding=cc.get_padding(kernel_size * 2 + 1),
                 )),
         ]
 
@@ -546,17 +552,22 @@ class EncoderV2(nn.Module):
 
             # ADD DOWNSAMPLING UNIT
             net.append(nn.LeakyReLU(.2))
+
+            if keep_dim:
+                out_channels = num_channels * r
+            else:
+                out_channels = num_channels * 2
             net.append(
                 normalization(
                     cc.Conv1d(
                         num_channels,
-                        num_channels * r,
+                        out_channels,
                         kernel_size=2 * r,
                         stride=r,
                         padding=(r // 2, r // 2),
                     )))
 
-            num_channels *= r
+            num_channels = out_channels
 
         net.append(nn.LeakyReLU(.2))
         net.append(
@@ -576,12 +587,22 @@ class EncoderV2(nn.Module):
 
 class GeneratorV2(nn.Module):
 
-    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
-                 latent_size: int, kernel_size: int,
-                 dilations: Sequence[int]) -> None:
+    def __init__(self,
+                 data_size: int,
+                 capacity: int,
+                 ratios: Sequence[int],
+                 latent_size: int,
+                 kernel_size: int,
+                 dilations: Sequence[int],
+                 keep_dim: bool = False) -> None:
         super().__init__()
         ratios = ratios[::-1]
-        num_channels = np.prod(ratios) * capacity
+
+        if keep_dim:
+            num_channels = np.prod(ratios) * capacity
+        else:
+            num_channels = 2**len(ratios) * capacity
+            
         net = [
             normalization(
                 cc.Conv1d(
@@ -594,16 +615,20 @@ class GeneratorV2(nn.Module):
 
         for r in ratios:
             # ADD UPSAMPLING UNIT
+            if keep_dim:
+                out_channels = num_channels // r
+            else:
+                out_channels = num_channels // 2
             net.append(nn.LeakyReLU(.2))
             net.append(
                 normalization(
                     cc.ConvTranspose1d(num_channels,
-                                       num_channels // r,
+                                       out_channels,
                                        2 * r,
                                        stride=r,
                                        padding=r // 2)))
 
-            num_channels = num_channels // r
+            num_channels = out_channels
 
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
@@ -621,8 +646,8 @@ class GeneratorV2(nn.Module):
                 cc.Conv1d(
                     num_channels,
                     data_size,
-                    kernel_size=kernel_size,
-                    padding=cc.get_padding(kernel_size),
+                    kernel_size=kernel_size * 2 + 1,
+                    padding=cc.get_padding(kernel_size * 2 + 1),
                 )))
 
         self.net = cc.CachedSequential(*net)

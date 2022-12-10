@@ -64,10 +64,10 @@ discriminator.EncodecConvNet.capacity = %CAPACITY
 discriminator/core.MultiScaleSTFT:
     magnitude = False
 
-discriminator.MultiScaleSpectralDiscriminator:
-    multiscale_stft = @discriminator/core.MultiScaleSTFT
-    n_discriminators = 5
-    convnet = @spectral/discriminator.EncodecConvNet
+# discriminator.MultiScaleSpectralDiscriminator:
+    # multiscale_stft = @discriminator/core.MultiScaleSTFT
+    # n_discriminators = 5
+    # convnet = @spectral/discriminator.EncodecConvNet
 
 # BALANCER
 balancer.Balancer:

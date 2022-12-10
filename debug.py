@@ -1,15 +1,25 @@
+# %%
+import rave
+import gin
 import torch
-import torchsummary
 
-from rave.discriminator import EncodecConvNet
+gin.enter_interactive_mode()
+gin.parse_config_file('encodec.gin')
 
-x = torch.randn(1, 2, 64, 256)
-net = EncodecConvNet(32)
+model = rave.RAVE()
+# %%
+print(model)
+# %%
 
-numel = 0
+x  =torch.randn(1,1,131072)
 
-for p in net.parameters():
-    if p.requires_grad:
-        numel += p.numel()
+z = model.encode(x)
 
-print(numel / 1e6)
+y = model.decode(z)
+
+print(x.shape, z.shape, y.shape)
+# %%
+131072//256
+# %%
+44100/512
+# %%

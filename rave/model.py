@@ -72,7 +72,6 @@ class RAVE(pl.LightningModule):
     def __init__(
         self,
         latent_size,
-        pqmf,
         sampling_rate,
         encoder,
         decoder,
@@ -86,11 +85,15 @@ class RAVE(pl.LightningModule):
         multiband_audio_distance: Callable[[], nn.Module],
         balancer: Callable[[], Balancer],
         warmup_quantize: Optional[int] = None,
+        pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
     ):
         super().__init__()
 
-        self.pqmf = pqmf()
+        self.pqmf = None
+        if pqmf is not None:
+            self.pqmf = pqmf()
+
         self.encoder = encoder()
         self.decoder = decoder()
         self.discriminator = discriminator()
@@ -154,7 +157,10 @@ class RAVE(pl.LightningModule):
         x = batch.unsqueeze(1)
         x.requires_grad = True
 
-        x_multiband = self.pqmf(x)
+        if self.pqmf is not None:
+            x_multiband = self.pqmf(x)
+        else:
+            x_multiband = x
         p.tick('decompose')
 
         self.encoder.set_warmed_up(self.warmed_up)
@@ -181,21 +187,26 @@ class RAVE(pl.LightningModule):
         p.tick('crop')
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        multiband_distance = self.multiband_audio_distance(
-            x_multiband, y_multiband)
-        p.tick('mb distance')
+        distances = {}
 
-        x = self.pqmf.inverse(x_multiband)
-        y = self.pqmf.inverse(y_multiband)
-        p.tick('recompose')
+        if self.pqmf is not None:
+            multiband_distance = self.multiband_audio_distance(
+                x_multiband, y_multiband)
+            p.tick('mb distance')
+
+            x = self.pqmf.inverse(x_multiband)
+            y = self.pqmf.inverse(y_multiband)
+            p.tick('recompose')
+
+            for k, v in multiband_distance.items():
+                distances[f'multiband_{k}'] = v
+        else:
+            x = x_multiband
+            y = y_multiband
 
         fullband_distance = self.audio_distance(x, y)
         p.tick('fb distance')
 
-        distances = {}
-
-        for k, v in multiband_distance.items():
-            distances[f'multiband_{k}'] = v
         for k, v in fullband_distance.items():
             distances[f'fullband_{k}'] = v
 
@@ -264,7 +275,7 @@ class RAVE(pl.LightningModule):
             self.balancer.backward(
                 loss_gen,
                 y_multiband,
-                None,
+                self.log,
             )
             gen_opt.step()
 
@@ -278,13 +289,15 @@ class RAVE(pl.LightningModule):
         p.tick('logging')
 
     def encode(self, x):
-        x = self.pqmf(x)
+        if self.pqmf is not None:
+            x = self.pqmf(x)
         z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
     def decode(self, z):
         y = self.decoder(z)
-        y = self.pqmf.inverse(y)
+        if self.pqmf is not None:
+            y = self.pqmf.inverse(y)
         return y
 
     def forward(self, x):
@@ -293,7 +306,10 @@ class RAVE(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
 
         x = batch.unsqueeze(1)
-        x = self.pqmf(x)
+
+        if self.pqmf is not None:
+            x = self.pqmf(x)
+
         z = self.encoder(x)
 
         if isinstance(self.encoder, VariationalEncoder):
@@ -304,8 +320,9 @@ class RAVE(pl.LightningModule):
         z = self.encoder.reparametrize(z)[0]
         y = self.decoder(z)
 
-        x = self.pqmf.inverse(x)
-        y = self.pqmf.inverse(y)
+        if self.pqmf is not None:
+            x = self.pqmf.inverse(x)
+            y = self.pqmf.inverse(y)
 
         distance = self.audio_distance(x, y)
 

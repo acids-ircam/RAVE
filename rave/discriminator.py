@@ -1,10 +1,23 @@
-from typing import Optional, Sequence, Tuple, Type
+from typing import Optional, Sequence, Tuple, Type, Callable
 
 import cached_conv as cc
+import torchaudio
 import numpy as np
 import torch.nn as nn
+import torch
 
 from .blocks import normalization
+
+
+def spectrogram(n_fft: int):
+    return torchaudio.transforms.Spectrogram(
+        n_fft,
+        hop_length=n_fft // 4,
+        power=None,
+        normalized=True,
+        center=False,
+        pad_mode=None,
+    )
 
 
 def rectified_2d_conv_block(
@@ -117,18 +130,20 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
+class MultiScaleSpectralDiscriminator(nn.Module):
 
-    def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
-        super().__init__(n_discriminators, convnet)
-        self.multiscale_stft = multiscale_stft()
+    def __init__(self, scales: Sequence[int],
+                 convnet: Callable[[], nn.Module]) -> None:
+        super().__init__()
+        self.specs = nn.ModuleList([spectrogram(n) for n in scales])
+        self.nets = nn.ModuleList([convnet() for _ in scales])
 
     def forward(self, x):
-        scales = self.multiscale_stft(x)
         features = []
-        for scale, layer in zip(scales, self.layers):
-            scale = scale.permute(0, 3, 1, 2)
-            features.append(layer(scale))
+        for spec, net in zip(self.specs, self.nets):
+            spec_x = spec(x)
+            spec_x = torch.cat([spec_x.real, spec_x.imag], 1)
+            features.append(net(spec_x))
         return features
 
 
