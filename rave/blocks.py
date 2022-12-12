@@ -518,15 +518,18 @@ class Encoder(nn.Module):
 
 class EncoderV2(nn.Module):
 
-    def __init__(self,
-                 data_size: int,
-                 capacity: int,
-                 ratios: Sequence[int],
-                 latent_size: int,
-                 n_out: int,
-                 kernel_size: int,
-                 dilations: Sequence[int],
-                 keep_dim: bool = False) -> None:
+    def __init__(
+        self,
+        data_size: int,
+        capacity: int,
+        ratios: Sequence[int],
+        latent_size: int,
+        n_out: int,
+        kernel_size: int,
+        dilations: Sequence[int],
+        keep_dim: bool = False,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+    ) -> None:
         super().__init__()
         net = [
             normalization(
@@ -579,6 +582,9 @@ class EncoderV2(nn.Module):
                     padding=cc.get_padding(kernel_size),
                 )))
 
+        if recurrent_layer is not None:
+            net.append(recurrent_layer(latent_size * n_out))
+
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -587,14 +593,17 @@ class EncoderV2(nn.Module):
 
 class GeneratorV2(nn.Module):
 
-    def __init__(self,
-                 data_size: int,
-                 capacity: int,
-                 ratios: Sequence[int],
-                 latent_size: int,
-                 kernel_size: int,
-                 dilations: Sequence[int],
-                 keep_dim: bool = False) -> None:
+    def __init__(
+        self,
+        data_size: int,
+        capacity: int,
+        ratios: Sequence[int],
+        latent_size: int,
+        kernel_size: int,
+        dilations: Sequence[int],
+        keep_dim: bool = False,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+    ) -> None:
         super().__init__()
         ratios = ratios[::-1]
 
@@ -602,16 +611,20 @@ class GeneratorV2(nn.Module):
             num_channels = np.prod(ratios) * capacity
         else:
             num_channels = 2**len(ratios) * capacity
-            
-        net = [
+
+        net = []
+
+        if recurrent_layer is not None:
+            net.append(recurrent_layer(latent_size))
+
+        net.append(
             normalization(
                 cc.Conv1d(
                     latent_size,
                     num_channels,
                     kernel_size=kernel_size,
                     padding=cc.get_padding(kernel_size),
-                )),
-        ]
+                )), )
 
         for r in ratios:
             # ADD UPSAMPLING UNIT

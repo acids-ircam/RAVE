@@ -5,8 +5,5 @@ from rave import blocks
 blocks.GRU:
     num_layers = 1
 
-blocks.Generator:
-    recurrent_layer = @blocks.GRU
-
-blocks.Encoder:
-    recurrent_layer = @blocks.GRU
+blocks.EncoderV2.recurrent_layer = @blocks.GRU
+blocks.GeneratorV2.recurrent_layer = @blocks.GRU
