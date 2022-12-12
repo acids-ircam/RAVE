@@ -73,9 +73,7 @@ discriminator/core.MultiScaleSTFT:
 balancer.Balancer:
     weights = {
         'fullband_spectral_distance': 2,
-        'multiband_spectral_distance': 2,
-        'adversarial': 20,
-        'feature_matching': 10,
+        'adversarial': 2,
     }
     scale_gradients = True
 
@@ -83,7 +81,7 @@ balancer.Balancer:
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
     decoder = @blocks.GeneratorV2
-    phase_1_duration = 100000
+    phase_1_duration = 200000
     warmup_quantize = -1
     update_discriminator_every = 2
     discriminator = @discriminator.MultiScaleSpectralDiscriminator

@@ -1,4 +1,4 @@
-# Balancer - credit to https://github.com/facebookresearch/encodec
+# Balancer - adapted from https://github.com/facebookresearch/encodec
 
 from typing import Any, Callable, Dict, Optional, Sequence
 
@@ -84,9 +84,9 @@ class Balancer:
                 scale = self.weights.get(name, 1)
                 grads[name] *= scale
 
-            if logger is not None:
-                logger(f'scale_{name}', scale)
-                logger(f'grad_norm_{name}', grads[name].norm())
+                if logger is not None:
+                    logger(f'scale_{name}', scale)
+                    logger(f'grad_norm_{name}', grads[name].norm())
 
         if profiler is not None:
             profiler('norm scaling')

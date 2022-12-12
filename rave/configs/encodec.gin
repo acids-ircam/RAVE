@@ -34,5 +34,4 @@ discriminator.EncodecConvNet:
 rave.RAVE:
     pqmf = None
     audio_distance = @core.EncodecAudioDistance
-    phase_1_duration = -1
 
