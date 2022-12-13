@@ -62,7 +62,8 @@ def main(argv):
 
     # check dataset channels
     n_channels = FLAGS.n_channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
-    model = rave.RAVE(n_channels=n_channels)
+    gin.bind_parameter('RAVE.n_channels', flags.CHANNELS)
+    model = rave.RAVE()
 
     dataset = rave.dataset.get_dataset(
         FLAGS.db_path,

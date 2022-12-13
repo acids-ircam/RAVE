@@ -1,6 +1,6 @@
 from typing import Callable, Optional
 
-import gin
+import gin, pdb
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -255,13 +255,19 @@ class RAVE(pl.LightningModule):
         self.log_dict(loss_gen)
 
     def encode(self, x):
+        batch_size = x.shape[:-2]
+        x = x.reshape(-1, 1, x.shape[-1])
         x = self.pqmf(x)
+        x = x.reshape(*batch_size, -1, x.shape[-1])
         z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
     def decode(self, z):
+        batch_size = z.shape[:-1]
         y = self.decoder(z)
+        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
         y = self.pqmf.inverse(y)
+        y = y.reshape(*batch_size, self.n_channels, -1)
         return y
 
     def forward(self, x):
