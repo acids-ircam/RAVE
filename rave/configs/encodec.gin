@@ -23,6 +23,9 @@ core.SpectralDistance:
     normalized = True
     mel = 64
 
+feature_matching/core.mean_difference:
+    relative = True
+
 # DISCRIMINATOR
 discriminator.MultiScaleSpectralDiscriminator:
     scales =  [4096, 2048, 1024, 512, 256]

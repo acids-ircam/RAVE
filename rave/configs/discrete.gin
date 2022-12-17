@@ -55,22 +55,12 @@ blocks.GeneratorV2:
 core.AudioDistanceV1:
     log_epsilon = 1
 
-feature_matching/core.mean_difference:
-    relative = True
-
-# DISCRIMINATOR
-discriminator.EncodecConvNet.capacity = %CAPACITY
-
-discriminator/core.MultiScaleSTFT:
-    magnitude = False
-
 # BALANCER
 balancer.Balancer:
     weights = {
-        'fullband_spectral_distance': 2,
-        'adversarial': 2,
+        'feature_matching' : 20
     }
-    scale_gradients = True
+    scale_gradients = False
 
 # RAVE
 rave.RAVE:
@@ -78,8 +68,8 @@ rave.RAVE:
     decoder = @blocks.GeneratorV2
     phase_1_duration = 200000
     warmup_quantize = -1
-    update_discriminator_every = 2
-    discriminator = @discriminator.MultiScaleSpectralDiscriminator
+    update_discriminator_every = 1
+    discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.hinge_gan
     valid_signal_crop =  True
-    num_skipped_features = 1
+    num_skipped_features = 0
