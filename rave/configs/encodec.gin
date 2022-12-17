@@ -38,3 +38,4 @@ rave.RAVE:
     pqmf = None
     audio_distance = @core.EncodecAudioDistance
 
+

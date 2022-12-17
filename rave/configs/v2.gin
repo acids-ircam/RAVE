@@ -31,11 +31,6 @@ spectral/discriminator.ConvNet:
     kernel_size = 5
     in_size = 2
 
-discriminator.MultiScaleSpectralDiscriminator:
-    multiscale_stft = @discriminator/core.MultiScaleSTFT
-    n_discriminators = 5
-    convnet = @spectral/discriminator.ConvNet
-
 discriminator.MultiPeriodDiscriminator:
     periods = [2, 3, 5, 7, 11]
     convnet = @periods/discriminator.ConvNet

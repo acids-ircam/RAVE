@@ -1,6 +1,6 @@
 from __gin__ import dynamic_registration
 
-include "configs/v1.gin"
+include "configs/v2.gin"
 
 import rave
 from rave import core
@@ -58,9 +58,16 @@ core.AudioDistanceV1:
 # BALANCER
 balancer.Balancer:
     weights = {
-        'feature_matching' : 20
+        'feature_matching' : 20,
+        'regularization' : .1,
     }
     scale_gradients = False
+
+discriminator.CombineDiscriminators:
+    discriminators = [
+        @discriminator.MultiPeriodDiscriminator,
+        @discriminator.MultiScaleDiscriminator
+    ]
 
 # RAVE
 rave.RAVE:
@@ -73,3 +80,4 @@ rave.RAVE:
     gan_loss = @core.hinge_gan
     valid_signal_crop =  True
     num_skipped_features = 0
+
