@@ -318,6 +318,7 @@ class GRU(nn.Module):
 
         self.cumulative_delay = cumulative_delay
         self.enabled = True
+        self.temporal = True
 
     def disable(self):
         self.enabled = False

@@ -14,7 +14,6 @@ attention.Transformer:
     feed_forward_layer = @attention.OriginalFeedForwardModule
     num_layers = 1
 attention.TransformerLayer:
-    dim = %LATENT_SIZE
     attention = @attention.MultiHeadAlibiAttention
     dropout = %DROPOUT
     n_head = %NUM_HEADS
@@ -26,7 +25,6 @@ attention.MultiHeadAlibiAttention:
     cache_seq_len = %CACHE_SEQ_LEN
 
 attention.OriginalFeedForwardModule:
-    model_dim = %LATENT_SIZE
     hidden_dim = %FF_DIM
 
 blocks.EncoderV2.recurrent_layer = @attention.Transformer

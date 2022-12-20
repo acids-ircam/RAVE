@@ -207,19 +207,33 @@ class Residual(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init__(self, transformer_layer: Callable[[], nn.Module],
+    def __init__(self,
+                 dim: int,
+                 transformer_layer: Callable[[], nn.Module],
                  feed_forward_layer: Callable[[], nn.Module],
-                 num_layers: int) -> None:
+                 num_layers: int,
+                 cumulative_delay: int = 0) -> None:
         super().__init__()
 
         layers = []
         for _ in range(num_layers):
-            layers.append(transformer_layer())
-            layers.append(feed_forward_layer())
+            layers.append(transformer_layer(dim))
+            layers.append(feed_forward_layer(dim))
 
         self.net = nn.Sequential(*layers)
+        self.cumulative_delay = cumulative_delay
+        self.enabled = True
+        self.temporal = True
+
+    def disable(self):
+        self.enabled = False
+
+    def enable(self):
+        self.enabled = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.enabled: return x
+
         x = x.permute(0, 2, 1)
         x = self.net(x)
         x = x.permute(0, 2, 1)

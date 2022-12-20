@@ -138,14 +138,14 @@ def get_rave_receptive_field(model: nn.Module):
     device = next(iter(model.parameters())).device
 
     for module in model.modules():
-        if hasattr(module, 'gru_state'):
+        if hasattr(module, 'gru_state') or hasattr(module, 'temporal'):
             module.disable()
 
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
 
         y = model.decode(model.encode(x))
-        
+
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"
 
@@ -161,7 +161,7 @@ def get_rave_receptive_field(model: nn.Module):
     model.zero_grad()
 
     for module in model.modules():
-        if hasattr(module, 'gru_state'):
+        if hasattr(module, 'gru_state') or hasattr(module, 'temporal'):
             module.enable()
     return left_receptive_field, right_receptive_field
 
