@@ -86,7 +86,8 @@ class ScriptedRAVE(nn_tilde.Module):
             )
 
         x = torch.zeros(1, 1, 2**14)
-        z = self.encoder(self.pqmf(x))
+        x_m = x.clone() if self.pqmf is None else self.pqmf(x)
+        z = self.encoder(x_m)
         ratio_encode = x.shape[-1] // z.shape[-1]
 
         channels = ["(L)", "(R)"] if stereo else ["(mono)"]
@@ -140,7 +141,8 @@ class ScriptedRAVE(nn_tilde.Module):
 
     @torch.jit.export
     def encode(self, x):
-        x = self.pqmf(x)
+        if self.pqmf is not None:
+            x = self.pqmf(x)
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
@@ -151,7 +153,8 @@ class ScriptedRAVE(nn_tilde.Module):
             z = torch.cat([z, z], 0)
         z = self.pre_process_latent(z)
         y = self.decoder(z)
-        y = self.pqmf.inverse(y)
+        if self.pqmf is not None:
+            y = self.pqmf.inverse(y)
 
         if self.stereo:
             y = torch.cat(y.chunk(2, 0), 1)
