@@ -246,8 +246,11 @@ def main(argv):
     for m in pretrained.modules():
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
+        if isinstance(m, rave.blocks.GRU):
+            m.gru.flatten_parameters()
 
     logging.info("script model")
+
 
     scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
 
