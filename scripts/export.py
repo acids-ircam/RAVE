@@ -241,16 +241,14 @@ def main(argv):
     x = torch.zeros(1, 1, 2**14)
     pretrained(x)
 
-    logging.info("remove weightnorm")
+    logging.info("optimize model")
 
     for m in pretrained.modules():
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
         if isinstance(m, rave.blocks.GRU):
-            m.gru.flatten_parameters()
-
+            m.trace_recurrent()
     logging.info("script model")
-
 
     scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
 

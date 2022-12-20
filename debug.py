@@ -1,8 +1,17 @@
-import rave
+import torch
 import gin
 
-gin.parse_config_file('/data/antoine/horv2/runs/horv2_1221_dd5d50644e/config.gin')
+@gin.configurable
+def f(v):
+    return v
 
-model = rave.RAVE()
+gin.parse_config_file('rave/configs/transformer.gin')
+gin.parse_config('''
+LATENT_SIZE = 256
+f.v = @Transformer()
+''')
 
-print(model)
+m = f()
+
+x = torch.randn(1,256, 128)
+print(m(x).shape)

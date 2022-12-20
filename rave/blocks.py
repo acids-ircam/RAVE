@@ -301,6 +301,7 @@ class GRU(nn.Module):
                  dropout=0,
                  cumulative_delay=0) -> None:
         super().__init__()
+        self.dim = dim
 
         self.gru = nn.GRU(
             input_size=dim,
@@ -324,15 +325,19 @@ class GRU(nn.Module):
     def enable(self):
         self.enabled = True
 
+    def trace_recurrent(self):
+        self.gru.flatten_parameters()
+        dummy_input = torch.randn(1, 128, self.dim)
+        state = self.gru(dummy_input)[1]
+        self.gru = torch.jit.trace(self.gru, [dummy_input, state])
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not self.enabled: return x
 
         x = x.permute(0, 2, 1)
+        x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
         if cc.USE_BUFFER_CONV:
-            x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
             self.gru_state[:, :x.shape[0]] = state
-        else:
-            x = self.gru(x)[0]
         x = x.permute(0, 2, 1)
         return x
 
