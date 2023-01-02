@@ -3,13 +3,14 @@ from __gin__ import dynamic_registration
 import rave
 from rave import core
 from rave import discriminator
+from rave import balancer
 
 include 'discrete.gin'
 
-N_BAND = 1
-RATIOS = [8, 4, 4, 2, 2]
+RATIOS = [4, 4, 2, 2]
 KERNEL_SIZE = 3
-N_BAND = 1
+N_BAND = 16
+CAPACITY = 64
 
 # DISTANCES
 core.EncodecAudioDistance:
@@ -26,17 +27,20 @@ core.SpectralDistance:
 feature_matching/core.mean_difference:
     relative = True
 
+balancer.Balancer:
+    scale_gradients = True
+
 # DISCRIMINATOR
 discriminator.MultiScaleSpectralDiscriminator:
     scales =  [4096, 2048, 1024, 512, 256]
     convnet = @discriminator.EncodecConvNet
 
 discriminator.EncodecConvNet:
-    capacity = %CAPACITY
+    capacity = 32
 
 rave.RAVE:
-    pqmf = None
     audio_distance = @core.EncodecAudioDistance
-    update_discriminator_every = 2
+    update_discriminator_every = 4
+    # discriminator = @discriminator.MultiScaleSpectralDiscriminator
 
 

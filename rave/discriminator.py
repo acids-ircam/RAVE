@@ -27,6 +27,7 @@ def rectified_2d_conv_block(
     dilations: Optional[Tuple[int, int]] = None,
     in_size: Optional[int] = None,
     out_size: Optional[int] = None,
+    activation: bool = True,
 ):
     if dilations is None:
         paddings = kernel_sizes[0] // 2, kernel_sizes[1] // 2
@@ -44,6 +45,9 @@ def rectified_2d_conv_block(
             dilation=dilations or (1, 1),
             padding=paddings,
         ))
+
+    if not activation: return conv
+
     return nn.Sequential(conv, nn.LeakyReLU(.2))
 
 
@@ -57,7 +61,7 @@ class EncodecConvNet(nn.Module):
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 2)),
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 4)),
             rectified_2d_conv_block(capacity, (3, 3)),
-            rectified_2d_conv_block(capacity, (3, 3), out_size=1),
+            rectified_2d_conv_block(capacity, (3, 3), out_size=1, activation=False),
         )
 
     def forward(self, x):

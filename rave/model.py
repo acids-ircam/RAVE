@@ -155,7 +155,6 @@ class RAVE(pl.LightningModule):
         p = Profiler()
         gen_opt, dis_opt = self.optimizers()
         x = batch.unsqueeze(1)
-        x.requires_grad = True
 
         if self.pqmf is not None:
             x_multiband = self.pqmf(x)
@@ -270,13 +269,10 @@ class RAVE(pl.LightningModule):
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
+            p.tick('dis opt')
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(
-                loss_gen,
-                y_multiband,
-                self.log,
-            )
+            self.balancer.backward(loss_gen, y_multiband, self.log, p.tick)
             gen_opt.step()
 
         # LOGGING
