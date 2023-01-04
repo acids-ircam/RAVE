@@ -4,10 +4,11 @@ import rave
 from rave import blocks
 from rave import balancer
 
-blocks.Encoder.n_out = 1
+blocks.EncoderV2.n_out = 1
 
 blocks.SphericalEncoder:
-    encoder_cls = @blocks.Encoder
+    encoder_cls = @blocks.EncoderV2
 
 rave.RAVE:
     encoder = @blocks.SphericalEncoder
+    phase_1_duration = -1

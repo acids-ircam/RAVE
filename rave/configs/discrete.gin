@@ -30,6 +30,8 @@ blocks.DiscreteEncoder:
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
 
+blocks.EncoderV2:
+    n_out = 1
 
 # DISTANCES
 core.EncodecAudioDistance:
