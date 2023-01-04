@@ -75,4 +75,5 @@ rave.RAVE:
     valid_signal_crop = True
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
+    update_discriminator_every = 4
     
