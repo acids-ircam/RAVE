@@ -12,14 +12,28 @@ include "configs/v1.gin"
 
 core.AudioDistanceV1.log_epsilon = 1
 
-discriminator/core.MultiScaleSTFT:
-    magnitude = False
 
 # ENCODER
-blocks.Encoder.repeat_layers = 2
+blocks.EncoderV2:
+    data_size = %N_BAND
+    capacity = %CAPACITY
+    ratios = %RATIOS
+    latent_size = %LATENT_SIZE
+    n_out = 2
+    kernel_size = %KERNEL_SIZE
+    dilations = %DILATIONS
+
+blocks.VariationalEncoder:
+    encoder = @variational/blocks.EncoderV2
 
 # GENERATOR
-blocks.ResidualStack.kernel_sizes = [3, 5]
+blocks.GeneratorV2:
+    data_size = %N_BAND
+    capacity = %CAPACITY
+    ratios = %RATIOS
+    latent_size = %LATENT_SIZE
+    kernel_size = %KERNEL_SIZE
+    dilations = %DILATIONS
 
 # DISCRIMINATOR
 periods/discriminator.ConvNet:
@@ -41,17 +55,21 @@ discriminator.CombineDiscriminators:
         @discriminator.MultiScaleDiscriminator
     ]
 
+feature_matching/core.mean_difference:
+    relative = True
+
 # BALANCER
 balancer.Balancer:
     weights = {
-        'fullband_spectral_distance': 2,
-        'multiband_spectral_distance': 2,
-        'regularization': .1,
-        'adversarial': 2,
+        'feature_matching' : 20,
+        'regularization' : .1,
     }
+    scale_gradients = True
 
 # RAVE
 rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
     valid_signal_crop = True
     num_skipped_features = 1
+    decoder = @blocks.GeneratorV2
+    

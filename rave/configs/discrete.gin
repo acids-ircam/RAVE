@@ -18,8 +18,6 @@ CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = True
 KERNEL_SIZE = 3
 
-CAPACITY = 64
-
 # ENCODER
 blocks.ResidualVectorQuantize:
     dim = %LATENT_SIZE
@@ -27,29 +25,12 @@ blocks.ResidualVectorQuantize:
     codebook_size = %CODEBOOK_SIZE
     dynamic_masking = %DYNAMIC_MASKING
 
-blocks.EncoderV2:
-    data_size = %N_BAND
-    capacity = %CAPACITY
-    ratios = %RATIOS
-    latent_size = %LATENT_SIZE
-    n_out = 1
-    kernel_size = %KERNEL_SIZE
-    dilations = %DILATIONS
-
 blocks.DiscreteEncoder:
     encoder_cls = @blocks.EncoderV2
     rvq_cls = @blocks.ResidualVectorQuantize
     latent_size = %LATENT_SIZE
     num_quantizers = %NUM_QUANTIZERS
 
-# GENERATOR
-blocks.GeneratorV2:
-    data_size = %N_BAND
-    capacity = %CAPACITY
-    ratios = %RATIOS
-    latent_size = %LATENT_SIZE
-    kernel_size = %KERNEL_SIZE
-    dilations = %DILATIONS
 
 # DISTANCES
 core.EncodecAudioDistance:
@@ -63,27 +44,9 @@ core.SpectralDistance:
     normalized = True
     mel = 64
 
-feature_matching/core.mean_difference:
-    relative = True
-
-# BALANCER
-balancer.Balancer:
-    weights = {
-        'feature_matching' : 20,
-        'regularization' : .1,
-    }
-    scale_gradients = True
-
-discriminator.CombineDiscriminators:
-    discriminators = [
-        @discriminator.MultiPeriodDiscriminator,
-        @discriminator.MultiScaleDiscriminator
-    ]
-
 # RAVE
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
-    decoder = @blocks.GeneratorV2
     phase_1_duration = 200000
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators
