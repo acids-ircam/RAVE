@@ -773,3 +773,59 @@ class DiscreteEncoder(nn.Module):
     def forward(self, x):
         z = torch.tanh(self.encoder(x))
         return z
+
+
+class SphericalEncoder(nn.Module):
+
+    def __init__(self, encoder_cls: Callable[[], nn.Module]) -> None:
+        super().__init__()
+        self.encoder = encoder_cls()
+
+    def reparametrize(self, z):
+        norm_z = z / torch.norm(z, p=2, dim=1, keepdim=True)
+        reg = torch.zeros_like(z).mean()
+        return norm_z, reg
+
+    def set_warmed_up(self, state: bool):
+        pass
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        return z
+
+
+def unit_norm_vector_to_angles(x: torch.Tensor) -> torch.Tensor:
+    norms = x.flip(1).pow(2)
+    norms[:, 1] += norms[:, 0]
+    norms = norms[:, 1:]
+    norms = norms.cumsum(1).flip(1).sqrt()
+    angles = torch.arccos(x[:, :-1] / norms)
+    angles[:, -1] = torch.where(
+        x[:, -1] >= 0,
+        angles[:, -1],
+        2 * np.pi - angles[:, -1],
+    )
+    angles[:, :-1] = angles[:, :-1] / np.pi
+    angles[:, -1] = angles[:, -1] / (2 * np.pi)
+    return 2 * (angles - .5)
+
+
+def angles_to_unit_norm_vector(angles: torch.Tensor) -> torch.Tensor:
+    angles = (angles / 2 + .5) % 1
+    angles[:, :-1] = angles[:, :-1] * np.pi
+    angles[:, -1] = angles[:, -1] * (2 * np.pi)
+    cos = angles.cos()
+    sin = angles.sin().cumprod(dim=1)
+    cos = torch.cat([
+        cos,
+        torch.ones(cos.shape[0], 1, cos.shape[-1]).type_as(cos),
+    ], 1)
+    sin = torch.cat([
+        torch.ones(sin.shape[0], 1, sin.shape[-1]).type_as(sin),
+        sin,
+    ], 1)
+    return cos * sin
+
+
+def wrap_around_value(x: torch.Tensor, value: float = 1) -> torch.Tensor:
+    return (x + value) % (2 * value) - value

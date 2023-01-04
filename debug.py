@@ -1,17 +1,25 @@
+# %%
 import torch
-import gin
+from rave import blocks
+import matplotlib.pyplot as plt
+import numpy as np
 
-@gin.configurable
-def f(v):
-    return v
+x = torch.randn(1, 128, 256)
+x = x / torch.norm(x, p=2, dim=1, keepdim=True)
 
-gin.parse_config_file('rave/configs/transformer.gin')
-gin.parse_config('''
-LATENT_SIZE = 256
-f.v = @Transformer()
-''')
+angles = blocks.unit_norm_vector_to_angles(x)
+noise = torch.randn_like(angles) / 10
+noisy_angles = blocks.wrap_around_value(angles + noise)
+y = blocks.angles_to_unit_norm_vector(angles)
 
-m = f()
-
-x = torch.randn(1,256, 128)
-print(m(x).shape)
+# %%
+print(torch.allclose(x, y, atol=1e-3, rtol=1e-3))
+# %%
+plt.plot(noisy_angles[0].T)
+plt.show()
+plt.plot(noise[0].T)
+plt.show()
+# %%
+t = torch.linspace(-10, 10, 1000)
+plt.plot(blocks.wrap_around_value(t, 1))
+# %%
