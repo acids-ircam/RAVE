@@ -10,8 +10,11 @@ import torch.nn as nn
 
 include "configs/v1.gin"
 
-core.AudioDistanceV1.log_epsilon = 1
+KERNEL_SIZE = 3
+DILATIONS = [1, 3, 9]
+CAPACITY = 96
 
+core.AudioDistanceV1.log_epsilon = 1
 
 # ENCODER
 blocks.EncoderV2:
