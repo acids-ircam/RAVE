@@ -1,4 +1,0 @@
-add recurrent unit before and after final / initial layers
-l1 loss between waveforms
-average complex mel spectral loss l1 + l2
-mean feature matching (divide by target norm) 
