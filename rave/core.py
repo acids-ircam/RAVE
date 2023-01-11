@@ -408,7 +408,7 @@ class LoggerCallback(pl.Callback):
         self.state['step'] += 1
         self.state['warmed'] = pl_module.warmed_up
 
-        if not self.state['step'] % 1:
+        if not self.state['step'] % 100:
             self.logger.update(**self.state)
 
     def state_dict(self):
