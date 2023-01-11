@@ -105,10 +105,10 @@ def main(argv):
         ),
         gpus=gpu,
         callbacks=[
-            validation_checkpoint,
-            last_checkpoint,
+            validation_checkpoint, last_checkpoint,
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
+            rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
         ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,

@@ -9,10 +9,13 @@ import librosa as li
 import numpy as np
 import torch
 import torch.fft as fft
+import lmdb
+import json
 import torch.nn as nn
 import torchaudio
 from einops import rearrange
 from scipy.signal import lfilter
+import pytorch_lightning as pl
 
 
 def mod_sigmoid(x):
@@ -368,3 +371,48 @@ class SpectralDistance(nn.Module):
         for norm in self.norm:
             distance = distance + mean_difference(y, x, norm)
         return distance
+
+
+class ProgressLogger(object):
+
+    def __init__(self, name: str) -> None:
+        self.env = lmdb.open("status")
+        self.name = name
+
+    def update(self, **new_state):
+        current_state = self.__call__()
+        with self.env.begin(write=True) as txn:
+            current_state.update(new_state)
+            current_state = json.dumps(current_state)
+            txn.put(self.name.encode(), current_state.encode())
+
+    def __call__(self):
+        with self.env.begin(write=True) as txn:
+            current_state = txn.get(self.name.encode())
+        if current_state is not None:
+            current_state = json.loads(current_state.decode())
+        else:
+            current_state = {}
+        return current_state
+        
+
+class LoggerCallback(pl.Callback):
+
+    def __init__(self, logger: ProgressLogger) -> None:
+        super().__init__()
+        self.state = {'step': 0, 'warmed': False}
+        self.logger = logger
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch,
+                           batch_idx) -> None:
+        self.state['step'] += 1
+        self.state['warmed'] = pl_module.warmed_up
+
+        if not self.state['step'] % 1:
+            self.logger.update(**self.state)
+
+    def state_dict(self):
+        return self.state.copy()
+
+    def load_state_dict(self, state_dict):
+        self.state.update(state_dict)
