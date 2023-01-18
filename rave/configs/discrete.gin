@@ -15,7 +15,7 @@ RATIOS = [4, 4, 2, 2]
 LATENT_SIZE = 512
 CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = True
-CAPACITY = 96
+CAPACITY = 32
 
 # ENCODER
 blocks.ResidualVectorQuantize:
@@ -48,11 +48,11 @@ core.SpectralDistance:
 # RAVE
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
-    phase_1_duration = 200000
+    phase_1_duration = 500000
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.hinge_gan
-    valid_signal_crop =  True
+    valid_signal_crop = False
     num_skipped_features = 0
     audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4

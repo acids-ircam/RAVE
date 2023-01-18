@@ -147,7 +147,8 @@ def get_rave_receptive_field(model: nn.Module):
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
 
-        y = model.decode(model.encode(x))
+        z = model.encode(x)
+        y = model.decode(z)
 
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"
@@ -166,6 +167,9 @@ def get_rave_receptive_field(model: nn.Module):
     for module in model.modules():
         if hasattr(module, 'gru_state') or hasattr(module, 'temporal'):
             module.enable()
+    ratio = x.shape[-1] // z.shape[-1]
+    rate = model.sr / ratio
+    print(f"Compression ratio: {ratio}x (~{rate:.1f}Hz @ {model.sr}Hz)")
     return left_receptive_field, right_receptive_field
 
 
@@ -394,7 +398,7 @@ class ProgressLogger(object):
         else:
             current_state = {}
         return current_state
-        
+
 
 class LoggerCallback(pl.Callback):
 

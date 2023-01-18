@@ -573,7 +573,7 @@ class EncoderV2(nn.Module):
                         out_channels,
                         kernel_size=2 * r,
                         stride=r,
-                        padding=(r // 2, r // 2),
+                        padding=cc.get_padding(2 * r, r),
                     )))
 
             num_channels = out_channels

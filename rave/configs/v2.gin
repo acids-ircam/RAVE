@@ -66,6 +66,7 @@ balancer.Balancer:
     weights = {
         'feature_matching' : 20,
         'regularization' : .1,
+        'adversarial' : 4,
     }
     scale_gradients = True
 
