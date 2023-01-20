@@ -672,7 +672,7 @@ class GeneratorV2(nn.Module):
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return torch.tanh(self.net(x))
 
     def set_warmed_up(self, state: bool):
         pass

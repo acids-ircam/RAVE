@@ -42,7 +42,7 @@ class Balancer:
         self,
         losses: Dict[str, torch.Tensor],
         model_output: torch.Tensor,
-        logger=Optional[Callable[[str, float], None]],
+        logger: Optional[Callable[[str, float], None]] = None,
         profiler: Optional[Any] = None,
     ):
         grads = {}
@@ -57,6 +57,13 @@ class Balancer:
                 [model_output],
                 retain_graph=True,
             )
+
+            if (nans := torch.isnan(grads[k])).any():
+                count = nans.float().mean()
+                grads[k] = torch.where(nans, torch.zeros_like(nans), grads[k])
+                if logger is not None:
+                    logger(f"{k}_nan_ratio", count)
+
             norms[k] = grads[k].norm(
                 dim=tuple(range(1, grads[k].dim()))).mean()
 

@@ -228,6 +228,7 @@ class MultiScaleSTFT(nn.Module):
                  scales: Sequence[int],
                  sample_rate: int,
                  magnitude: bool = True,
+                 normalized: bool = False,
                  num_mels: Optional[int] = None) -> None:
         super().__init__()
         self.scales = scales
@@ -242,7 +243,7 @@ class MultiScaleSTFT(nn.Module):
                     n_fft=scale,
                     win_length=scale,
                     hop_length=scale // 4,
-                    normalized=False,
+                    normalized=normalized,
                     power=None,
                 ))
             if num_mels is not None:
@@ -297,6 +298,74 @@ class AudioDistanceV1(nn.Module):
             distance = distance + lin_distance + log_distance
 
         return {'spectral_distance': distance}
+
+
+class WeightedInstantaneousSpectralDistance(nn.Module):
+
+    def __init__(self,
+                 multiscale_stft: Callable[[], MultiScaleSTFT],
+                 weighted: bool = False) -> None:
+        super().__init__()
+        self.multiscale_stft = multiscale_stft()
+        self.weighted = weighted
+
+    def phase_to_instantaneous_frequency(self,
+                                         x: torch.Tensor) -> torch.Tensor:
+        x = self.unwrap(x)
+        x = self.derivative(x)
+        return x
+
+    def derivative(self, x: torch.Tensor) -> torch.Tensor:
+        return x[..., 1:] - x[..., :-1]
+
+    def unwrap(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.derivative(x)
+        x = (x + np.pi) % (2 * np.pi)
+        return (x - np.pi).cumsum(-1)
+
+    def forward(self, target: torch.Tensor, pred: torch.Tensor):
+        stfts_x = self.multiscale_stft(target)
+        stfts_y = self.multiscale_stft(pred)
+        spectral_distance = 0.
+        phase_distance = 0.
+
+        for x, y in zip(stfts_x, stfts_y):
+            assert x.shape[-1] == 2
+
+            x = torch.view_as_complex(x)
+            y = torch.view_as_complex(y)
+
+            # AMPLITUDE DISTANCE
+            x_abs = x.abs()
+            y_abs = y.abs()
+
+            logx = torch.log1p(x_abs)
+            logy = torch.log1p(y_abs)
+
+            lin_distance = mean_difference(x_abs,
+                                           y_abs,
+                                           norm='L2',
+                                           relative=True)
+            log_distance = mean_difference(logx, logy, norm='L1')
+
+            spectral_distance = spectral_distance + lin_distance + log_distance
+
+            # PHASE DISTANCE
+            x_if = self.phase_to_instantaneous_frequency(x.angle())
+            y_if = self.phase_to_instantaneous_frequency(y.angle())
+
+            if self.weighted:
+                mask = torch.clip(torch.log1p(x_abs[..., 2:]), 0, 1)
+                x_if = x_if * mask
+                y_if = y_if * mask
+
+            phase_distance = phase_distance + mean_difference(
+                x_if, y_if, norm='L2')
+
+        return {
+            'spectral_distance': spectral_distance,
+            'phase_distance': phase_distance
+        }
 
 
 class EncodecAudioDistance(nn.Module):

@@ -14,8 +14,8 @@ NUM_QUANTIZERS = 16
 RATIOS = [4, 4, 2, 2]
 LATENT_SIZE = 512
 CODEBOOK_SIZE = 1024
-DYNAMIC_MASKING = True
-CAPACITY = 32
+DYNAMIC_MASKING = False
+CAPACITY = 96
 
 # ENCODER
 blocks.ResidualVectorQuantize:
@@ -44,15 +44,14 @@ core.SpectralDistance:
     power = 1
     normalized = True
     mel = 64
-
 # RAVE
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
-    phase_1_duration = 500000
+    phase_1_duration = 200000
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.hinge_gan
-    valid_signal_crop = False
+    valid_signal_crop = True
     num_skipped_features = 0
     audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4
