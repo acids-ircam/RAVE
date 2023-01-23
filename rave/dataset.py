@@ -130,12 +130,12 @@ class LazyAudioDataset(data.Dataset):
         return audio
 
 
-def get_dataset(db_path, sr, n_signal):
+def get_dataset(db_path, sr, n_signal, derivative: bool = False):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
     lazy = metadata['lazy']
 
-    transform_list = transforms.Compose([
+    transform_list = [
         lambda x: x.astype(np.float32),
         transforms.RandomCrop(n_signal),
         transforms.RandomApply(
@@ -143,8 +143,14 @@ def get_dataset(db_path, sr, n_signal):
             p=.8,
         ),
         transforms.Dequantize(16),
-        lambda x: x.astype(np.float32),
-    ])
+    ]
+
+    if derivative:
+        transform_list.append(lambda x: lfilter([.5, -.5], [1], x))
+
+    transform_list.append(lambda x: x.astype(np.float32))
+
+    transform_list = transforms.Compose(transform_list)
 
     if lazy:
         return LazyAudioDataset(db_path, n_signal, sr, transform_list)

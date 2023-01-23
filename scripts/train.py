@@ -37,6 +37,9 @@ flags.DEFINE_integer('workers',
                      default=8,
                      help='Number of workers to spawn for dataset loading')
 flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
+flags.DEFINE_bool('derivative',
+                  default=False,
+                  help='Train RAVE on the derivative of the signal')
 flags.DEFINE_bool('progress',
                   default=True,
                   help='Display training progress bar')
@@ -63,6 +66,7 @@ def main(argv):
         FLAGS.db_path,
         model.sr,
         FLAGS.n_signal,
+        derivative=FLAGS.derivative,
     )
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
@@ -105,7 +109,8 @@ def main(argv):
         ),
         gpus=gpu,
         callbacks=[
-            validation_checkpoint, last_checkpoint,
+            validation_checkpoint,
+            last_checkpoint,
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
             rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
