@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 import rave.core
 
 from .balancer import Balancer
-from .blocks import DiscreteEncoder, VariationalEncoder
+from .blocks import DiscreteEncoder, VariationalEncoder, ProductDiscreteEncoder
 
 
 class Profiler:
@@ -60,7 +60,8 @@ class QuantizeCallback(WarmupCallback):
         if pl_module.warmup_quantize is None: return
 
         if self.state['training_steps'] >= pl_module.warmup_quantize:
-            if isinstance(pl_module.encoder, DiscreteEncoder):
+            if isinstance(pl_module.encoder, DiscreteEncoder) or isinstance(
+                    pl_module.encoder, ProductDiscreteEncoder):
                 pl_module.encoder.enabled = torch.tensor(1).type_as(
                     pl_module.encoder.enabled)
         self.state['training_steps'] += 1
