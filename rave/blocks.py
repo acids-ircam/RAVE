@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
-from vector_quantize_pytorch import VectorQuantize
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -680,11 +679,10 @@ class DiscreteEncoder(nn.Module):
         self.register_buffer("warmed_up", torch.tensor(0))
         self.register_buffer("enabled", torch.tensor(0))
 
-
     @torch.jit.ignore
     def reparametrize(self, z):
         if self.enabled:
-            q, diff = self.rvq(z)
+            q, diff, _ = self.rvq(z)
             return q, diff.mean()
         else:
             return z, torch.zeros_like(z).mean()
@@ -696,48 +694,6 @@ class DiscreteEncoder(nn.Module):
     def forward(self, x):
         z = self.encoder(x)
         return z
-
-
-class ProductDiscreteEncoder(nn.Module):
-
-    def __init__(self, encoder_cls: Callable[[], nn.Module],
-                 vq_cls: Callable[[], nn.Module], latent_size: int,
-                 num_quantizers: int) -> None:
-        super().__init__()
-        self.encoder = encoder_cls()
-        self.vqs = nn.ModuleList([
-            vq_cls(latent_size // num_quantizers)
-            for _ in range(num_quantizers)
-        ])
-        self.register_buffer("warmed_up", torch.tensor(0))
-        self.register_buffer("enabled", torch.tensor(0))
-        self.num_quantizers = num_quantizers
-
-    @torch.jit.ignore
-    def reparametrize(self, z: torch.Tensor):
-        if self.enabled:
-            z_list = z.chunk(self.num_quantizers, dim=1)
-            zq = []
-            commmitment = 0.
-
-            for z, vq in zip(z_list, self.vqs):
-                q = vq(z)[0]
-                diff = (z - q).pow(2).reshape(q.shape[0], -1).mean(-1)
-                commmitment = commmitment + diff
-                zq.append(q)
-
-            zq = torch.cat(zq, dim=1)
-
-            return zq, commmitment.mean()
-        else:
-            return z, torch.zeros(1).type_as(z)
-
-    def set_warmed_up(self, state: bool):
-        state = torch.tensor(int(state), device=self.warmed_up.device)
-        self.warmed_up = state
-
-    def forward(self, x):
-        return self.encoder(x)
 
 
 class SphericalEncoder(nn.Module):

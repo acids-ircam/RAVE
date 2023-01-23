@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 import rave.core
 
 from .balancer import Balancer
-from .blocks import DiscreteEncoder, VariationalEncoder, ProductDiscreteEncoder
+from .blocks import DiscreteEncoder, ProductDiscreteEncoder, VariationalEncoder
 
 
 class Profiler:

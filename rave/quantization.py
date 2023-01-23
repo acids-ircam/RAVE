@@ -1,8 +1,8 @@
+from typing import Callable
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from tqdm import tqdm
-from typing import Callable
 
 
 def ema_inplace(source, target, decay):
@@ -93,7 +93,7 @@ class VQ(nn.Module):
             -1,
             quantized.shape[-1],
         ).permute(0, 2, 1)
-        return quantized, diff.mean()
+        return quantized, diff.mean(), codes[:, None]
 
 
 class ResidualVQ(nn.Module):
@@ -105,8 +105,19 @@ class ResidualVQ(nn.Module):
     def forward(self, x):
         xq = 0
         diff = 0
+        codes = []
         for vq in self.vqs:
-            _xq, _diff = vq(x - xq)
+            _xq, _diff, _codes = vq(x - xq)
             diff = diff + _diff
             xq = xq + _xq
-        return xq, (x - xq).pow(2).mean()
+        codes = torch.cat(codes, 1)
+        return xq, (x - xq).pow(2).mean(), codes
+
+    def encode(self, x):
+        return self.forward(x)[-1]
+
+    def decode(self, x: torch.Tensor):
+        zq = 0
+        for codes, vq in zip(x.permute(1, 0, 2), self.vqs):
+            zq = zq + vq.decode(codes)
+        return zq.permute(0, 2, 1)
