@@ -1,5 +1,5 @@
 import math
-from typing import Tuple, Type, Callable
+from typing import Callable, Tuple, Type
 
 import cached_conv as cc
 import einops

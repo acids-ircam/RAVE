@@ -1,10 +1,10 @@
-from typing import Optional, Sequence, Tuple, Type, Callable
+from typing import Callable, Optional, Sequence, Tuple, Type
 
 import cached_conv as cc
-import torchaudio
 import numpy as np
-import torch.nn as nn
 import torch
+import torch.nn as nn
+import torchaudio
 
 from .blocks import normalization
 
@@ -61,7 +61,9 @@ class EncodecConvNet(nn.Module):
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 2)),
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 4)),
             rectified_2d_conv_block(capacity, (3, 3)),
-            rectified_2d_conv_block(capacity, (3, 3), out_size=1, activation=False),
+            rectified_2d_conv_block(capacity, (3, 3),
+                                    out_size=1,
+                                    activation=False),
         )
 
     def forward(self, x):

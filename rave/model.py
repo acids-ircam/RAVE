@@ -126,6 +126,7 @@ class RAVE(pl.LightningModule):
         self.update_discriminator_every = update_discriminator_every
 
         self.eval_number = 0
+        self.integrator = None
 
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
@@ -370,7 +371,11 @@ class RAVE(pl.LightningModule):
                     np.argmax(var > p).astype(np.float32),
                 )
 
-        y = torch.cat(audio, 0)[:8].reshape(-1)
+        y = torch.cat(audio, 0)[:8].reshape(-1).numpy()
+
+        if self.integrator is not None:
+            y = self.integrator(y)
+
         self.logger.experiment.add_audio("audio_val", y, self.eval_number,
                                          self.sr)
         self.eval_number += 1

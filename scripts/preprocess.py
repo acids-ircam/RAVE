@@ -171,7 +171,12 @@ def main(argv):
                          sr=FLAGS.sampling_rate)
 
     # create database
-    env = lmdb.open(FLAGS.output_path, map_size=FLAGS.max_db_size * 1024**3)
+    env = lmdb.open(
+        FLAGS.output_path,
+        map_size=FLAGS.max_db_size * 1024**3,
+        map_async=True,
+        writemap=True,
+    )
     pool = multiprocessing.Pool()
 
     # search for audio files
@@ -213,6 +218,7 @@ def main(argv):
     ), 'w') as metadata:
         yaml.safe_dump({'lazy': FLAGS.lazy, 'n_seconds': n_seconds}, metadata)
     pool.close()
+    env.close()
 
 
 if __name__ == '__main__':

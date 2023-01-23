@@ -40,6 +40,9 @@ flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
 flags.DEFINE_bool('derivative',
                   default=False,
                   help='Train RAVE on the derivative of the signal')
+flags.DEFINE_bool('normalize',
+                  default=False,
+                  help='Train RAVE on normalized signals')
 flags.DEFINE_bool('progress',
                   default=True,
                   help='Display training progress bar')
@@ -62,12 +65,14 @@ def main(argv):
 
     print(model)
 
-    dataset = rave.dataset.get_dataset(
-        FLAGS.db_path,
-        model.sr,
-        FLAGS.n_signal,
-        derivative=FLAGS.derivative,
-    )
+    if FLAGS.derivative:
+        model.integrator = rave.dataset.get_derivator_integrator(model.sr)[1]
+
+    dataset = rave.dataset.get_dataset(FLAGS.db_path,
+                                       model.sr,
+                                       FLAGS.n_signal,
+                                       derivative=FLAGS.derivative,
+                                       normalize=FLAGS.normalize)
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
                        FLAGS.batch,

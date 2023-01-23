@@ -1,7 +1,7 @@
 # %%
-import torch
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
 
 def derivative(x: torch.Tensor) -> torch.Tensor:
@@ -20,7 +20,7 @@ import numpy as np
 
 x, sr = li.load(li.example("sweetwaltz"), sr=None)
 
-f = (np.ones(10 * sr) * 440 + np.random.randn(10*sr)*10).cumsum()
+f = (np.ones(10 * sr) * 440 + np.random.randn(10 * sr) * 10).cumsum()
 x = np.cos(2 * np.pi * f / sr)
 
 x = x / np.max(abs(x))
