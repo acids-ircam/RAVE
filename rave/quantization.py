@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
+from typing import Callable
 
 
 def ema_inplace(source, target, decay):
@@ -70,7 +71,7 @@ class VQ(nn.Module):
 
         codes = self.encode(x)
         quantized = self.decode(codes)
-        
+
         diff = (x - quantized).pow(2).mean()
         quantized = quantized + x - x.detach()
 
@@ -93,3 +94,19 @@ class VQ(nn.Module):
             quantized.shape[-1],
         ).permute(0, 2, 1)
         return quantized, diff.mean()
+
+
+class ResidualVQ(nn.Module):
+
+    def __init__(self, vq_cls: Callable[[], VQ], num_quantizers: int):
+        super().__init__()
+        self.vqs = nn.ModuleList([vq_cls() for _ in range(num_quantizers)])
+
+    def forward(self, x):
+        xq = 0
+        diff = 0
+        for vq in self.vqs:
+            _xq, _diff = vq(x - xq)
+            diff = diff + _diff
+            xq = xq + _xq
+        return xq, (x - xq).pow(2).mean()

@@ -22,77 +22,6 @@ def normalization(module: nn.Module, mode: str = 'identity'):
         raise Exception(f'Normalization mode {mode} not supported')
 
 
-class ResidualVectorQuantize(nn.Module):
-
-    def __init__(self, dim: int, num_quantizers: int, codebook_size: int,
-                 dynamic_masking: bool) -> None:
-        super().__init__()
-        self.layers = nn.ModuleList([
-            VectorQuantize(
-                dim,
-                codebook_size,
-                channel_last=False,
-                kmeans_init=True,
-            ) for _ in range(num_quantizers)
-        ])
-        self._dynamic_masking = dynamic_masking
-        self._num_quantizers = num_quantizers
-
-    def forward(self, x):
-        quantized_list = []
-        losses = []
-
-        for layer in self.layers:
-            quantized, _, _ = layer(x)
-
-            squared_diff = (quantized.detach() - x).pow(2)
-            loss = squared_diff.reshape(x.shape[0], -1).mean(-1)
-
-            x = x - quantized
-
-            quantized_list.append(quantized)
-            losses.append(loss)
-
-        quantized_out, losses = map(
-            partial(torch.stack, dim=-1),
-            (quantized_list, losses),
-        )
-
-        if self.training and self._dynamic_masking:
-            # BUILD MASK THRESHOLD
-            mask_threshold = torch.randint(
-                0,
-                self._num_quantizers,
-                (x.shape[0], ),
-            )[..., None]
-            quant_index = torch.arange(self._num_quantizers)[None]
-            mask = quant_index > mask_threshold
-
-            # BUILD MASK
-            mask = mask.to(x.device)
-            mask_threshold = mask_threshold.to(x.device)
-
-            # QUANTIZER DROPOUT
-            quantized_out = torch.where(
-                mask[:, None, None, :],
-                torch.zeros_like(quantized_out),
-                quantized_out,
-            )
-
-            # LOSS DROPOUT
-            losses = torch.where(
-                mask,
-                torch.zeros_like(losses),
-                losses,
-            )
-
-            losses = losses / (mask_threshold + 1)
-
-        quantized_out = quantized_out.sum(-1)
-        losses = losses.sum(-1)
-        return quantized_out, losses
-
-
 class SampleNorm(nn.Module):
 
     def forward(self, x):
@@ -743,26 +672,20 @@ class WasserteinEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, rvq_cls, latent_size, num_quantizers):
+    def __init__(self, encoder_cls, vq_cls, num_quantizers):
         super().__init__()
         self.encoder = encoder_cls()
-        self.rvq = rvq_cls()
-        self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
+        self.rvq = vq_cls()
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
         self.register_buffer("enabled", torch.tensor(0))
 
-    def add_noise_to_vector(self, q):
-        noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
-        q = q + noise_amp * torch.randn_like(q)
-        return q
 
     @torch.jit.ignore
     def reparametrize(self, z):
         if self.enabled:
-            q, commmitment = self.rvq(z)
-            q = self.add_noise_to_vector(q)
-            return q, commmitment.mean()
+            q, diff = self.rvq(z)
+            return q, diff.mean()
         else:
             return z, torch.zeros_like(z).mean()
 
@@ -771,7 +694,7 @@ class DiscreteEncoder(nn.Module):
         self.warmed_up = state
 
     def forward(self, x):
-        z = torch.tanh(self.encoder(x))
+        z = self.encoder(x)
         return z
 
 

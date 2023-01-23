@@ -7,32 +7,36 @@ from rave import core
 from rave import blocks
 from rave import balancer
 from rave import discriminator
-from rave import new_vq
-import vector_quantize_pytorch as vqp
+from rave import quantization
 
 import torch.nn as nn
 
 NUM_QUANTIZERS = 16
 RATIOS = [4, 4, 2, 2]
-LATENT_SIZE = 512
+LATENT_SIZE = 128
 CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = False
 CAPACITY = 96
 
 # ENCODER
 
-blocks.ProductDiscreteEncoder:
+blocks.DiscreteEncoder:
     encoder_cls = @blocks.EncoderV2
-    vq_cls = @new_vq.VQ
-    latent_size = %LATENT_SIZE
+    vq_cls = @quantization.ResidualVQ
     num_quantizers = %NUM_QUANTIZERS
 
 blocks.EncoderV2:
     n_out = 1
 
-new_vq.VQ:
+quantization.ResidualVQ:
+    vq_cls = @quantization.VQ
+    num_quantizers = %NUM_QUANTIZERS
+
+quantization.VQ:
+    dim = %LATENT_SIZE
     size = %CODEBOOK_SIZE
     ema = .99
+
 
 # DISTANCES
 core.EncodecAudioDistance:
@@ -55,7 +59,7 @@ balancer.Balancer:
     }
 
 rave.RAVE:
-    encoder = @blocks.ProductDiscreteEncoder
+    encoder = @blocks.DiscreteEncoder
     phase_1_duration = 200000
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators

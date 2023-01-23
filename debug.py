@@ -1,5 +1,5 @@
 import torch
-from rave.new_vq import VQ
+from rave.quantization import VQ
 
 vq = VQ(128, 1024, .99)
 x = torch.randn(3, 128, 512, requires_grad=True)
