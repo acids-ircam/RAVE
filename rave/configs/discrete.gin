@@ -66,5 +66,4 @@ rave.RAVE:
     gan_loss = @core.hinge_gan
     valid_signal_crop = True
     num_skipped_features = 0
-    audio_distance = @core.EncodecAudioDistance
     update_discriminator_every = 4
