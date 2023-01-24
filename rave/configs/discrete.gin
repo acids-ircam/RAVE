@@ -54,7 +54,7 @@ core.SpectralDistance:
 
 balancer.Balancer:
     weights = {
-        'feature_matching' : 100,
+        'feature_matching' : 20,
         'adversarial' : 4,
     }
 
