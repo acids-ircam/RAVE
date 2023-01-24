@@ -1,9 +1,0 @@
-from __gin__ import dynamic_registration
-
-from rave import blocks
-
-blocks.GRU:
-    num_layers = 1
-
-blocks.EncoderV2.recurrent_layer = @blocks.GRU
-blocks.GeneratorV2.recurrent_layer = @blocks.GRU

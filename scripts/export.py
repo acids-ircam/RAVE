@@ -20,7 +20,6 @@ from absl import flags
 import rave
 import rave.blocks
 import rave.core
-import rave.scripted_vq
 
 FLAGS = flags.FLAGS
 

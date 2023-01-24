@@ -221,56 +221,6 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
-class GRU(nn.Module):
-
-    def __init__(self,
-                 dim: int,
-                 num_layers: int,
-                 dropout=0,
-                 cumulative_delay=0) -> None:
-        super().__init__()
-        self.dim = dim
-
-        self.gru = nn.GRU(
-            input_size=dim,
-            hidden_size=dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            batch_first=True,
-        )
-
-        self.register_buffer(
-            'gru_state',
-            torch.zeros(num_layers, cc.MAX_BATCH_SIZE, dim),
-        )
-
-        self.cumulative_delay = cumulative_delay
-        self.enabled = True
-        self.temporal = True
-
-    def disable(self):
-        self.enabled = False
-
-    def enable(self):
-        self.enabled = True
-
-    def trace_recurrent(self):
-        self.gru.flatten_parameters()
-        dummy_input = torch.randn(1, 128, self.dim)
-        state = self.gru(dummy_input)[1]
-        self.gru = torch.jit.trace(self.gru, [dummy_input, state])
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not self.enabled: return x
-
-        x = x.permute(0, 2, 1)
-        x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
-        if cc.USE_BUFFER_CONV:
-            self.gru_state[:, :x.shape[0]] = state
-        x = x.permute(0, 2, 1)
-        return x
-
-
 class Generator(nn.Module):
 
     def __init__(
@@ -281,7 +231,7 @@ class Generator(nn.Module):
         ratios,
         loud_stride,
         use_noise,
-        recurrent_layer: Optional[Callable[[], GRU]] = None,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ):
         super().__init__()
         net = [
@@ -383,7 +333,7 @@ class Encoder(nn.Module):
         n_out,
         sample_norm,
         repeat_layers,
-        recurrent_layer: Optional[Callable[[], GRU]] = None,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ):
         super().__init__()
         net = [cc.Conv1d(data_size, capacity, 7, padding=cc.get_padding(7))]
