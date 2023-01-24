@@ -22,21 +22,16 @@ CAPACITY = 96
 
 blocks.DiscreteEncoder:
     encoder_cls = @blocks.EncoderV2
-    vq_cls = @quantization.ResidualVQ
+    vq_cls = @quantization.ResidualVectorQuantization
     num_quantizers = %NUM_QUANTIZERS
 
 blocks.EncoderV2:
     n_out = 1
 
-quantization.ResidualVQ:
-    vq_cls = @quantization.VQ
+quantization.ResidualVectorQuantization:
     num_quantizers = %NUM_QUANTIZERS
-
-quantization.VQ:
     dim = %LATENT_SIZE
-    size = %CODEBOOK_SIZE
-    ema = .99
-
+    codebook_size = %CODEBOOK_SIZE
 
 # DISTANCES
 core.EncodecAudioDistance:
@@ -56,6 +51,7 @@ balancer.Balancer:
     weights = {
         'feature_matching' : 20,
         'adversarial' : 4,
+        'regularization': .1,
     }
 
 rave.RAVE:
