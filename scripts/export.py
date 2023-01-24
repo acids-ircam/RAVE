@@ -69,13 +69,6 @@ class ScriptedRAVE(nn_tilde.Module):
 
         elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
             self.latent_size = pretrained.encoder.num_quantizers
-            self.quantizer = rave.scripted_vq.SimpleQuantizer([
-                *map(
-                    lambda l: l._codebook.embed.squeeze(0),
-                    pretrained.encoder.rvq.layers,
-                )
-            ])
-            del self.encoder.rvq
 
         elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
             self.latent_size = pretrained.latent_size
@@ -189,13 +182,13 @@ class VariationalScriptedRAVE(ScriptedRAVE):
 class DiscreteScriptedRAVE(ScriptedRAVE):
 
     def post_process_latent(self, z):
-        z = self.quantizer.residual_quantize(z)
+        z = self.encoder.rvq.encode(z)
         return z.float()
 
     def pre_process_latent(self, z):
-        z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
-        z = self.quantizer.residual_dequantize(z)
-        z = self.encoder.add_noise_to_vector(z)
+        z = torch.clamp(z, 0,
+                        self.encoder.rvq.layers[0].codebook_size - 1).long()
+        z = self.encoder.rvq.decode(z)
         return z
 
 

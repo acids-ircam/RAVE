@@ -98,11 +98,8 @@ class EuclideanCodebook(nn.Module):
         self.register_buffer("embed", embed)
         self.register_buffer("embed_avg", embed.clone())
 
-    @torch.jit.ignore
+    @torch.jit.unused
     def init_embed_(self, data):
-        if self.inited:
-            return
-
         embed, cluster_size = kmeans(data, self.codebook_size,
                                      self.kmeans_iters)
         self.embed.data.copy_(embed)
@@ -159,7 +156,8 @@ class EuclideanCodebook(nn.Module):
         shape, dtype = x.shape, x.dtype
         x = self.preprocess(x)
 
-        self.init_embed_(x)
+        if not self.inited:
+            self.init_embed_(x)
 
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
@@ -313,7 +311,7 @@ class ResidualVectorQuantization(nn.Module):
 
     def decode(self, q_indices: torch.Tensor) -> torch.Tensor:
         quantized_out = torch.tensor(0.0, device=q_indices.device)
-        for layer, indices in zip(self.layers, q_indices.permute(1, 0, 2)):
-            quantized = layer.decode(indices)
+        for i, layer in enumerate(self.layers):
+            quantized = layer.decode(q_indices[:, i])
             quantized_out = quantized_out + quantized
         return quantized_out
