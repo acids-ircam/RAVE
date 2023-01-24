@@ -286,16 +286,14 @@ class ResidualVectorQuantization(nn.Module):
         self.layers = nn.ModuleList(
             [VectorQuantization(**kwargs) for _ in range(num_quantizers)])
 
-    def forward(self, x, n_q: Optional[int] = None):
+    def forward(self, x):
         quantized_out = 0.0
         residual = x
 
         all_losses = []
         all_indices = []
 
-        n_q = n_q or len(self.layers)
-
-        for layer in self.layers[:n_q]:
+        for layer in self.layers:
             quantized, indices, loss = layer(residual)
             residual = residual - quantized
             quantized_out = quantized_out + quantized
@@ -306,13 +304,10 @@ class ResidualVectorQuantization(nn.Module):
         out_losses, out_indices = map(torch.stack, (all_losses, all_indices))
         return quantized_out, sum(out_losses), out_indices.permute(1, 0, 2)
 
-    def encode(self,
-               x: torch.Tensor,
-               n_q: Optional[int] = None) -> torch.Tensor:
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         all_indices = []
-        n_q = n_q or len(self.layers)
-        for layer in self.layers[:n_q]:
+        for layer in self.layers:
             indices = layer.encode(residual)
             quantized = layer.decode(indices)
             residual = residual - quantized
