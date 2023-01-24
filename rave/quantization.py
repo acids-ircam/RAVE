@@ -93,6 +93,7 @@ class VQ(nn.Module):
             -1,
             quantized.shape[-1],
         ).permute(0, 2, 1)
+        codes = codes.reshape(batch_size, -1)
         return quantized, diff.mean(), codes[:, None]
 
 
@@ -110,6 +111,7 @@ class ResidualVQ(nn.Module):
             _xq, _diff, _codes = vq(x - xq)
             diff = diff + _diff
             xq = xq + _xq
+            codes.append(_codes)
         codes = torch.cat(codes, 1)
         return xq, (x - xq).pow(2).mean(), codes
 
