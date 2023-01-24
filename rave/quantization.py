@@ -1,6 +1,6 @@
 # Code adapted from https://github.com/lucidrains/vector-quantize-pytorch
 
-from einops import rearrange, repeat
+from einops import repeat
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -38,8 +38,7 @@ def kmeans(samples, num_clusters: int, num_iters: int = 10):
     means = sample_vectors(samples, num_clusters)
 
     for _ in range(num_iters):
-        diffs = rearrange(samples, "n d -> n () d") - rearrange(
-            means, "c d -> () c d")
+        diffs = samples[:, None] - means[None]
         dists = -(diffs**2).sum(dim=-1)
 
         buckets = dists.max(dim=-1).indices
@@ -125,12 +124,11 @@ class EuclideanCodebook(nn.Module):
         if not torch.any(expired_codes):
             return
 
-        batch_samples = rearrange(batch_samples, "... d -> (...) d")
+        batch_samples = batch_samples.reshape(-1, batch_samples.shape[-1])
         self.replace_(batch_samples, mask=expired_codes)
 
     def preprocess(self, x):
-        x = rearrange(x, "... d -> (...) d")
-        return x
+        return x.reshape(-1, x.shape[-1])
 
     def quantize(self, x):
         embed = self.embed.t()
@@ -138,9 +136,6 @@ class EuclideanCodebook(nn.Module):
                  embed.pow(2).sum(0, keepdim=True))
         embed_ind = dist.max(dim=-1).indices
         return embed_ind
-
-    def postprocess_emb(self, embed_ind, shape):
-        return embed_ind.view(*shape[:-1])
 
     def dequantize(self, embed_ind):
         quantize = F.embedding(embed_ind, self.embed)
@@ -153,7 +148,7 @@ class EuclideanCodebook(nn.Module):
         # quantize
         embed_ind = self.quantize(x)
         # post-process
-        embed_ind = self.postprocess_emb(embed_ind, shape)
+        embed_ind = embed_ind.reshape(shape[0], shape[1])
         return embed_ind
 
     def decode(self, embed_ind):
@@ -168,7 +163,7 @@ class EuclideanCodebook(nn.Module):
 
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
-        embed_ind = self.postprocess_emb(embed_ind, shape)
+        embed_ind = embed_ind.reshape(shape[0], shape[1])
         quantize = self.dequantize(embed_ind)
 
         if self.training:
@@ -243,7 +238,7 @@ class VectorQuantization(nn.Module):
         return self._codebook.embed
 
     def encode(self, x):
-        x = rearrange(x, "b d n -> b n d")
+        x = x.permute(0, 2, 1)
         x = self.project_in(x)
         embed_in = self._codebook.encode(x)
         return embed_in
@@ -251,12 +246,12 @@ class VectorQuantization(nn.Module):
     def decode(self, embed_ind):
         quantize = self._codebook.decode(embed_ind)
         quantize = self.project_out(quantize)
-        quantize = rearrange(quantize, "b n d -> b d n")
+        quantize = quantize.permute(0, 2, 1)
         return quantize
 
     def forward(self, x):
         device = x.device
-        x = rearrange(x, "b d n -> b n d")
+        x = x.permute(0, 2, 1)
         x = self.project_in(x)
 
         quantize, embed_ind = self._codebook(x)
@@ -272,7 +267,7 @@ class VectorQuantization(nn.Module):
                 loss = loss + commit_loss * self.commitment_weight
 
         quantize = self.project_out(quantize)
-        quantize = rearrange(quantize, "b n d -> b d n")
+        quantize = quantize.permute(0, 2, 1)
         return quantize, embed_ind, loss
 
 
@@ -301,8 +296,9 @@ class ResidualVectorQuantization(nn.Module):
             all_indices.append(indices)
             all_losses.append(loss)
 
-        out_losses, out_indices = map(torch.stack, (all_losses, all_indices))
-        return quantized_out, sum(out_losses), out_indices.permute(1, 0, 2)
+        out_losses = torch.stack(all_losses, 0).sum()
+        all_indices = torch.stack(all_indices, 1)
+        return quantized_out, out_losses, all_indices
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
@@ -312,13 +308,12 @@ class ResidualVectorQuantization(nn.Module):
             quantized = layer.decode(indices)
             residual = residual - quantized
             all_indices.append(indices)
-        out_indices = torch.stack(all_indices)
+        out_indices = torch.stack(all_indices, 1)
         return out_indices
 
     def decode(self, q_indices: torch.Tensor) -> torch.Tensor:
         quantized_out = torch.tensor(0.0, device=q_indices.device)
-        for i, indices in enumerate(q_indices):
-            layer = self.layers[i]
+        for layer, indices in zip(self.layers, q_indices.permute(1, 0, 2)):
             quantized = layer.decode(indices)
             quantized_out = quantized_out + quantized
         return quantized_out
