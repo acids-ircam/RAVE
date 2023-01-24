@@ -50,9 +50,9 @@ core.SpectralDistance:
 balancer.Balancer:
     weights = {
         'feature_matching' : 20,
-        'adversarial' : 4,
         'regularization': .1,
     }
+    scale_gradients = False
 
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
