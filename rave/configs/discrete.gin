@@ -33,18 +33,6 @@ quantization.ResidualVectorQuantization:
     dim = %LATENT_SIZE
     codebook_size = %CODEBOOK_SIZE
 
-# DISTANCES
-core.EncodecAudioDistance:
-    scales = [64, 128, 256, 512, 1024, 2048, 4096]
-    spectral_distance = @core.SpectralDistance
-
-core.SpectralDistance:
-    sampling_rate = %SAMPLING_RATE
-    norm = ['L1', 'L2']
-    power = 1
-    normalized = True
-    mel = 64
-
 # RAVE
 
 rave.RAVE:
