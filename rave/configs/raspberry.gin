@@ -1,0 +1,5 @@
+from __gin__ import dynamic_registration
+
+include "configs/onnx.gin"
+
+CAPACITY = 16

@@ -1,0 +1,124 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import pqmf
+from rave import core
+from rave import blocks
+from rave import discriminator
+from rave import dataset
+from rave import balancer
+
+import cached_conv as cc
+import torch
+
+SAMPLING_RATE = 44100
+CAPACITY = 64
+N_BAND = 16
+LATENT_SIZE = 128
+RATIOS = [4, 4, 4, 2]
+PHASE_1_DURATION = 1000000
+
+# CORE CONFIGURATION
+core.AudioDistanceV1:
+    multiscale_stft = @core.MultiScaleSTFT
+    log_epsilon = 1e-7
+
+core.MultiScaleSTFT:
+    scales = [2048, 1024, 512, 256, 128]
+    sample_rate = %SAMPLING_RATE
+    magnitude = True
+
+dataset.split_dataset.max_residual = 1000
+
+# CONVOLUTION CONFIGURATION
+cc.Conv1d.bias = False
+cc.ConvTranspose1d.bias = False
+
+# PQMF
+pqmf.CachedPQMF:
+    attenuation = 100
+    n_band = %N_BAND
+
+blocks.normalization.mode = 'weight_norm'
+
+# ENCODER
+blocks.Encoder:
+    data_size = %N_BAND
+    capacity = %CAPACITY
+    latent_size = %LATENT_SIZE
+    ratios = %RATIOS
+    sample_norm = False
+    repeat_layers = 1
+
+variational/blocks.Encoder.n_out = 2
+
+blocks.VariationalEncoder:
+    encoder = @variational/blocks.Encoder
+
+# DECODER
+blocks.Generator:
+    latent_size = %LATENT_SIZE
+    capacity = %CAPACITY
+    data_size = %N_BAND
+    ratios = %RATIOS
+    loud_stride = 1
+    use_noise = True
+
+blocks.ResidualStack:
+    kernel_sizes = [3]
+    dilations_list = [[1, 1], [3, 1], [5, 1]]
+
+blocks.NoiseGenerator:
+    ratios = [4, 4, 4]
+    noise_bands = 5
+
+# DISCRIMINATOR
+discriminator.ConvNet:
+    in_size = 1
+    out_size = 1
+    capacity = %CAPACITY
+    n_layers = 4
+    stride = 4
+
+scales/discriminator.ConvNet:
+    conv = @torch.nn.Conv1d
+    kernel_size = 15
+
+discriminator.MultiScaleDiscriminator:
+    n_discriminators = 3
+    convnet = @scales/discriminator.ConvNet
+
+feature_matching/core.mean_difference:
+    norm = 'L1'
+
+# BALANCER
+balancer.Balancer:
+    ema_averager = @balancer.EMA
+    weights = {
+        'regularization': .1,
+        'feature_matching': 10,
+    }
+    deny_list = [
+        'regularization'
+    ]
+    scale_gradients = False
+
+balancer.EMA:
+    beta = 0.999
+
+# MODEL ASSEMBLING
+rave.RAVE:
+    latent_size = %LATENT_SIZE
+    pqmf = @pqmf.CachedPQMF
+    sampling_rate = %SAMPLING_RATE
+    encoder = @blocks.VariationalEncoder  
+    decoder = @blocks.Generator
+    discriminator = @discriminator.MultiScaleDiscriminator
+    phase_1_duration = %PHASE_1_DURATION
+    gan_loss = @core.hinge_gan
+    valid_signal_crop = False
+    feature_matching_fun = @feature_matching/core.mean_difference
+    num_skipped_features = 0
+    audio_distance = @core.AudioDistanceV1
+    multiband_audio_distance = @core.AudioDistanceV1
+    balancer = @balancer.Balancer

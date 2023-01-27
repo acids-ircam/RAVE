@@ -1,12 +1,13 @@
-import torch
-import torch.nn as nn
-from scipy.signal import kaiser, kaiserord, kaiser_beta, firwin
-from scipy.optimize import fmin
 import math
-import numpy as np
-from einops import rearrange
 
 import cached_conv as cc
+import gin
+import numpy as np
+import torch
+import torch.nn as nn
+from einops import rearrange
+from scipy.optimize import fmin
+from scipy.signal import firwin, kaiser, kaiser_beta, kaiserord
 
 
 def reverse_half(x):
@@ -186,6 +187,7 @@ class PQMF(nn.Module):
         Number of bands, must be a power of 2 if the polyphase implementation
         is needed
     """
+
     def __init__(self, attenuation, n_band, polyphase=True):
         super().__init__()
         h = get_prototype(attenuation, n_band)
@@ -230,6 +232,7 @@ class PQMF(nn.Module):
 
 
 class CachedPQMF(PQMF):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

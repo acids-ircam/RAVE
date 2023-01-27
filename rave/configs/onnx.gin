@@ -1,0 +1,10 @@
+from __gin__ import dynamic_registration
+
+include "configs/v1.gin"
+
+import rave
+from rave import blocks
+
+CAPACITY = 32
+
+blocks.Generator.use_noise = False

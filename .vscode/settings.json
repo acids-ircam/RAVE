@@ -1,4 +1,9 @@
 {
-  "editor.formatOnSave": true,
-  "python.formatting.provider": "yapf"
+  "editor.formatOnSave": false,
+  "python.formatting.provider": "yapf",
+  "python.testing.pytestArgs": [
+    "."
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

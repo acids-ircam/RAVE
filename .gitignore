@@ -7,3 +7,8 @@ lightning_logs/
 *.wav
 *.txt
 runs
+*.npy
+*.yaml
+*.onnx
+__version__*
+PKG-INFO
