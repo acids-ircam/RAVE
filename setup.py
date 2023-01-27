@@ -25,7 +25,7 @@ with open("requirements.txt", "r") as requirements:
     requirements = requirements.read()
 
 setuptools.setup(
-    name="rave",
+    name="acids-rave",
     version=version,
     author="Antoine CAILLON",
     author_email="caillon@ircam.fr",
