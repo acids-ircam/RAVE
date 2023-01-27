@@ -135,6 +135,10 @@ rave export --run /path/to/your/run (--streaming)
 
 Setting the `--streaming` flag will enable cached convolutions, making the model compatible with realtime processing. **If you forget to use the streaming mode and try to load the model in Max, you will hear clicking artifacts.**
 
+## Pretrained models
+
+Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
+
 ## Where is the prior ?
 
 The prior model was an experimental feature from RAVEv1 and has been removed from this repository. **However**, we will release a new improved version of the prior soon (very soon in fact).
