@@ -65,10 +65,9 @@ feature_matching/core.mean_difference:
 balancer.Balancer:
     weights = {
         'feature_matching' : 20,
-        'regularization' : .1,
-        'adversarial' : 4,
+        'regularization': .1,
     }
-    scale_gradients = True
+    scale_gradients = False
 
 # RAVE
 rave.RAVE:
