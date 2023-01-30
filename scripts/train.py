@@ -78,7 +78,7 @@ def main(argv):
                        FLAGS.batch,
                        True,
                        drop_last=True,
-                       num_workers=FLAGS.workers)
+                       num_workers=0 if os.name == "nt" else FLAGS.workers)
     val = DataLoader(val, FLAGS.batch, False, num_workers=FLAGS.workers)
 
     # CHECKPOINT CALLBACKS
