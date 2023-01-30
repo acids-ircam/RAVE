@@ -166,6 +166,15 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
 
 
 def main(argv):
+    if FLAGS.lazy and os.name == "nt":
+        while (answer := input(
+                "Using lazy datasets on Windows might result in slow training. Continue ? (y/n) "
+        ).lower()) not in ["y", "n"]:
+            print("Answer 'y' or 'n'.")
+        if answer == "n":
+            print("Aborting...")
+            exit()
+
     chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
                          sr=FLAGS.sampling_rate)
