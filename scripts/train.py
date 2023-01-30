@@ -74,12 +74,13 @@ def main(argv):
                                        derivative=FLAGS.derivative,
                                        normalize=FLAGS.normalize)
     train, val = rave.dataset.split_dataset(dataset, 98)
+    num_workers=0 if os.name in ["nt", "posix"] else FLAGS.workers
     train = DataLoader(train,
                        FLAGS.batch,
                        True,
                        drop_last=True,
-                       num_workers=0 if os.name == "nt" else FLAGS.workers)
-    val = DataLoader(val, FLAGS.batch, False, num_workers=FLAGS.workers)
+                       num_workers=num_workers)
+    val = DataLoader(val, FLAGS.batch, False, num_workers=num_workers)
 
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
@@ -107,12 +108,26 @@ def main(argv):
 
     print('selected gpu:', gpu)
 
+    accelerator = None
+    devices = None
+    if FLAGS.gpu == [-1]:
+        pass
+    elif torch.cuda.is_available():
+        accelerator = "cuda"
+        devices = FLAGS.gpu or rave.core.setup_gpu()
+    elif torch.backends.mps.is_available():
+        print("Training on mac is not available yet. Use --gpu -1 to train on CPU (not recommended).")
+        exit()
+        accelerator = "mps"
+        devices = 1
+
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             "runs",
             name=RUN_NAME,
         ),
-        gpus=gpu,
+        accelerator=accelerator,
+        devices=devices,
         callbacks=[
             validation_checkpoint,
             last_checkpoint,

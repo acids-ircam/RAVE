@@ -44,6 +44,7 @@ flags.DEFINE_multi_string(
 flags.DEFINE_bool('lazy',
                   default=False,
                   help='Decode and resample audio samples.')
+flags.DEFINE_bool('dyndb', default=True, help="Allow the database to grow dynamically")
 
 
 def float_array_to_int16_bytes(x):
@@ -166,9 +167,9 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
 
 
 def main(argv):
-    if FLAGS.lazy and os.name == "nt":
+    if FLAGS.lazy and os.name in ["nt", "posix"]:
         while (answer := input(
-                "Using lazy datasets on Windows might result in slow training. Continue ? (y/n) "
+                "Using lazy datasets on Windows/macOS might result in slow training. Continue ? (y/n) "
         ).lower()) not in ["y", "n"]:
             print("Answer 'y' or 'n'.")
         if answer == "n":
@@ -183,8 +184,8 @@ def main(argv):
     env = lmdb.open(
         FLAGS.output_path,
         map_size=FLAGS.max_db_size * 1024**3,
-        map_async=True,
-        writemap=True,
+        map_async=not FLAGS.dyndb,
+        writemap=not FLAGS.dyndb,
     )
     pool = multiprocessing.Pool()
 
