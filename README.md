@@ -36,7 +36,7 @@ Training a RAVE model usually involves 3 separate steps, namely _dataset prepara
 
 ### Dataset preparation
 
-You can know prepare a dataset using two methods: regular and lazy. Lazy preprocessing allows RAVE to be trained directly on the raw files (i.e. mp3, ogg), without converting them first. This can be useful when training on large audio corpus which would not fit on a hard drive when uncompressed. In any case, prepare your dataset using
+You can know prepare a dataset using two methods: regular and lazy. Lazy preprocessing allows RAVE to be trained directly on the raw files (i.e. mp3, ogg), without converting them first. **Warning**: lazy dataset loading will increase your CPU load by a large margin during training, especially on Windows. This can however be useful when training on large audio corpus which would not fit on a hard drive when uncompressed. In any case, prepare your dataset using
 
 ```bash
 rave preprocess --input_path /audio/folder --output_path /dataset/path (--lazy)
