@@ -22,6 +22,12 @@ Install RAVE using
 pip install acids-rave
 ```
 
+You will need **ffmpeg** on your computer. You can install it locally inside your virtual environment using
+
+```bash
+conda install ffmpeg
+```
+
 <!-- Detailed instructions to setup a training station for this project are available [here](docs/training_setup.md). -->
 
 ## Usage
