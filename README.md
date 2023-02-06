@@ -30,6 +30,11 @@ conda install ffmpeg
 
 <!-- Detailed instructions to setup a training station for this project are available [here](docs/training_setup.md). -->
 
+## Colab
+
+A colab to train RAVEv2 is now available thanks to [hexorcismos](https://github.com/moiseshorta) !
+[![colab_badge](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ih-gv1iHEZNuGhHPvCHrleLNXvooQMvI?usp=sharing)
+
 ## Usage
 
 Training a RAVE model usually involves 3 separate steps, namely _dataset preparation_, _training_ and _export_.
