@@ -44,7 +44,9 @@ flags.DEFINE_multi_string(
 flags.DEFINE_bool('lazy',
                   default=False,
                   help='Decode and resample audio samples.')
-flags.DEFINE_bool('dyndb', default=True, help="Allow the database to grow dynamically")
+flags.DEFINE_bool('dyndb',
+                  default=True,
+                  help="Allow the database to grow dynamically")
 
 
 def float_array_to_int16_bytes(x):

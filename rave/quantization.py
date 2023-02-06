@@ -1,10 +1,11 @@
 # Code adapted from https://github.com/lucidrains/vector-quantize-pytorch
 
-from einops import repeat
+from typing import Any, Callable, Optional, Union
+
 import torch
-from torch import nn
 import torch.nn.functional as F
-from typing import Union, Callable, Any, Optional
+from einops import repeat
+from torch import nn
 
 
 def ema_inplace(moving_avg, new, decay: float):
