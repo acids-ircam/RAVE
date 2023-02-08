@@ -12,6 +12,7 @@ import lmdb
 import numpy as np
 import torch
 import yaml
+import math
 from absl import app, flags
 from tqdm import tqdm
 from udls.generated import AudioExample
@@ -52,26 +53,45 @@ def float_array_to_int16_bytes(x):
 
 
 def load_audio_chunk(path: str, n_signal: int,
-                     sr: int, channel: int = 1) -> Iterable[np.ndarray]:
-    process = subprocess.Popen(
-        [
-            'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, '-ac',
-            '1', '-ar', '-filter_complex',
-            '[0:a]channelmap=%d[0]'%channel,
-            str(sr), '-f', 's16le', '-map',
-            '[0]', '-'
-        ],
-        stdout=subprocess.PIPE,
-    )
+                     sr: int, channels: int = 1) -> Iterable[np.ndarray]:
+    # process = subprocess.Popen(
+    #     [
+    #         'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, '-ac',
+    #         '1', '-ar', '-filter_complex',
+    #         '[0:a]channelmap=%d[0]'%channel,
+    #         str(sr), '-f', 's16le', '-map',
+    #         '[0]', '-'
+    #     ],
+    #     stdout=subprocess.PIPE,
+    # )
 
-    chunk = process.stdout.read(n_signal)
-    while len(chunk) == n_signal * 2:
-        yield chunk
-        chunk = process.stdout.read(n_signal * 2) 
+    _, input_channels = get_audio_channels(path)
+    channel_map = range(channels)
+    if input_channels < channels:
+        channel_map = (math.ceil(channels / input_channels) * list(range(input_channels)))[:channels]
+
+    processes = []
+    for i in range(channels): 
+        process = subprocess.Popen(
+            [
+                'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, 
+                '-ar', str(sr),
+                '-f', 's16le',
+                '-filter_complex', 'channelmap=%d-0'%channel_map[i],
+                '-'
+            ],
+            stdout=subprocess.PIPE,
+        )
+        processes.append(process)
+    
+    chunk = [p.stdout.read(n_signal * 2) for p in processes]
+    while len(chunk[0]) == n_signal * 2:
+        yield b''.join(chunk)
+        chunk = [p.stdout.read(n_signal * 2) for p in processes]
     process.stdout.close()
 
-def load_audio_chunk_mc(path: str, n_signal: int, sr: int, channels: int = 1):
-    return torch.stack([load_audio_chunk(path, n_signal, sr, i) for i in range(channels)])
+# def load_audio_chunk_mc(path: str, n_signal: int, sr: int, channels: int = 1):
+#     return torch.stack([load_audio_chunk(path, n_signal, sr, i) for i in range(channels)])
 
 def get_audio_length(path: str) -> float:
     process = subprocess.Popen(
@@ -90,6 +110,24 @@ def get_audio_length(path: str) -> float:
         return path, float(length)
     except:
         return None
+
+def get_audio_channels(path: str) -> int:
+    process = subprocess.Popen(
+        [
+            'ffprobe', '-i', path, '-v', 'error', '-show_entries',
+            'stream=channels'
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, _ = process.communicate()
+    if process.returncode: return None
+    try:
+        stdout = stdout.decode().split('\n')[1].split('=')[-1]
+        channels = int(stdout)
+        return path, int(channels)
+    except:
+        return None 
 
 
 def flatten(iterator: Iterable):
@@ -172,7 +210,7 @@ def search_for_audios(path_list: Sequence[str], extensions: Sequence[str]):
 
 
 def main(argv):
-    chunk_load = partial(load_audio_chunk_mc,
+    chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
                          sr=FLAGS.sampling_rate,
                          channels=FLAGS.channels)
@@ -194,6 +232,7 @@ def main(argv):
         yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels}, metadata)
 
     if not FLAGS.lazy:
+
         # load chunks
         chunks = flatmap(pool, chunk_load, audios)
         chunks = enumerate(chunks)
@@ -210,6 +249,7 @@ def main(argv):
     else:
         audio_lengths = pool.imap_unordered(get_audio_length, audios)
         audio_lengths = filter(lambda x: x is not None, audio_lengths)
+
         audio_lengths = enumerate(audio_lengths)
         processed_samples = map(partial(process_audio_file, env=env),
                                 audio_lengths)

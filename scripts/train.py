@@ -55,14 +55,13 @@ def add_gin_extension(config_name: str) -> str:
 
 def main(argv):
     torch.backends.cudnn.benchmark = True
+    # check dataset channels
+    n_channels = FLAGS.n_channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
+    gin.bind_parameter('RAVE.n_channels', n_channels)
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
         FLAGS.override,
     )
-
-    # check dataset channels
-    n_channels = FLAGS.n_channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
-    gin.bind_parameter('RAVE.n_channels', flags.CHANNELS)
     model = rave.RAVE()
 
     dataset = rave.dataset.get_dataset(

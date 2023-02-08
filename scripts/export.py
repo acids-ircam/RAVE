@@ -217,12 +217,10 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
-                          #      skip_unknown=True,
-                          )
+    gin.parse_config_file("runs/longitudinal_99019cc5c4/config.gin")
     if FLAGS.channels:
         gin.bind_parameter('RAVE.n_channels', FLAGS.channels)
-    checkpoint = rave.core.search_for_run(FLAGS.run)
+    checkpoint = "runs/longitudinal_99019cc5c4/version_1/checkpoints/best.ckpt"
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
@@ -256,6 +254,8 @@ def main(argv):
     logging.info("script model")
 
     scripted_rave = script_class(pretrained=pretrained, channels=FLAGS.channels)
+    
+
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))
@@ -263,10 +263,13 @@ def main(argv):
         model_name += "_streaming"
     model_name += ".ts"
 
-    scripted_rave.export_to_ts(os.path.join(FLAGS.run, model_name))
+    scripted_rave.export_to_ts(os.path.join("out.ts"))
 
     logging.info(
         f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
+    print(scripted_rave.encode_params)
+    print(scripted_rave.decode_params)
+    print(scripted_rave.forward_params)
 
 if __name__ == '__main__':
     app.run(main)
