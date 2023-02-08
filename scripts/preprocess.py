@@ -216,7 +216,12 @@ def main(argv):
                          channels=FLAGS.channels)
 
     # create database
-    env = lmdb.open(FLAGS.output_path, map_size=FLAGS.max_db_size * 1024**3)
+    env = lmdb.open(
+        FLAGS.output_path,
+        map_size=FLAGS.max_db_size * 1024**3,
+        map_async=True,
+        writemap=True,
+    )
     pool = multiprocessing.Pool()
 
     # search for audio files
@@ -224,12 +229,8 @@ def main(argv):
     audios = map(str, audios)
     audios = map(os.path.abspath, audios)
     audios = [*audios]
-
-    with open(os.path.join(
-            FLAGS.output_path,
-            'metadata.yaml',
-    ), 'w') as metadata:
-        yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels}, metadata)
+    if len(audios) == 0:
+        print("No valid file found in %s. Aborting"%FLAGS.input_path)
 
     if not FLAGS.lazy:
 
@@ -254,12 +255,19 @@ def main(argv):
         processed_samples = map(partial(process_audio_file, env=env),
                                 audio_lengths)
         pbar = tqdm(processed_samples)
-        total = 0
+        n_seconds = 0
         for length in pbar:
-            total += length
-            pbar.set_description(f'dataset length: {timedelta(seconds=total)}')
+            n_seconds += length
+            pbar.set_description(
+                f'dataset length: {timedelta(seconds=n_seconds)}')
 
+    with open(os.path.join(
+            FLAGS.output_path,
+            'metadata.yaml',
+    ), 'w') as metadata:
+        yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels, 'n_seconds': n_seconds}, metadata)
     pool.close()
+    env.close()
 
 
 if __name__ == '__main__':

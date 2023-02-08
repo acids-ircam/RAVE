@@ -23,7 +23,6 @@ from typing import Union
 import rave
 import rave.blocks
 import rave.core
-import rave.scripted_vq
 
 FLAGS = flags.FLAGS
 
@@ -71,13 +70,6 @@ class ScriptedRAVE(nn_tilde.Module):
 
         elif isinstance(pretrained.encoder, rave.blocks.DiscreteEncoder):
             self.latent_size = pretrained.encoder.num_quantizers
-            self.quantizer = rave.scripted_vq.SimpleQuantizer([
-                *map(
-                    lambda l: l._codebook.embed.squeeze(0),
-                    pretrained.encoder.rvq.layers,
-                )
-            ])
-            del self.encoder.rvq
 
         elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
             self.latent_size = pretrained.latent_size
@@ -88,7 +80,8 @@ class ScriptedRAVE(nn_tilde.Module):
             )
 
         x = torch.zeros(1, self.channels, 2**14)
-        z = self.encode(x)
+        x_m = x.clone() if self.pqmf is None else self.pqmf(x)
+        z = self.encoder(x_m)
         ratio_encode = x.shape[-1] // z.shape[-1]
 
         self.register_method(
@@ -147,10 +140,11 @@ class ScriptedRAVE(nn_tilde.Module):
 
     @torch.jit.export
     def encode(self, x):
-        batch_size = x.shape[0]
-        x = x.reshape(-1, 1, x.shape[-1])
-        x = self.pqmf(x)
-        x = x.reshape(batch_size, -1, x.shape[-1])
+        if self.pqmf is not None:
+            batch_size = x.shape[:-2]
+            x = x.reshape(-1, 1, x.shape[-1])
+            x = self.pqmf(x)
+            x = x.reshape(batch_size, -1, x.shape[-1])
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
@@ -160,9 +154,15 @@ class ScriptedRAVE(nn_tilde.Module):
         batch_size = z.shape[0]
         z = self.pre_process_latent(z)
         y = self.decoder(z)
-        y = y.reshape(y.shape[0] * self.channels, -1, y.shape[-1])
-        y = self.pqmf.inverse(y)
-        y = y.reshape(batch_size, self.channels, -1)
+        if self.pqmf is not None:
+            y = y.reshape(y.shape[0] * self.channels, -1, y.shape[-1])
+            y = self.pqmf.inverse(y)
+            y = y.reshape(batch_size, self.channels, -1)
+
+        if self.stereo:
+            #TODO make channels check
+            y = torch.cat(y.chunk(2, 0), 1)
+
         return y
 
     def forward(self, x):
@@ -193,13 +193,13 @@ class VariationalScriptedRAVE(ScriptedRAVE):
 class DiscreteScriptedRAVE(ScriptedRAVE):
 
     def post_process_latent(self, z):
-        z = self.quantizer.residual_quantize(z)
+        z = self.encoder.rvq.encode(z)
         return z.float()
 
     def pre_process_latent(self, z):
-        z = torch.clamp(z, 0, self.quantizer.n_codes - 1).long()
-        z = self.quantizer.residual_dequantize(z)
-        z = self.encoder.add_noise_to_vector(z)
+        z = torch.clamp(z, 0,
+                        self.encoder.rvq.layers[0].codebook_size - 1).long()
+        z = self.encoder.rvq.decode(z)
         return z
 
 
@@ -245,12 +245,13 @@ def main(argv):
     x = torch.zeros(1, pretrained.n_channels, 2**14)
     pretrained(x)
 
-    logging.info("remove weightnorm")
+    logging.info("optimize model")
 
     for m in pretrained.modules():
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
-
+        if isinstance(m, rave.blocks.GRU):
+            m.trace_recurrent()
     logging.info("script model")
 
     scripted_rave = script_class(pretrained=pretrained, channels=FLAGS.channels)

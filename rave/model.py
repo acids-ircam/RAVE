@@ -1,3 +1,4 @@
+from time import time
 from typing import Callable, Optional
 
 import gin, pdb
@@ -12,6 +13,24 @@ import rave.core
 
 from .balancer import Balancer
 from .blocks import DiscreteEncoder, VariationalEncoder
+
+
+class Profiler:
+
+    def __init__(self):
+        self.ticks = [[time(), None]]
+
+    def tick(self, msg):
+        self.ticks.append([time(), msg])
+
+    def __repr__(self):
+        rep = 80 * "=" + "\n"
+        for i in range(1, len(self.ticks)):
+            msg = self.ticks[i][1]
+            ellapsed = self.ticks[i][0] - self.ticks[i - 1][0]
+            rep += msg + f": {ellapsed*1000:.2f}ms\n"
+        rep += 80 * "=" + "\n\n\n"
+        return rep
 
 
 class WarmupCallback(pl.Callback):
@@ -53,7 +72,6 @@ class RAVE(pl.LightningModule):
     def __init__(
         self,
         latent_size,
-        pqmf,
         sampling_rate,
         encoder,
         decoder,
@@ -67,12 +85,14 @@ class RAVE(pl.LightningModule):
         multiband_audio_distance: Callable[[], nn.Module],
         balancer: Callable[[], Balancer],
         warmup_quantize: Optional[int] = None,
+        pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
         n_channels: int = 1
     ):
         super().__init__()
-
-        self.pqmf = pqmf(n_channels=n_channels)
+        self.pqmf = None
+        if pqmf is not None:
+            self.pqmf = pqmf(n_channels=n_channels)
         self.encoder = encoder(beta=1.0, n_channels=n_channels)
         self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)
@@ -106,6 +126,7 @@ class RAVE(pl.LightningModule):
         self.update_discriminator_every = update_discriminator_every
 
         self.eval_number = 0
+        self.integrator = None
 
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
@@ -132,15 +153,17 @@ class RAVE(pl.LightningModule):
         return feature_real, feature_fake
 
     def training_step(self, batch, batch_idx):
+        p = Profiler()
         gen_opt, dis_opt = self.optimizers()
         # x = batch.unsqueeze(1)
         x = batch
         x.requires_grad = True
 
         batch_size = batch.shape[:-2]
-        x = batch.reshape(-1, 1, batch.shape[-1])
-        x_multiband = self.pqmf(x)
-        x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
+        if self.pqmf is not None:
+            x = batch.reshape(-1, 1, batch.shape[-1])
+            x_multiband = self.pqmf(x)
+            x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
 
         self.encoder.set_warmed_up(self.warmed_up)
         self.decoder.set_warmed_up(self.warmed_up)
@@ -148,9 +171,11 @@ class RAVE(pl.LightningModule):
         # ENCODE INPUT
         z_pre_reg = self.encoder(x_multiband)
         z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
+        p.tick('encode')
 
         # DECODE LATENT
         y_multiband = self.decoder(z)
+        p.tick('decode')
 
         if self.valid_signal_crop and self.receptive_field.sum():
             x_multiband = rave.core.valid_signal_crop(
@@ -161,24 +186,26 @@ class RAVE(pl.LightningModule):
                 y_multiband,
                 *self.receptive_field,
             )
+        p.tick('crop')
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
-        multiband_distance = self.multiband_audio_distance(
-            x_multiband, y_multiband)
-
-        x_multiband_tmp = x_multiband.reshape(x_multiband.shape[0] * self.n_channels, -1, x_multiband.shape[-1])
-        y_multiband_tmp = y_multiband.reshape(y_multiband.shape[0] * self.n_channels, -1, y_multiband.shape[-1])
-        x = self.pqmf.inverse(x_multiband_tmp)
-        y = self.pqmf.inverse(y_multiband_tmp)
-        x = x.reshape(*batch_size, self.n_channels, -1)
-        y = y.reshape(*batch_size, self.n_channels, -1)
-
-        fullband_distance = self.audio_distance(x, y)
-
         distances = {}
 
-        for k, v in multiband_distance.items():
-            distances[f'multiband_{k}'] = v
+        if self.pqmf is not None:
+            multiband_distance = self.multiband_audio_distance(
+                x_multiband, y_multiband)
+            p.tick('mb distance')
+
+            x_multiband_tmp = x_multiband.reshape(x_multiband.shape[0] * self.n_channels, -1, x_multiband.shape[-1])
+            y_multiband_tmp = y_multiband.reshape(y_multiband.shape[0] * self.n_channels, -1, y_multiband.shape[-1])
+            x = self.pqmf.inverse(x_multiband_tmp)
+            y = self.pqmf.inverse(y_multiband_tmp)
+            x = x.reshape(*batch_size, self.n_channels, -1)
+            y = y.reshape(*batch_size, self.n_channels, -1)
+
+        fullband_distance = self.audio_distance(x, y)
+        p.tick('fb distance')
+
         for k, v in fullband_distance.items():
             distances[f'fullband_{k}'] = v
 
@@ -222,11 +249,12 @@ class RAVE(pl.LightningModule):
             pred_fake = torch.tensor(0.).to(x)
             loss_dis = torch.tensor(0.).to(x)
             loss_adv = torch.tensor(0.).to(x)
+        p.tick('discrimination')
 
         # COMPOSE GEN LOSS
         loss_gen = {}
-
         loss_gen.update(distances)
+        p.tick('update loss gen dict')
 
         if reg.item():
             loss_gen['regularization'] = reg
@@ -241,9 +269,10 @@ class RAVE(pl.LightningModule):
             dis_opt.zero_grad()
             loss_dis.backward()
             dis_opt.step()
+            p.tick('dis opt')
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(loss_gen, y_multiband, self.log)
+            self.balancer.backward(loss_gen, y_multiband, self.log, p.tick)
             gen_opt.step()
 
         # LOGGING
@@ -253,17 +282,19 @@ class RAVE(pl.LightningModule):
             self.log("pred_fake", pred_fake.mean())
 
         self.log_dict(loss_gen)
+        p.tick('logging')
 
     def encode(self, x):
-        batch_size = x.shape[:-2]
-        x = x.reshape(-1, 1, x.shape[-1])
-        x = self.pqmf(x)
-        x = x.reshape(*batch_size, -1, x.shape[-1])
+        if self.pqmf is not None:
+            batch_size = x.shape[:-2]
+            x = x.reshape(-1, 1, x.shape[-1])
+            x = self.pqmf(x)
+            x = x.reshape(*batch_size, -1, x.shape[-1])
         z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
     def decode(self, z):
-        batch_size = z.shape[:-1]
+        batch_size = z.shape[:-2]
         y = self.decoder(z)
         y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
         y = self.pqmf.inverse(y)
@@ -277,9 +308,10 @@ class RAVE(pl.LightningModule):
         # x = batch.unsqueeze(1)
         x = batch
         batch_size = x.shape[:-2]
-        x = x.reshape(-1, 1, x.shape[-1])
-        x = self.pqmf(x)
-        x = x.reshape(*batch_size, -1, x.shape[-1])
+        if self.pqmf is not None:
+            x = x.reshape(-1, 1, x.shape[-1])
+            x = self.pqmf(x)
+            x = x.reshape(*batch_size, -1, x.shape[-1])
         z = self.encoder(x)
 
         if isinstance(self.encoder, VariationalEncoder):
@@ -290,12 +322,13 @@ class RAVE(pl.LightningModule):
         z = self.encoder.reparametrize(z)[0]
         y = self.decoder(z)
 
-        x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
-        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
-        x = self.pqmf.inverse(x)
-        y = self.pqmf.inverse(y)
-        x = x.reshape(*batch_size, self.n_channels, -1)
-        y = y.reshape(*batch_size, self.n_channels, -1)
+        if self.pqmf is not None:
+            x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
+            y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
+            x = self.pqmf.inverse(x)
+            y = self.pqmf.inverse(y)
+            x = x.reshape(*batch_size, self.n_channels, -1)
+            y = y.reshape(*batch_size, self.n_channels, -1)
 
         distance = self.audio_distance(x, y)
 
@@ -347,7 +380,26 @@ class RAVE(pl.LightningModule):
                     np.argmax(var > p).astype(np.float32),
                 )
 
-        y = torch.cat(audio, 0)[:8].reshape(-1)
+        y = torch.cat(audio, 0)[:8].reshape(-1).numpy()
+
+        if self.integrator is not None:
+            y = self.integrator(y)
+
         self.logger.experiment.add_audio("audio_val", y, self.eval_number,
                                          self.sr)
         self.eval_number += 1
+
+    def on_fit_start(self):
+        tb = self.logger.experiment
+
+        config = gin.operative_config_str()
+        config = config.split('\n')
+        config = ['```'] + config + ['```']
+        config = '\n'.join(config)
+        tb.add_text("config", config)
+
+        model = str(self)
+        model = model.split('\n')
+        model = ['```'] + model + ['```']
+        model = '\n'.join(model)
+        tb.add_text("model", model)

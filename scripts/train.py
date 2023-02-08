@@ -42,6 +42,12 @@ flags.DEFINE_integer('workers',
                      default=8,
                      help='Number of workers to spawn for dataset loading')
 flags.DEFINE_multi_integer('gpu', default=None, help='GPU to use')
+flags.DEFINE_bool('derivative',
+                  default=False,
+                  help='Train RAVE on the derivative of the signal')
+flags.DEFINE_bool('normalize',
+                  default=False,
+                  help='Train RAVE on normalized signals')
 flags.DEFINE_bool('progress',
                   default=True,
                   help='Display training progress bar')
@@ -64,13 +70,17 @@ def main(argv):
     )
     model = rave.RAVE()
 
-    dataset = rave.dataset.get_dataset(
-        FLAGS.db_path,
-        model.sr,
-        FLAGS.n_signal,
-        n_channels,
-    )
-    
+    print(model)
+
+    if FLAGS.derivative:
+        model.integrator = rave.dataset.get_derivator_integrator(model.sr)[1]
+
+    dataset = rave.dataset.get_dataset(FLAGS.db_path,
+                                       model.sr,
+                                       FLAGS.n_signal,
+                                       derivative=FLAGS.derivative,
+                                       normalize=FLAGS.normalize,
+                                       n_channels=n_channels)
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
                        FLAGS.batch,
@@ -116,6 +126,7 @@ def main(argv):
             last_checkpoint,
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
+            rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
         ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,

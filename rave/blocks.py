@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 import cached_conv as cc
 import gin
@@ -7,8 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
-from vector_quantize_pytorch import VectorQuantize
-from typing import Sequence
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -21,77 +19,6 @@ def normalization(module: nn.Module, mode: str = 'identity'):
         return weight_norm(module)
     else:
         raise Exception(f'Normalization mode {mode} not supported')
-
-
-class ResidualVectorQuantize(nn.Module):
-
-    def __init__(self, dim: int, num_quantizers: int, codebook_size: int,
-                 dynamic_masking: bool) -> None:
-        super().__init__()
-        self.layers = nn.ModuleList([
-            VectorQuantize(
-                dim,
-                codebook_size,
-                channel_last=False,
-                kmeans_init=True,
-            ) for _ in range(num_quantizers)
-        ])
-        self._dynamic_masking = dynamic_masking
-        self._num_quantizers = num_quantizers
-
-    def forward(self, x):
-        quantized_list = []
-        losses = []
-
-        for layer in self.layers:
-            quantized, _, _ = layer(x)
-
-            squared_diff = (quantized.detach() - x).pow(2)
-            loss = squared_diff.reshape(x.shape[0], -1).mean(-1)
-
-            x = x - quantized
-
-            quantized_list.append(quantized)
-            losses.append(loss)
-
-        quantized_out, losses = map(
-            partial(torch.stack, dim=-1),
-            (quantized_list, losses),
-        )
-
-        if self.training and self._dynamic_masking:
-            # BUILD MASK THRESHOLD
-            mask_threshold = torch.randint(
-                0,
-                self._num_quantizers,
-                (x.shape[0], ),
-            )[..., None]
-            quant_index = torch.arange(self._num_quantizers)[None]
-            mask = quant_index > mask_threshold
-
-            # BUILD MASK
-            mask = mask.to(x.device)
-            mask_threshold = mask_threshold.to(x.device)
-
-            # QUANTIZER DROPOUT
-            quantized_out = torch.where(
-                mask[:, None, None, :],
-                torch.zeros_like(quantized_out),
-                quantized_out,
-            )
-
-            # LOSS DROPOUT
-            losses = torch.where(
-                mask,
-                torch.zeros_like(losses),
-                losses,
-            )
-
-            losses = losses / (mask_threshold + 1)
-
-        quantized_out = quantized_out.sum(-1)
-        losses = losses.sum(-1)
-        return quantized_out, losses
 
 
 class SampleNorm(nn.Module):
@@ -156,7 +83,11 @@ class DilatedUnit(nn.Module):
                 cc.Conv1d(dim,
                           dim,
                           kernel_size=kernel_size,
-                          padding=cc.get_padding(kernel_size))),
+                          dilation=dilation,
+                          padding=cc.get_padding(
+                              kernel_size,
+                              dilation=dilation,
+                          ))),
             nn.LeakyReLU(.2),
             normalization(cc.Conv1d(dim, dim, kernel_size=1)),
         ]
@@ -290,50 +221,6 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
-class GRU(nn.Module):
-
-    def __init__(self,
-                 dim: int,
-                 num_layers: int,
-                 dropout=0,
-                 cumulative_delay=0) -> None:
-        super().__init__()
-
-        self.gru = nn.GRU(
-            input_size=dim,
-            hidden_size=dim,
-            num_layers=num_layers,
-            dropout=dropout,
-            batch_first=True,
-        )
-
-        self.register_buffer(
-            'gru_state',
-            torch.zeros(num_layers, cc.MAX_BATCH_SIZE, dim),
-        )
-
-        self.cumulative_delay = cumulative_delay
-        self.enabled = True
-
-    def disable(self):
-        self.enabled = False
-
-    def enable(self):
-        self.enabled = True
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not self.enabled: return x
-
-        x = x.permute(0, 2, 1)
-        if cc.USE_BUFFER_CONV:
-            x, state = self.gru(x, self.gru_state[:, :x.shape[0]])
-            self.gru_state[:, :x.shape[0]] = state
-        else:
-            x = self.gru(x)[0]
-        x = x.permute(0, 2, 1)
-        return x
-
-
 class Generator(nn.Module):
 
     def __init__(
@@ -345,7 +232,7 @@ class Generator(nn.Module):
         loud_stride,
         use_noise,
         n_channels: int = 1,
-        recurrent_layer: Optional[Callable[[], GRU]] = None,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ):
         super().__init__()
         net = [
@@ -448,7 +335,7 @@ class Encoder(nn.Module):
         sample_norm,
         repeat_layers,
         n_channels: int = 1,
-        recurrent_layer: Optional[Callable[[], GRU]] = None,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ):
         super().__init__()
         net = [cc.Conv1d(data_size * n_channels, capacity, 7, padding=cc.get_padding(7))]
@@ -517,17 +404,27 @@ class Encoder(nn.Module):
 
 class EncoderV2(nn.Module):
 
-    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
-                 latent_size: int, n_out: int, kernel_size: int,
-                 dilations: Sequence[int]) -> None:
+    def __init__(
+        self,
+        data_size: int,
+        capacity: int,
+        ratios: Sequence[int],
+        latent_size: int,
+        n_out: int,
+        kernel_size: int,
+        dilations: Sequence[int],
+        keep_dim: bool = False,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+        n_channels: int = 1,
+    ) -> None:
         super().__init__()
         net = [
             normalization(
                 cc.Conv1d(
-                    data_size,
+                    data_size * n_channels,
                     capacity,
-                    kernel_size=kernel_size,
-                    padding=cc.get_padding(kernel_size),
+                    kernel_size=kernel_size * 2 + 1,
+                    padding=cc.get_padding(kernel_size * 2 + 1),
                 )),
         ]
 
@@ -545,17 +442,22 @@ class EncoderV2(nn.Module):
 
             # ADD DOWNSAMPLING UNIT
             net.append(nn.LeakyReLU(.2))
+
+            if keep_dim:
+                out_channels = num_channels * r
+            else:
+                out_channels = num_channels * 2
             net.append(
                 normalization(
                     cc.Conv1d(
                         num_channels,
-                        num_channels * r,
+                        out_channels,
                         kernel_size=2 * r,
                         stride=r,
-                        padding=(r // 2, r // 2),
+                        padding=cc.get_padding(2 * r, r),
                     )))
 
-            num_channels *= r
+            num_channels = out_channels
 
         net.append(nn.LeakyReLU(.2))
         net.append(
@@ -567,6 +469,9 @@ class EncoderV2(nn.Module):
                     padding=cc.get_padding(kernel_size),
                 )))
 
+        if recurrent_layer is not None:
+            net.append(recurrent_layer(latent_size * n_out))
+
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -575,33 +480,56 @@ class EncoderV2(nn.Module):
 
 class GeneratorV2(nn.Module):
 
-    def __init__(self, data_size: int, capacity: int, ratios: Sequence[int],
-                 latent_size: int, kernel_size: int,
-                 dilations: Sequence[int]) -> None:
+    def __init__(
+        self,
+        data_size: int,
+        capacity: int,
+        ratios: Sequence[int],
+        latent_size: int,
+        kernel_size: int,
+        dilations: Sequence[int],
+        keep_dim: bool = False,
+        recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+        n_channels: int = 1,
+    ) -> None:
         super().__init__()
-        num_channels = np.prod(ratios) * capacity * 2
-        net = [
+        ratios = ratios[::-1]
+
+        if keep_dim:
+            num_channels = np.prod(ratios) * capacity
+        else:
+            num_channels = 2**len(ratios) * capacity
+
+        net = []
+
+        if recurrent_layer is not None:
+            net.append(recurrent_layer(latent_size))
+
+        net.append(
             normalization(
                 cc.Conv1d(
                     latent_size,
                     num_channels,
                     kernel_size=kernel_size,
                     padding=cc.get_padding(kernel_size),
-                )),
-        ]
+                )), )
 
         for r in ratios:
-            # ADD DOWNSAMPLING UNIT
+            # ADD UPSAMPLING UNIT
+            if keep_dim:
+                out_channels = num_channels // r
+            else:
+                out_channels = num_channels // 2
             net.append(nn.LeakyReLU(.2))
             net.append(
                 normalization(
                     cc.ConvTranspose1d(num_channels,
-                                       num_channels // r,
+                                       out_channels,
                                        2 * r,
                                        stride=r,
                                        padding=r // 2)))
 
-            num_channels = num_channels // r
+            num_channels = out_channels
 
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
@@ -615,18 +543,19 @@ class GeneratorV2(nn.Module):
 
         net.append(nn.LeakyReLU(.2))
         net.append(
-            cc.Conv1d(
-                num_channels,
-                data_size,
-                kernel_size=kernel_size,
-                padding=cc.get_padding(kernel_size),
-            ))
+            normalization(
+                cc.Conv1d(
+                    num_channels,
+                    data_size * n_channels,
+                    kernel_size=kernel_size * 2 + 1,
+                    padding=cc.get_padding(kernel_size * 2 + 1),
+                )))
 
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
-    
+        return torch.tanh(self.net(x))
+
     def set_warmed_up(self, state: bool):
         pass
 
@@ -697,26 +626,19 @@ class WasserteinEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, rvq_cls, latent_size, num_quantizers):
+    def __init__(self, encoder_cls, vq_cls, num_quantizers):
         super().__init__()
         self.encoder = encoder_cls()
-        self.rvq = rvq_cls()
-        self.noise_amp = nn.Parameter(torch.zeros(latent_size, 1))
+        self.rvq = vq_cls()
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
         self.register_buffer("enabled", torch.tensor(0))
 
-    def add_noise_to_vector(self, q):
-        noise_amp = nn.functional.softplus(self.noise_amp) + 1e-3
-        q = q + noise_amp * torch.randn_like(q)
-        return q
-
     @torch.jit.ignore
     def reparametrize(self, z):
         if self.enabled:
-            q, commmitment = self.rvq(z)
-            q = self.add_noise_to_vector(q)
-            return q, commmitment.mean()
+            q, diff, _ = self.rvq(z)
+            return q, diff.mean()
         else:
             return z, torch.zeros_like(z).mean()
 
@@ -725,5 +647,61 @@ class DiscreteEncoder(nn.Module):
         self.warmed_up = state
 
     def forward(self, x):
-        z = torch.tanh(self.encoder(x))
+        z = self.encoder(x)
         return z
+
+
+class SphericalEncoder(nn.Module):
+
+    def __init__(self, encoder_cls: Callable[[], nn.Module]) -> None:
+        super().__init__()
+        self.encoder = encoder_cls()
+
+    def reparametrize(self, z):
+        norm_z = z / torch.norm(z, p=2, dim=1, keepdim=True)
+        reg = torch.zeros_like(z).mean()
+        return norm_z, reg
+
+    def set_warmed_up(self, state: bool):
+        pass
+
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
+        return z
+
+
+def unit_norm_vector_to_angles(x: torch.Tensor) -> torch.Tensor:
+    norms = x.flip(1).pow(2)
+    norms[:, 1] += norms[:, 0]
+    norms = norms[:, 1:]
+    norms = norms.cumsum(1).flip(1).sqrt()
+    angles = torch.arccos(x[:, :-1] / norms)
+    angles[:, -1] = torch.where(
+        x[:, -1] >= 0,
+        angles[:, -1],
+        2 * np.pi - angles[:, -1],
+    )
+    angles[:, :-1] = angles[:, :-1] / np.pi
+    angles[:, -1] = angles[:, -1] / (2 * np.pi)
+    return 2 * (angles - .5)
+
+
+def angles_to_unit_norm_vector(angles: torch.Tensor) -> torch.Tensor:
+    angles = (angles / 2 + .5) % 1
+    angles[:, :-1] = angles[:, :-1] * np.pi
+    angles[:, -1] = angles[:, -1] * (2 * np.pi)
+    cos = angles.cos()
+    sin = angles.sin().cumprod(dim=1)
+    cos = torch.cat([
+        cos,
+        torch.ones(cos.shape[0], 1, cos.shape[-1]).type_as(cos),
+    ], 1)
+    sin = torch.cat([
+        torch.ones(sin.shape[0], 1, sin.shape[-1]).type_as(sin),
+        sin,
+    ], 1)
+    return cos * sin
+
+
+def wrap_around_value(x: torch.Tensor, value: float = 1) -> torch.Tensor:
+    return (x + value) % (2 * value) - value

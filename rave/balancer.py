@@ -1,6 +1,6 @@
-# Balancer - credit to https://github.com/facebookresearch/encodec
+# Balancer - adapted from https://github.com/facebookresearch/encodec
 
-from typing import Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 
 import torch
 
@@ -42,7 +42,8 @@ class Balancer:
         self,
         losses: Dict[str, torch.Tensor],
         model_output: torch.Tensor,
-        logger=Optional[Callable[[str, float], None]],
+        logger: Optional[Callable[[str, float], None]] = None,
+        profiler: Optional[Any] = None,
     ):
         grads = {}
         norms = {}
@@ -56,10 +57,23 @@ class Balancer:
                 [model_output],
                 retain_graph=True,
             )
+
+            if (nans := torch.isnan(grads[k])).any():
+                count = nans.float().mean()
+                grads[k] = torch.where(nans, torch.zeros_like(nans), grads[k])
+                if logger is not None:
+                    logger(f"{k}_nan_ratio", count)
+
             norms[k] = grads[k].norm(
                 dim=tuple(range(1, grads[k].dim()))).mean()
 
+            if profiler is not None:
+                profiler(f'partial backward {k}')
+
         avg_norms = self.ema_averager(norms)
+
+        if profiler is not None:
+            profiler('grad norm estimation')
 
         sum_weights = sum([self.weights.get(k, 1) for k in avg_norms])
 
@@ -77,12 +91,18 @@ class Balancer:
                 scale = self.weights.get(name, 1)
                 grads[name] *= scale
 
-            if logger is not None:
-                logger(f'scale_{name}', scale)
-                logger(f'grad_norm_{name}', grads[name].norm())
+                if logger is not None:
+                    logger(f'scale_{name}', scale)
+                    logger(f'grad_norm_{name}', grads[name].norm())
+
+        if profiler is not None:
+            profiler('norm scaling')
 
         full_grad = sum([grads[name] for name in avg_norms.keys()])
         model_output.backward(full_grad, retain_graph=True)
+
+        if profiler is not None:
+            profiler('scaled backward')
 
         if self.deny_list is not None:
             for k in self.deny_list:
@@ -90,3 +110,6 @@ class Balancer:
                     loss = losses[k] * self.weights.get(k, 1)
                     if loss.requires_grad:
                         loss.backward(retain_graph=True)
+
+        if profiler is not None:
+            profiler('denied backward')

@@ -1,10 +1,77 @@
-from typing import Sequence, Type
+from typing import Callable, Optional, Sequence, Tuple, Type
 
 import cached_conv as cc
 import numpy as np
+import torch
 import torch.nn as nn
+import torchaudio
 
 from .blocks import normalization
+
+
+def spectrogram(n_fft: int):
+    return torchaudio.transforms.Spectrogram(
+        n_fft,
+        hop_length=n_fft // 4,
+        power=None,
+        normalized=True,
+        center=False,
+        pad_mode=None,
+    )
+
+
+def rectified_2d_conv_block(
+    capacity,
+    kernel_sizes,
+    strides: Optional[Tuple[int, int]] = None,
+    dilations: Optional[Tuple[int, int]] = None,
+    in_size: Optional[int] = None,
+    out_size: Optional[int] = None,
+    activation: bool = True,
+):
+    if dilations is None:
+        paddings = kernel_sizes[0] // 2, kernel_sizes[1] // 2
+    else:
+        fks = (kernel_sizes[0] - 1) * dilations[0], (kernel_sizes[1] -
+                                                     1) * dilations[1]
+        paddings = fks[0] // 2, fks[1] // 2
+
+    conv = normalization(
+        nn.Conv2d(
+            in_size or capacity,
+            out_size or capacity,
+            kernel_size=kernel_sizes,
+            stride=strides or (1, 1),
+            dilation=dilations or (1, 1),
+            padding=paddings,
+        ))
+
+    if not activation: return conv
+
+    return nn.Sequential(conv, nn.LeakyReLU(.2))
+
+
+class EncodecConvNet(nn.Module):
+
+    def __init__(self, capacity: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            rectified_2d_conv_block(capacity, (9, 3), in_size=2),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 1)),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 2)),
+            rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 4)),
+            rectified_2d_conv_block(capacity, (3, 3)),
+            rectified_2d_conv_block(capacity, (3, 3),
+                                    out_size=1,
+                                    activation=False),
+        )
+
+    def forward(self, x):
+        features = []
+        for layer in self.net:
+            x = layer(x)
+            features.append(x)
+        return features
 
 
 class ConvNet(nn.Module):
@@ -69,18 +136,20 @@ class MultiScaleDiscriminator(nn.Module):
         return features
 
 
-class MultiScaleSpectralDiscriminator(MultiScaleDiscriminator):
+class MultiScaleSpectralDiscriminator(nn.Module):
 
-    def __init__(self, multiscale_stft, n_discriminators, convnet) -> None:
-        super().__init__(n_discriminators, convnet)
-        self.multiscale_stft = multiscale_stft()
+    def __init__(self, scales: Sequence[int],
+                 convnet: Callable[[], nn.Module]) -> None:
+        super().__init__()
+        self.specs = nn.ModuleList([spectrogram(n) for n in scales])
+        self.nets = nn.ModuleList([convnet() for _ in scales])
 
     def forward(self, x):
-        scales = self.multiscale_stft(x)
         features = []
-        for scale, layer in zip(scales, self.layers):
-            scale = scale.permute(0, 3, 1, 2)
-            features.append(layer(scale))
+        for spec, net in zip(self.specs, self.nets):
+            spec_x = spec(x)
+            spec_x = torch.cat([spec_x.real, spec_x.imag], 1)
+            features.append(net(spec_x))
         return features
 
 

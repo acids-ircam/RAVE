@@ -1,12 +1,14 @@
+import json
 import os
 from pathlib import Path
 from random import random
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
-import gin
 import GPUtil as gpu
 import librosa as li
+import lmdb
 import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.fft as fft
 import torch.nn as nn
@@ -138,18 +140,14 @@ def get_rave_receptive_field(model, n_channels=1):
     device = next(iter(model.parameters())).device
 
     for module in model.modules():
-        if hasattr(module, 'gru_state'):
+        if hasattr(module, 'gru_state') or hasattr(module, 'temporal'):
             module.disable()
 
     while True:
-        x = torch.randn(n_channels, 1, N, requires_grad=True, device=device)
-        x_tmp = model.pqmf(x)
-        x_tmp = x_tmp.reshape(1, -1, x_tmp.shape[-1])
-        z = model.encoder(x_tmp)[:, :model.latent_size]
-        y = model.decoder(z)
-        y = y.reshape(n_channels, -1, y.shape[-1])
-        y = model.pqmf.inverse(y)
-        y = y.reshape(1, n_channels, -1)
+        x = torch.randn(1, model.n_channels, N, requires_grad=True, device=device)
+
+        z = model.encode(x)
+        y = model.decode(z)
 
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"
@@ -166,8 +164,11 @@ def get_rave_receptive_field(model, n_channels=1):
     model.zero_grad()
 
     for module in model.modules():
-        if hasattr(module, 'gru_state'):
+        if hasattr(module, 'gru_state') or hasattr(module, 'temporal'):
             module.enable()
+    ratio = x.shape[-1] // z.shape[-1]
+    rate = model.sr / ratio
+    print(f"Compression ratio: {ratio}x (~{rate:.1f}Hz @ {model.sr}Hz)")
     return left_receptive_field, right_receptive_field
 
 
@@ -226,6 +227,7 @@ class MultiScaleSTFT(nn.Module):
                  scales: Sequence[int],
                  sample_rate: int,
                  magnitude: bool = True,
+                 normalized: bool = False,
                  num_mels: Optional[int] = None) -> None:
         super().__init__()
         self.scales = scales
@@ -240,7 +242,7 @@ class MultiScaleSTFT(nn.Module):
                     n_fft=scale,
                     win_length=scale,
                     hop_length=scale // 4,
-                    normalized=False,
+                    normalized=normalized,
                     power=None,
                 ))
             if num_mels is not None:
@@ -297,24 +299,192 @@ class AudioDistanceV1(nn.Module):
         return {'spectral_distance': distance}
 
 
-class EncodecAudioDistance(AudioDistanceV1):
+class WeightedInstantaneousSpectralDistance(nn.Module):
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        stfts_x = self.multiscale_stft(x)
-        stfts_y = self.multiscale_stft(y)
+    def __init__(self,
+                 multiscale_stft: Callable[[], MultiScaleSTFT],
+                 weighted: bool = False) -> None:
+        super().__init__()
+        self.multiscale_stft = multiscale_stft()
+        self.weighted = weighted
 
-        waveform_distance = mean_difference(x, y)
+    def phase_to_instantaneous_frequency(self,
+                                         x: torch.Tensor) -> torch.Tensor:
+        x = self.unwrap(x)
+        x = self.derivative(x)
+        return x
 
+    def derivative(self, x: torch.Tensor) -> torch.Tensor:
+        return x[..., 1:] - x[..., :-1]
+
+    def unwrap(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.derivative(x)
+        x = (x + np.pi) % (2 * np.pi)
+        return (x - np.pi).cumsum(-1)
+
+    def forward(self, target: torch.Tensor, pred: torch.Tensor):
+        stfts_x = self.multiscale_stft(target)
+        stfts_y = self.multiscale_stft(pred)
         spectral_distance = 0.
-        for sx, sy in zip(stfts_x, stfts_y):
-            l1_spec = mean_difference(sx, sy, norm='L1')
-            l2_spec = mean_difference(sx, sy, norm='L2')
+        phase_distance = 0.
 
-            spectral_distance = spectral_distance + l1_spec + l2_spec
+        for x, y in zip(stfts_x, stfts_y):
+            assert x.shape[-1] == 2
 
-        spectral_distance = spectral_distance / len(stfts_x)
+            x = torch.view_as_complex(x)
+            y = torch.view_as_complex(y)
+
+            # AMPLITUDE DISTANCE
+            x_abs = x.abs()
+            y_abs = y.abs()
+
+            logx = torch.log1p(x_abs)
+            logy = torch.log1p(y_abs)
+
+            lin_distance = mean_difference(x_abs,
+                                           y_abs,
+                                           norm='L2',
+                                           relative=True)
+            log_distance = mean_difference(logx, logy, norm='L1')
+
+            spectral_distance = spectral_distance + lin_distance + log_distance
+
+            # PHASE DISTANCE
+            x_if = self.phase_to_instantaneous_frequency(x.angle())
+            y_if = self.phase_to_instantaneous_frequency(y.angle())
+
+            if self.weighted:
+                mask = torch.clip(torch.log1p(x_abs[..., 2:]), 0, 1)
+                x_if = x_if * mask
+                y_if = y_if * mask
+
+            phase_distance = phase_distance + mean_difference(
+                x_if, y_if, norm='L2')
+
+        return {
+            'spectral_distance': spectral_distance,
+            'phase_distance': phase_distance
+        }
+
+
+class EncodecAudioDistance(nn.Module):
+
+    def __init__(self, scales: int,
+                 spectral_distance: Callable[[int], nn.Module]) -> None:
+        super().__init__()
+        self.waveform_distance = WaveformDistance(norm='L1')
+        self.spectral_distances = nn.ModuleList(
+            [spectral_distance(scale) for scale in scales])
+
+    def forward(self, x, y):
+        waveform_distance = self.waveform_distance(x, y)
+        spectral_distance = 0
+        for dist in self.spectral_distances:
+            spectral_distance = spectral_distance + dist(x, y)
 
         return {
             'waveform_distance': waveform_distance,
-            'spectral_distance': spectral_distance,
+            'spectral_distance': spectral_distance
         }
+
+
+class WaveformDistance(nn.Module):
+
+    def __init__(self, norm: str) -> None:
+        super().__init__()
+        self.norm = norm
+
+    def forward(self, x, y):
+        return mean_difference(y, x, self.norm)
+
+
+class SpectralDistance(nn.Module):
+
+    def __init__(
+        self,
+        n_fft: int,
+        sampling_rate: int,
+        norm: Union[str, Sequence[str]],
+        power: Union[int, None],
+        normalized: bool,
+        mel: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        if mel:
+            self.spec = torchaudio.transforms.MelSpectrogram(
+                sampling_rate,
+                n_fft,
+                hop_length=n_fft // 4,
+                n_mels=mel,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+        else:
+            self.spec = torchaudio.transforms.Spectrogram(
+                n_fft,
+                hop_length=n_fft // 4,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+
+        if isinstance(norm, str):
+            norm = (norm, )
+        self.norm = norm
+
+    def forward(self, x, y):
+        x = self.spec(x)
+        y = self.spec(y)
+
+        distance = 0
+        for norm in self.norm:
+            distance = distance + mean_difference(y, x, norm)
+        return distance
+
+
+class ProgressLogger(object):
+
+    def __init__(self, name: str) -> None:
+        self.env = lmdb.open("status")
+        self.name = name
+
+    def update(self, **new_state):
+        current_state = self.__call__()
+        with self.env.begin(write=True) as txn:
+            current_state.update(new_state)
+            current_state = json.dumps(current_state)
+            txn.put(self.name.encode(), current_state.encode())
+
+    def __call__(self):
+        with self.env.begin(write=True) as txn:
+            current_state = txn.get(self.name.encode())
+        if current_state is not None:
+            current_state = json.loads(current_state.decode())
+        else:
+            current_state = {}
+        return current_state
+
+
+class LoggerCallback(pl.Callback):
+
+    def __init__(self, logger: ProgressLogger) -> None:
+        super().__init__()
+        self.state = {'step': 0, 'warmed': False}
+        self.logger = logger
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch,
+                           batch_idx) -> None:
+        self.state['step'] += 1
+        self.state['warmed'] = pl_module.warmed_up
+
+        if not self.state['step'] % 100:
+            self.logger.update(**self.state)
+
+    def state_dict(self):
+        return self.state.copy()
+
+    def load_state_dict(self, state_dict):
+        self.state.update(state_dict)

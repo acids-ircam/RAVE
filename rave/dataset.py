@@ -16,6 +16,14 @@ from . import transforms
 from udls.generated import AudioExample
 
 
+def get_derivator_integrator(sr: int):
+    alpha = 1 / (1 + 1 / sr * 2 * np.pi * 10)
+    derivator = ([.5, -.5], [1])
+    integrator = ([alpha**2, -alpha**2], [1, -2 * alpha, alpha**2])
+
+    return lambda x: lfilter(*derivator, x), lambda x: lfilter(*integrator, x)
+
+
 class AudioDataset(data.Dataset):
 
     @property
@@ -146,11 +154,27 @@ def get_channels_from_dataset(db_path):
         metadata = yaml.safe_load(metadata)
     return metadata.get('channels', 1)
 
-def get_dataset(db_path, sr, n_signal, n_channels):
+def normalize_signal(x: np.ndarray, max_gain_db: int = 30):
+    peak = np.max(abs(x))
+    if peak == 0: return x
+
+    log_peak = 20 * np.log10(peak)
+    log_gain = min(max_gain_db, -log_peak)
+    gain = 10**(log_gain / 20)
+
+    return x * gain
+
+
+def get_dataset(db_path,
+                sr,
+                n_signal,
+                derivative: bool = False,
+                normalize: bool = False,
+                n_channels: int = 1):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
     lazy = metadata['lazy']
-    
+
     transform_list = [
         lambda x: x.astype(np.float32),
         transforms.RandomCrop(n_signal),
@@ -159,16 +183,16 @@ def get_dataset(db_path, sr, n_signal, n_channels):
             p=.8,
         ),
         transforms.Dequantize(16),
-        lambda x: x.astype(np.float32),
     ]
-    input_channels = int(metadata.get('channels', 1))
-    if input_channels != n_channels:
-        if input_channels == 1 and n_channels > 1:
-            transform_list.append(lambda x: x.repeat(n_channels, axis=0))
-        elif n_channels == 1 and input_channels > 1:
-            transform_list.append(lambda x: x[0])
-        else:
-            raise ValueError('could not transform %d channels into %d channels.'%(input_channels, n_channels))
+
+    if normalize:
+        transform_list.append(normalize_signal)
+
+    if derivative:
+        transform_list.append(get_derivator_integrator(sr)[0])
+
+    transform_list.append(lambda x: x.astype(np.float32))
+
     transform_list = transforms.Compose(transform_list)
 
     if lazy:
@@ -177,7 +201,7 @@ def get_dataset(db_path, sr, n_signal, n_channels):
         return AudioDataset(
             db_path,
             transforms=transform_list,
-            n_channels=input_channels
+            n_channels=n_channels
         )
 
 
