@@ -134,7 +134,7 @@ def nonsaturating_gan(score_real, score_fake):
 
 
 @torch.enable_grad()
-def get_rave_receptive_field(model: nn.Module):
+def get_rave_receptive_field(model, n_channels=1):
     N = 2**15
     model.eval()
     device = next(iter(model.parameters())).device
@@ -144,7 +144,7 @@ def get_rave_receptive_field(model: nn.Module):
             module.disable()
 
     while True:
-        x = torch.randn(1, 1, N, requires_grad=True, device=device)
+        x = torch.randn(1, model.n_channels, N, requires_grad=True, device=device)
 
         z = model.encode(x)
         y = model.decode(z)

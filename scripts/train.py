@@ -5,12 +5,20 @@ import sys
 import gin
 import pytorch_lightning as pl
 import torch
-from absl import flags
+from absl import flags, app
 from torch.utils.data import DataLoader
+
+try:
+    import rave
+except:
+    import sys, os 
+    sys.path.append(os.path.abspath('.'))
+    import rave
 
 import rave
 import rave.core
 import rave.dataset
+
 
 FLAGS = flags.FLAGS
 
@@ -29,6 +37,7 @@ flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('n_signal',
                      131072,
                      help='Number of audio samples to use during training')
+flags.DEFINE_integer('n_channels', None, help="number of audio channels")
 flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('ckpt',
                     None,
@@ -57,11 +66,13 @@ def add_gin_extension(config_name: str) -> str:
 
 def main(argv):
     torch.backends.cudnn.benchmark = True
+    # check dataset channels
+    n_channels = FLAGS.n_channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
+    gin.bind_parameter('RAVE.n_channels', n_channels)
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
         FLAGS.override,
     )
-
     model = rave.RAVE()
 
     print(model)
@@ -73,7 +84,9 @@ def main(argv):
                                        model.sr,
                                        FLAGS.n_signal,
                                        derivative=FLAGS.derivative,
-                                       normalize=FLAGS.normalize)
+                                       normalize=FLAGS.normalize,
+                                       n_channels=n_channels)
+    
     train, val = rave.dataset.split_dataset(dataset, 98)
     num_workers = FLAGS.workers
 
@@ -161,3 +174,7 @@ def main(argv):
         training_commit.write(rave.__version__.commit)
 
     trainer.fit(model, train, val, ckpt_path=run)
+
+
+if __name__ == "__main__": 
+    app.run(main)

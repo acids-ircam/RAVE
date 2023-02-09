@@ -188,7 +188,7 @@ class PQMF(nn.Module):
         is needed
     """
 
-    def __init__(self, attenuation, n_band, polyphase=True):
+    def __init__(self, attenuation, n_band, polyphase=True, n_channels = 1):
         super().__init__()
         h = get_prototype(attenuation, n_band)
 
@@ -206,8 +206,11 @@ class PQMF(nn.Module):
         self.register_buffer("h", h)
         self.n_band = n_band
         self.polyphase = polyphase
+        self.n_channels = n_channels
 
     def forward(self, x):
+        if x.ndim == 2:
+            return torch.stack([self.forward(x[i]) for i in range(x.shape[0])])
         if self.n_band == 1:
             return x
         elif self.polyphase:
@@ -220,6 +223,13 @@ class PQMF(nn.Module):
         return x
 
     def inverse(self, x):
+        if x.ndim == 2:
+            if self.n_channels == 1:
+                return self.inverse(x[0]).unsqueeze(0)
+            else:
+                x = x.split(self.n_channels, -2)
+                return torch.stack([self.inverse(x[i]) for i in len(x)])
+
         if self.n_band == 1:
             return x
 

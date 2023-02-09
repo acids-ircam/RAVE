@@ -12,7 +12,7 @@ import yaml
 from scipy.signal import lfilter
 from torch.utils import data
 from tqdm import tqdm
-from udls import transforms
+from . import transforms
 from udls.generated import AudioExample
 
 
@@ -42,13 +42,21 @@ class AudioDataset(data.Dataset):
     def __init__(self,
                  db_path: str,
                  audio_key: str = 'waveform',
-                 transforms: Optional[transforms.Transform] = None) -> None:
+                 transforms: Optional[transforms.Transform] = None, 
+                 n_channels: int = 1) -> None:
         super().__init__()
         self._db_path = db_path
         self._audio_key = audio_key
         self._env = None
         self._keys = None
         self._transforms = transforms
+        self._n_channels = n_channels
+        lens = []
+        with self.env.begin() as txn:
+            for k in self.keys:
+               ae = AudioExample.FromString(txn.get(k)) 
+               lens.append(np.frombuffer(ae.buffers['waveform'].data, dtype=np.int16).shape)
+
 
     def __len__(self):
         return len(self.keys)
@@ -62,6 +70,7 @@ class AudioDataset(data.Dataset):
 
         audio = np.frombuffer(buffer.data, dtype=np.int16)
         audio = audio.astype(np.float) / (2**15 - 1)
+        audio = audio.reshape(self._n_channels, -1)
 
         if self._transforms is not None:
             audio = self._transforms(audio)
@@ -88,7 +97,8 @@ class LazyAudioDataset(data.Dataset):
                  db_path: str,
                  n_signal: int,
                  sampling_rate: int,
-                 transforms: Optional[transforms.Transform] = None) -> None:
+                 transforms: Optional[transforms.Transform] = None,
+                 n_channels: int = 1) -> None:
         super().__init__()
         self._db_path = db_path
         self._env = None
@@ -96,6 +106,7 @@ class LazyAudioDataset(data.Dataset):
         self._transforms = transforms
         self._n_signal = n_signal
         self._sampling_rate = sampling_rate
+        self._n_channels = n_channels
 
         self.parse_dataset()
 
@@ -130,6 +141,8 @@ class LazyAudioDataset(data.Dataset):
             self._n_signal,
             self._sampling_rate,
             index * self._n_signal,
+            int(ae.metadata['channels']),
+            self._n_channels
         )
 
         if self._transforms is not None:
@@ -137,6 +150,10 @@ class LazyAudioDataset(data.Dataset):
 
         return audio
 
+def get_channels_from_dataset(db_path):
+    with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
+        metadata = yaml.safe_load(metadata)
+    return metadata.get('channels', 1)
 
 def normalize_signal(x: np.ndarray, max_gain_db: int = 30):
     peak = np.max(abs(x))
@@ -153,7 +170,8 @@ def get_dataset(db_path,
                 sr,
                 n_signal,
                 derivative: bool = False,
-                normalize: bool = False):
+                normalize: bool = False,
+                n_channels: int = 1):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
     lazy = metadata['lazy']
@@ -179,11 +197,12 @@ def get_dataset(db_path,
     transform_list = transforms.Compose(transform_list)
 
     if lazy:
-        return LazyAudioDataset(db_path, n_signal, sr, transform_list)
+        return LazyAudioDataset(db_path, n_signal, sr, transform_list, n_channels)
     else:
         return AudioDataset(
             db_path,
             transforms=transform_list,
+            n_channels=n_channels
         )
 
 
@@ -224,35 +243,39 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     b, a = pole_to_z_filter(angle, amp)
     return lfilter(b, a, x)
 
-
 def extract_audio(path: str, n_signal: int, sr: int,
-                  start_sample: int) -> Iterable[np.ndarray]:
+                  start_sample: int, input_channels: int, channels: int) -> Iterable[np.ndarray]:
+    # channel mapping
+    channel_map = range(channels)
+    if input_channels < channels:
+        channel_map = (math.ceil(channels / input_channels) * list(range(input_channels)))[:channels]
+    # time information
     start_sec = start_sample / sr
-    length = n_signal / sr + 0.1
-    process = subprocess.Popen(
-        [
-            'ffmpeg',
-            '-v',
-            'error',
-            '-ss',
-            str(start_sec),
-            '-i',
-            path,
-            '-ar',
-            str(sr),
-            '-ac',
-            '1',
-            '-t',
-            str(length),
-            '-f',
-            's16le',
-            '-',
-        ],
-        stdout=subprocess.PIPE,
-    )
+    length = n_signal / sr# + 0.1
+    chunks = []
+    for i in channel_map:
+        process = subprocess.Popen(
+            [
+                'ffmpeg', '-v', 'error',
+                '-ss',
+                str(start_sec),
+                '-i',
+                path,
+                '-ar',
+                str(sr),
+                '-filter_complex',
+                'channelmap=%d-0'%i,
+                '-t',
+                str(length),
+                '-f',
+                's16le',
+                '-'
+            ],
+            stdout=subprocess.PIPE,
+        )
 
-    chunk = process.communicate()[0]
-
-    chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
-    chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
-    return chunk[:n_signal]
+        chunk = process.communicate()[0]
+        chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
+        chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
+        chunks.append(chunk)
+    return np.stack(chunks)[:, :n_signal]
