@@ -54,16 +54,6 @@ def float_array_to_int16_bytes(x):
 
 def load_audio_chunk(path: str, n_signal: int,
                      sr: int, channels: int = 1) -> Iterable[np.ndarray]:
-    # process = subprocess.Popen(
-    #     [
-    #         'ffmpeg', '-hide_banner', '-loglevel', 'panic', '-i', path, '-ac',
-    #         '1', '-ar', '-filter_complex',
-    #         '[0:a]channelmap=%d[0]'%channel,
-    #         str(sr), '-f', 's16le', '-map',
-    #         '[0]', '-'
-    #     ],
-    #     stdout=subprocess.PIPE,
-    # )
 
     _, input_channels = get_audio_channels(path)
     channel_map = range(channels)
@@ -90,8 +80,6 @@ def load_audio_chunk(path: str, n_signal: int,
         chunk = [p.stdout.read(n_signal * 2) for p in processes]
     process.stdout.close()
 
-# def load_audio_chunk_mc(path: str, n_signal: int, sr: int, channels: int = 1):
-#     return torch.stack([load_audio_chunk(path, n_signal, sr, i) for i in range(channels)])
 
 def get_audio_length(path: str) -> float:
     process = subprocess.Popen(
@@ -107,7 +95,8 @@ def get_audio_length(path: str) -> float:
     try:
         stdout = stdout.decode().split('\n')[1].split('=')[-1]
         length = float(stdout)
-        return path, float(length)
+        _, channels = get_audio_channels(path)
+        return path, float(length), int(channels)
     except:
         return None
 
@@ -161,9 +150,8 @@ def process_audio_array(audio: Tuple[int, bytes],
 
 def process_audio_file(audio: Tuple[int, Tuple[str, float]],
                        env: lmdb.Environment) -> int:
-    audio_id, (path, length) = audio
-
-    ae = AudioExample(metadata={'path': path, 'length': str(length)})
+    audio_id, (path, length, channels) = audio
+    ae = AudioExample(metadata={'path': path, 'length': str(length), 'channels': str(channels)})
     key = f'{audio_id:08d}'
     with env.begin(write=True) as txn:
         txn.put(

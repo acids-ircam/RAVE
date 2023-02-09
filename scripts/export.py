@@ -9,6 +9,7 @@ logging.info("library loading")
 logging.info("DEBUG")
 import torch
 
+
 torch.set_grad_enabled(False)
 
 import cached_conv as cc
@@ -20,7 +21,12 @@ import torch.nn.functional as F
 from absl import flags, app
 from typing import Union
 
-import rave
+try:
+    import rave
+except:
+    import sys, os 
+    sys.path.append(os.path.abspath('.'))
+    import rave
 import rave.blocks
 import rave.core
 
@@ -39,20 +45,21 @@ flags.DEFINE_float(
     lower_bound=.1,
     upper_bound=.999,
     help='Fidelity to use during inference (Variational mode only)')
-flags.DEFINE_integer(
-    'channels',
-    default=None,
-    help='overrides model channels')
+flags.DEFINE_bool(
+    'stereo',
+    default=False,
+    help='Enable fake stereo mode (one encoding, double decoding')
+
 
 
 class ScriptedRAVE(nn_tilde.Module):
 
-    def __init__(self, pretrained: rave.RAVE, channels: Union[int, None] = None) -> None:
+    def __init__(self, pretrained: rave.RAVE, stereo: bool = False) -> None:
         super().__init__()
         self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
-        self.channels = channels or pretrained.n_channels
+        self.n_channels = pretrained.n_channels
 
         self.sr = pretrained.sr
 
@@ -79,20 +86,34 @@ class ScriptedRAVE(nn_tilde.Module):
                 f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
             )
 
-        x = torch.zeros(1, self.channels, 2**14)
-        x_m = x.clone() if self.pqmf is None else self.pqmf(x)
-        z = self.encoder(x_m)
+
+        x = torch.zeros(1, self.n_channels, 2**14)
+        # x_m = x.clone() if self.pqmf is None else self.pqmf(x)
+        # z = self.encoder(x_m)
+        z = self.encode(x)
         ratio_encode = x.shape[-1] // z.shape[-1]
 
+        self.stereo = stereo
+        if (stereo) and self.n_channels != 1:
+            logging.info('[Warning] Stereo mode is only functional when the model has 1 channel. Disabling stereo mode')
+            self.stereo = False
+
+        if (stereo):
+            generated_labels = ['reconstructed signal (L)', 'reconstructed signal (R)']
+            n_outs = 2
+        else:
+            generated_labels = ['reconstructed signal (%d)'%i for i in range(1, self.n_channels+1)]
+            n_outs = self.n_channels
+            
         self.register_method(
             "encode",
-            in_channels=self.channels,
+            in_channels=self.n_channels,
             in_ratio=1,
             out_channels=self.latent_size,
             out_ratio=ratio_encode,
-            input_labels=['(signal) Channel %d'%d for d in range(self.channels)],
+            input_labels=['(signal) Channel %d'%d for d in range(1, self.n_channels+1)],
             output_labels=[
-                f'(signal) Latent dimension {i}'
+                f'(signal) Latent dimension {i + 1}'
                 for i in range(self.latent_size)
             ],
         )
@@ -100,29 +121,23 @@ class ScriptedRAVE(nn_tilde.Module):
             "decode",
             in_channels=self.latent_size,
             in_ratio=ratio_encode,
-            out_channels=self.channels,
+            out_channels=n_outs,
             out_ratio=1,
             input_labels=[
-                f'(signal) Latent dimension {i}'
+                f'(signal) Latent dimension {i+1}'
                 for i in range(self.latent_size)
             ],
-            output_labels=[
-                f'(signal) Reconstructed audio signal {channel}'
-                for channel in range(self.channels)
-            ],
+            output_labels=generated_labels,
         )
 
         self.register_method(
             "forward",
-            in_channels=self.channels,
+            in_channels=self.n_channels,
             in_ratio=1,
-            out_channels=self.channels,
+            out_channels=n_outs,
             out_ratio=1,
-            input_labels=['(signal) Channel %d'%d for d in range(self.channels)],
-            output_labels=[
-                f'(signal) Reconstructed audio signal {channel}'
-                for channel in range(channels)
-            ],
+            input_labels=['(signal) Channel %d'%d for d in range(1, self.n_channels + 1)],
+            output_labels=generated_labels
         )
 
         self.register_attribute('dumb', 0)
@@ -144,21 +159,22 @@ class ScriptedRAVE(nn_tilde.Module):
             batch_size = x.shape[:-2]
             x = x.reshape(-1, 1, x.shape[-1])
             x = self.pqmf(x)
-            x = x.reshape(batch_size, -1, x.shape[-1])
+            x = x.reshape(batch_size + (-1, x.shape[-1]))
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
 
     @torch.jit.export
     def decode(self, z):
+        if (self.stereo):
+           z = torch.cat([z, z], dim=0)
         batch_size = z.shape[0]
         z = self.pre_process_latent(z)
         y = self.decoder(z)
         if self.pqmf is not None:
-            y = y.reshape(y.shape[0] * self.channels, -1, y.shape[-1])
+            y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
             y = self.pqmf.inverse(y)
-            y = y.reshape(batch_size, self.channels, -1)
-
+            y = y.reshape(batch_size, self.n_channels, -1)
         if self.stereo:
             #TODO make channels check
             y = torch.cat(y.chunk(2, 0), 1)
@@ -217,10 +233,10 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file("runs/longitudinal_99019cc5c4/config.gin")
-    if FLAGS.channels:
-        gin.bind_parameter('RAVE.n_channels', FLAGS.channels)
-    checkpoint = "runs/longitudinal_99019cc5c4/version_1/checkpoints/best.ckpt"
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
+                          #      skip_unknown=True,
+                          )
+    checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
@@ -250,27 +266,23 @@ def main(argv):
     for m in pretrained.modules():
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
-        if isinstance(m, rave.blocks.GRU):
-            m.trace_recurrent()
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained, channels=FLAGS.channels)
-    
-
+    scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))
     if FLAGS.streaming:
         model_name += "_streaming"
+    if FLAGS.stereo:
+        model_name += "_stereo"
     model_name += ".ts"
 
-    scripted_rave.export_to_ts(os.path.join("out.ts"))
+    scripted_rave.export_to_ts(os.path.join(FLAGS.run, model_name))
 
     logging.info(
         f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
-    print(scripted_rave.encode_params)
-    print(scripted_rave.decode_params)
-    print(scripted_rave.forward_params)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app.run(main)

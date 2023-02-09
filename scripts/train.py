@@ -7,8 +7,12 @@ import torch
 from absl import flags, app
 from torch.utils.data import DataLoader
 
-import sys
-sys.path.append('/u/repmus/chemla/rave_develop')
+try:
+    import rave
+except:
+    import sys, os 
+    sys.path.append(os.path.abspath('.'))
+    import rave
 
 import rave
 import rave.core
@@ -81,6 +85,7 @@ def main(argv):
                                        derivative=FLAGS.derivative,
                                        normalize=FLAGS.normalize,
                                        n_channels=n_channels)
+    
     train, val = rave.dataset.split_dataset(dataset, 98)
     train = DataLoader(train,
                        FLAGS.batch,

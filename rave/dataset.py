@@ -136,11 +136,12 @@ class LazyAudioDataset(data.Dataset):
         with self.env.begin() as txn:
             ae = AudioExample.FromString(txn.get(key))
 
-        audio = extract_audio_mc(
+        audio = extract_audio(
             ae.metadata['path'],
             self._n_signal,
             self._sampling_rate,
             index * self._n_signal,
+            int(ae.metadata['channels']),
             self._n_channels
         )
 
@@ -243,36 +244,38 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     return lfilter(b, a, x)
 
 def extract_audio(path: str, n_signal: int, sr: int,
-                  start_sample: int, channel: int) -> Iterable[np.ndarray]:
+                  start_sample: int, input_channels: int, channels: int) -> Iterable[np.ndarray]:
+    # channel mapping
+    channel_map = range(channels)
+    if input_channels < channels:
+        channel_map = (math.ceil(channels / input_channels) * list(range(input_channels)))[:channels]
+    # time information
     start_sec = start_sample / sr
     length = n_signal / sr# + 0.1
-    process = subprocess.Popen(
-        [
-            'ffmpeg', '-v', 'error',
-            '-ss',
-            str(start_sec),
-            '-i',
-            path,
-            '-ar',
-            str(sr),
-            '-filter_complex',
-            '[0:a]channelmap=%d[0]'%channel,
-            '-t',
-            str(length),
-            '-f',
-            's16le',
-            '-map',
-            '[0]', '-'
-        ],
-        stdout=subprocess.PIPE,
-    )
+    chunks = []
+    for i in channel_map:
+        process = subprocess.Popen(
+            [
+                'ffmpeg', '-v', 'error',
+                '-ss',
+                str(start_sec),
+                '-i',
+                path,
+                '-ar',
+                str(sr),
+                '-filter_complex',
+                'channelmap=%d-0'%i,
+                '-t',
+                str(length),
+                '-f',
+                's16le',
+                '-'
+            ],
+            stdout=subprocess.PIPE,
+        )
 
-    chunk = process.communicate()[0]
-    chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
-    chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
-    return chunk[:n_signal]
-
-def extract_audio_mc(path: str, n_signal: int, sr: int,
-                  start_sample: int, n_channels: int):
-   chunk = np.stack([extract_audio(path, n_signal, sr, start_sample, i) for i in range(n_channels)])
-   return chunk
+        chunk = process.communicate()[0]
+        chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
+        chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
+        chunks.append(chunk)
+    return np.stack(chunks)[:, :n_signal]

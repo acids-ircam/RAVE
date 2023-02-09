@@ -93,7 +93,7 @@ class RAVE(pl.LightningModule):
         self.pqmf = None
         if pqmf is not None:
             self.pqmf = pqmf(n_channels=n_channels)
-        self.encoder = encoder(beta=1.0, n_channels=n_channels)
+        self.encoder = encoder(n_channels=n_channels)
         self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)
 

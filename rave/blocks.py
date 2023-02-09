@@ -626,9 +626,9 @@ class WasserteinEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, vq_cls, num_quantizers):
+    def __init__(self, encoder_cls, vq_cls, num_quantizers, n_channels: int = 1):
         super().__init__()
-        self.encoder = encoder_cls()
+        self.encoder = encoder_cls(n_channels=n_channels)
         self.rvq = vq_cls()
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
