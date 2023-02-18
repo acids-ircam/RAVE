@@ -17,6 +17,7 @@ LATENT_SIZE = 128
 CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = False
 CAPACITY = 96
+NOISE_AUGMENTATION = True
 
 # ENCODER
 
@@ -24,6 +25,14 @@ blocks.DiscreteEncoder:
     encoder_cls = @blocks.EncoderV2
     vq_cls = @quantization.ResidualVectorQuantization
     num_quantizers = %NUM_QUANTIZERS
+    noise_augmentation = %NOISE_AUGMENTATION
+
+blocks.GeneratorV2:
+    latent_size = @core.get_augmented_latent_size()
+
+core.get_augmented_latent_size:
+    latent_size = %LATENT_SIZE
+    noise_augmentation = %NOISE_AUGMENTATION
 
 blocks.EncoderV2:
     n_out = 1

@@ -29,6 +29,12 @@ def random_angle(min_f=20, max_f=8000, sr=24000):
     return rand
 
 
+def get_augmented_latent_size(latent_size: int, noise_augmentation: bool):
+    if noise_augmentation:
+        latent_size = latent_size * 2
+    return latent_size
+
+
 def pole_to_z_filter(omega, amplitude=.9):
     z0 = amplitude * np.exp(1j * omega)
     a = [1, -2 * np.real(z0), abs(z0)**2]

@@ -188,6 +188,8 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         z = torch.clamp(z, 0,
                         self.encoder.rvq.layers[0].codebook_size - 1).long()
         z = self.encoder.rvq.decode(z)
+        if self.encoder.noise_augmentation:
+            z = torch.cat([z, torch.randn_like(z)], 1)
         return z
 
 
@@ -205,9 +207,7 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
-                          #      skip_unknown=True,
-                          )
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
     checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()

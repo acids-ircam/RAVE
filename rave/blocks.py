@@ -487,6 +487,7 @@ class GeneratorV2(nn.Module):
         dilations: Sequence[int],
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+        amplitude_modulation: bool = False,
     ) -> None:
         super().__init__()
         ratios = ratios[::-1]
@@ -542,15 +543,22 @@ class GeneratorV2(nn.Module):
             normalization(
                 cc.Conv1d(
                     num_channels,
-                    data_size,
+                    data_size * 2 if amplitude_modulation else data_size,
                     kernel_size=kernel_size * 2 + 1,
                     padding=cc.get_padding(kernel_size * 2 + 1),
                 )))
 
         self.net = cc.CachedSequential(*net)
+        self.amplitude_modulation = amplitude_modulation
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(self.net(x))
+        x = self.net(x)
+
+        if self.amplitude_modulation:
+            x, amplitude = x.split(x.shape[1] // 2, 1)
+            x = x * torch.sigmoid(amplitude)
+
+        return torch.tanh(x)
 
     def set_warmed_up(self, state: bool):
         pass
@@ -621,21 +629,30 @@ class WasserteinEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, vq_cls, num_quantizers):
+    def __init__(self,
+                 encoder_cls,
+                 vq_cls,
+                 num_quantizers,
+                 noise_augmentation: bool = False):
         super().__init__()
         self.encoder = encoder_cls()
         self.rvq = vq_cls()
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
         self.register_buffer("enabled", torch.tensor(0))
+        self.noise_augmentation = noise_augmentation
 
     @torch.jit.ignore
     def reparametrize(self, z):
         if self.enabled:
-            q, diff, _ = self.rvq(z)
-            return q, diff.mean()
+            z, diff, _ = self.rvq(z)
         else:
-            return z, torch.zeros_like(z).mean()
+            diff = torch.zeros_like(z).mean()
+
+        if self.noise_augmentation:
+            z = torch.cat([z, torch.randn_like(z)], 1)
+
+        return z, diff
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)

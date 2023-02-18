@@ -37,6 +37,7 @@ blocks.GeneratorV2:
     latent_size = %LATENT_SIZE
     kernel_size = %KERNEL_SIZE
     dilations = %DILATIONS
+    amplitude_modulation = True
 
 # DISCRIMINATOR
 periods/discriminator.ConvNet:
