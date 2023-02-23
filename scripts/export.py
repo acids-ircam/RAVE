@@ -72,6 +72,9 @@ class ScriptedRAVE(nn_tilde.Module):
         elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
             self.latent_size = pretrained.latent_size
 
+        elif isinstance(pretrained.encoder, rave.blocks.SphericalEncoder):
+            self.latent_size = pretrained.latent_size - 1
+
         else:
             raise ValueError(
                 f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
@@ -202,6 +205,15 @@ class WasserteinScriptedRAVE(ScriptedRAVE):
         return z
 
 
+class SphericalScriptedRAVE(ScriptedRAVE):
+
+    def post_process_latent(self, z):
+        return rave.blocks.unit_norm_vector_to_angles(z)
+
+    def pre_process_latent(self, z):
+        return rave.blocks.angles_to_unit_norm_vector(z)
+
+
 def main(argv):
     cc.use_cached_conv(FLAGS.streaming)
 
@@ -224,6 +236,8 @@ def main(argv):
         script_class = DiscreteScriptedRAVE
     elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
         script_class = WasserteinScriptedRAVE
+    elif isinstance(pretrained.encoder, rave.blocks.SphericalEncoder):
+        script_class = SphericalScriptedRAVE
     else:
         raise ValueError(f"Encoder type {type(pretrained.encoder)} "
                          "not supported for export.")
