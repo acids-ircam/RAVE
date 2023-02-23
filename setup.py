@@ -1,22 +1,9 @@
 import subprocess
 
 import setuptools
+import os
 
-version = subprocess.check_output([
-    "git",
-    "describe",
-    "--abbrev=0",
-]).strip().decode()
-
-commit = subprocess.check_output([
-    "git",
-    "rev-parse",
-    "HEAD",
-]).strip().decode()
-
-with open('rave/__version__.py', 'w') as init:
-    init.write(f"version = \"{version}\"\n")
-    init.write(f"commit = \"{commit}\"\n")
+version = os.environ["RAVE_VERSION"]
 
 with open("README.md", "r") as readme:
     readme = readme.read()
