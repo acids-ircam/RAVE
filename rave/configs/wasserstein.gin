@@ -6,10 +6,10 @@ from rave import balancer
 
 LATENT_SIZE = 16
 
-blocks.Encoder.n_out = 1
+blocks.EncoderV2.n_out = 1
 
 blocks.WasserteinEncoder:
-    encoder_cls = @blocks.Encoder
+    encoder_cls = @blocks.EncoderV2
 
 rave.RAVE:
     encoder = @blocks.WasserteinEncoder
