@@ -156,8 +156,5 @@ def main(argv):
 
     with open(os.path.join("runs", RUN_NAME, "config.gin"), "w") as config_out:
         config_out.write(gin.operative_config_str())
-    with open(os.path.join("runs", RUN_NAME, "commit"),
-              "w") as training_commit:
-        training_commit.write(rave.__version__.commit)
 
     trainer.fit(model, train, val, ckpt_path=run)
