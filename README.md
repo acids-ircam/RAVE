@@ -112,8 +112,8 @@ Many other configuration files are available in `rave/configs` and can be combin
 </tr>
 
 <tr>
-<td>wassertein</td>
-<td>Wassertein Auto Encoder objective (MMD)</td>
+<td>wasserstein</td>
+<td>Wasserstein Auto Encoder objective (MMD)</td>
 </tr>
 
 <tr>
