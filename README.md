@@ -6,6 +6,8 @@ Official implementation of _RAVE: A variational autoencoder for fast and high-qu
 
 If you use RAVE as a part of a music performance or installation, be sure to cite either this repository or the article !
 
+If you want to share / discuss / ask things about RAVE you can do so in our [discord server](https://discord.gg/x7pR8JDX) !
+
 ## Previous versions
 
 The original implementation of the RAVE model can be restored using
