@@ -45,18 +45,23 @@ periods/discriminator.ConvNet:
     kernel_size = (5, 1)
 
 spectral/discriminator.ConvNet:
-    conv = @nn.Conv2d
+    conv = @nn.Conv1d
     kernel_size = 5
-    in_size = 2
+    stride = 2
 
 discriminator.MultiPeriodDiscriminator:
     periods = [2, 3, 5, 7, 11]
     convnet = @periods/discriminator.ConvNet
 
+discriminator.MultiScaleSpectralDiscriminator1d:
+    scales = [4096, 2048, 1024, 512, 256]
+    convnet = @spectral/discriminator.ConvNet
+
 discriminator.CombineDiscriminators:
     discriminators = [
         @discriminator.MultiPeriodDiscriminator,
-        @discriminator.MultiScaleDiscriminator
+        @discriminator.MultiScaleDiscriminator,
+        @discriminator.MultiScaleSpectralDiscriminator1d,
     ]
 
 feature_matching/core.mean_difference:

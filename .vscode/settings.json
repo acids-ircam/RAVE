@@ -1,5 +1,5 @@
 {
-  "editor.formatOnSave": false,
+  "editor.formatOnSave": true,
   "python.formatting.provider": "yapf",
   "python.testing.pytestArgs": [
     "."
