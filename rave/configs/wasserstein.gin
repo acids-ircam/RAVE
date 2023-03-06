@@ -13,6 +13,7 @@ blocks.WasserteinEncoder:
 
 rave.RAVE:
     encoder = @blocks.WasserteinEncoder
+    phase_1_duration = 200000
 
 balancer.Balancer:
     weights = {
