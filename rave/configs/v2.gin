@@ -17,7 +17,7 @@ DILATIONS = [
     [1, 3, 9],
     [1, 3],
 ]
-RATIOS = [4,4,2,2]
+RATIOS = [4, 4, 4, 2]
 CAPACITY = 96
 NOISE_AUGMENTATION = False
 
