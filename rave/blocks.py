@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 import cached_conv as cc
 import gin
@@ -400,6 +400,14 @@ class Encoder(nn.Module):
         return z
 
 
+def normalize_dilations(dilations: Union[Sequence[int],
+                                         Sequence[Sequence[int]]],
+                        ratios: Sequence[int]):
+    if isinstance(dilations[0], int):
+        dilations = [dilations for _ in ratios]
+    return dilations
+
+
 class EncoderV2(nn.Module):
 
     def __init__(
@@ -415,6 +423,8 @@ class EncoderV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ) -> None:
         super().__init__()
+        dilations_list = normalize_dilations(dilations, ratios)
+
         net = [
             normalization(
                 cc.Conv1d(
@@ -426,7 +436,7 @@ class EncoderV2(nn.Module):
         ]
 
         num_channels = capacity
-        for r in ratios:
+        for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
                 net.append(
@@ -490,6 +500,7 @@ class GeneratorV2(nn.Module):
         amplitude_modulation: bool = False,
     ) -> None:
         super().__init__()
+        dilations_list = normalize_dilations(dilations, ratios)[::-1]
         ratios = ratios[::-1]
 
         if keep_dim:
@@ -511,7 +522,7 @@ class GeneratorV2(nn.Module):
                     padding=cc.get_padding(kernel_size),
                 )), )
 
-        for r in ratios:
+        for r, dilations in zip(ratios, dilations_list):
             # ADD UPSAMPLING UNIT
             if keep_dim:
                 out_channels = num_channels // r
@@ -595,10 +606,15 @@ class VariationalEncoder(nn.Module):
 
 class WasserteinEncoder(nn.Module):
 
-    def __init__(self, encoder_cls):
+    def __init__(
+        self,
+        encoder_cls,
+        noise_augmentation: bool = False,
+    ):
         super().__init__()
         self.encoder = encoder_cls()
         self.register_buffer("warmed_up", torch.tensor(0))
+        self.noise_augmentation = noise_augmentation
 
     def compute_mean_kernel(self, x, y):
         kernel_input = (x[:, None] - y[None]).pow(2).mean(2) / x.shape[-1]
@@ -614,6 +630,10 @@ class WasserteinEncoder(nn.Module):
     def reparametrize(self, z):
         z_reshaped = z.permute(0, 2, 1).reshape(-1, z.shape[1])
         reg = self.compute_mmd(z_reshaped, torch.randn_like(z_reshaped))
+
+        if self.noise_augmentation:
+            z = torch.cat([z, torch.randn_like(z)], 1)
+
         return z, reg.mean()
 
     def set_warmed_up(self, state: bool):

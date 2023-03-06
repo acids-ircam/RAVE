@@ -27,13 +27,6 @@ blocks.DiscreteEncoder:
     num_quantizers = %NUM_QUANTIZERS
     noise_augmentation = %NOISE_AUGMENTATION
 
-blocks.GeneratorV2:
-    latent_size = @core.get_augmented_latent_size()
-
-core.get_augmented_latent_size:
-    latent_size = %LATENT_SIZE
-    noise_augmentation = %NOISE_AUGMENTATION
-
 blocks.EncoderV2:
     n_out = 1
 

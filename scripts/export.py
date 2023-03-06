@@ -202,6 +202,8 @@ class WasserteinScriptedRAVE(ScriptedRAVE):
         return z
 
     def pre_process_latent(self, z):
+        if self.encoder.noise_augmentation:
+            z = torch.cat([z, torch.randn_like(z)], 1)
         return z
 
 
