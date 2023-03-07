@@ -1,8 +1,10 @@
 import gin
 import pytest
 import torch
+import torch.nn as nn
 
 import rave
+from scripts import export
 
 gin.enter_interactive_mode()
 
@@ -31,3 +33,24 @@ def test_config(config):
     score = model.discriminator(y)
 
     assert x.shape == y.shape
+
+    if isinstance(model.encoder, rave.blocks.VariationalEncoder):
+        script_class = export.VariationalScriptedRAVE
+    elif isinstance(model.encoder, rave.blocks.DiscreteEncoder):
+        script_class = export.DiscreteScriptedRAVE
+    elif isinstance(model.encoder, rave.blocks.WasserteinEncoder):
+        script_class = export.WasserteinScriptedRAVE
+    elif isinstance(model.encoder, rave.blocks.SphericalEncoder):
+        script_class = export.SphericalScriptedRAVE
+    else:
+        raise ValueError(f"Encoder type {type(model.encoder)} "
+                         "not supported for export.")
+
+    x = torch.zeros(1, 1, 2**14)
+    model(x)
+
+    for m in model.modules():
+        if hasattr(m, "weight_g"):
+            nn.utils.remove_weight_norm(m)
+
+    scripted_rave = script_class(pretrained=model, stereo=False)

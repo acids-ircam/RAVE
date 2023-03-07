@@ -44,7 +44,10 @@ flags.DEFINE_bool(
 
 class ScriptedRAVE(nn_tilde.Module):
 
-    def __init__(self, pretrained: rave.RAVE, stereo: bool) -> None:
+    def __init__(self,
+                 pretrained: rave.RAVE,
+                 stereo: bool,
+                 fidelity: float = .95) -> None:
         super().__init__()
         self.stereo = stereo
 
@@ -62,7 +65,7 @@ class ScriptedRAVE(nn_tilde.Module):
 
         if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
             latent_size = max(
-                np.argmax(pretrained.fidelity.numpy() > FLAGS.fidelity), 1)
+                np.argmax(pretrained.fidelity.numpy() > fidelity), 1)
             latent_size = 2**math.ceil(math.log2(latent_size))
             self.latent_size = latent_size
 
@@ -260,7 +263,9 @@ def main(argv):
             nn.utils.remove_weight_norm(m)
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
+    scripted_rave = script_class(pretrained=pretrained,
+                                 stereo=FLAGS.stereo,
+                                 fidelity=FLAGS.fidelity)
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))
