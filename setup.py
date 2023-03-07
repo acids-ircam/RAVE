@@ -1,7 +1,7 @@
+import os
 import subprocess
 
 import setuptools
-import os
 
 version = os.environ["RAVE_VERSION"]
 
