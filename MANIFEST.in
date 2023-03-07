@@ -1,1 +1,2 @@
 include rave/configs/*.gin
+include requirements.txt
