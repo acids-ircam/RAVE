@@ -192,7 +192,9 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
                         self.encoder.rvq.layers[0].codebook_size - 1).long()
         z = self.encoder.rvq.decode(z)
         if self.encoder.noise_augmentation:
-            z = torch.cat([z, torch.randn_like(z)], 1)
+            noise = torch.randn(z.shape[0], self.encoder.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
         return z
 
 
@@ -203,7 +205,9 @@ class WasserteinScriptedRAVE(ScriptedRAVE):
 
     def pre_process_latent(self, z):
         if self.encoder.noise_augmentation:
-            z = torch.cat([z, torch.randn_like(z)], 1)
+            noise = torch.randn(z.shape[0], self.encoder.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
         return z
 
 

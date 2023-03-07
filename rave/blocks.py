@@ -609,7 +609,7 @@ class WasserteinEncoder(nn.Module):
     def __init__(
         self,
         encoder_cls,
-        noise_augmentation: bool = False,
+        noise_augmentation: int = 0,
     ):
         super().__init__()
         self.encoder = encoder_cls()
@@ -632,7 +632,9 @@ class WasserteinEncoder(nn.Module):
         reg = self.compute_mmd(z_reshaped, torch.randn_like(z_reshaped))
 
         if self.noise_augmentation:
-            z = torch.cat([z, torch.randn_like(z)], 1)
+            noise = torch.randn(z.shape[0], self.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
 
         return z, reg.mean()
 
@@ -653,7 +655,7 @@ class DiscreteEncoder(nn.Module):
                  encoder_cls,
                  vq_cls,
                  num_quantizers,
-                 noise_augmentation: bool = False):
+                 noise_augmentation: int = 0):
         super().__init__()
         self.encoder = encoder_cls()
         self.rvq = vq_cls()
@@ -670,7 +672,9 @@ class DiscreteEncoder(nn.Module):
             diff = torch.zeros_like(z).mean()
 
         if self.noise_augmentation:
-            z = torch.cat([z, torch.randn_like(z)], 1)
+            noise = torch.randn(z.shape[0], self.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
 
         return z, diff
 

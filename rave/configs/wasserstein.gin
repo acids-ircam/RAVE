@@ -5,7 +5,7 @@ from rave import blocks
 from rave import balancer
 
 LATENT_SIZE = 16
-NOISE_AUGMENTATION = True
+NOISE_AUGMENTATION = 128
 
 blocks.EncoderV2.n_out = 1
 

@@ -19,7 +19,7 @@ DILATIONS = [
 ]
 RATIOS = [4, 4, 4, 2]
 CAPACITY = 96
-NOISE_AUGMENTATION = False
+NOISE_AUGMENTATION = 0
 
 core.AudioDistanceV1.log_epsilon = 1
 
