@@ -21,7 +21,7 @@ RATIOS = [4, 4, 4, 2]
 CAPACITY = 96
 NOISE_AUGMENTATION = 0
 
-core.AudioDistanceV1.log_epsilon = 1
+core.AudioDistanceV1.log_epsilon = 1e-7
 
 core.get_augmented_latent_size:
     latent_size = %LATENT_SIZE
@@ -82,7 +82,7 @@ feature_matching/core.mean_difference:
 balancer.Balancer:
     weights = {
         'feature_matching' : 20,
-        'regularization': .1,
+        'regularization': .02,
     }
     scale_gradients = False
 
