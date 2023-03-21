@@ -177,7 +177,7 @@ class VariationalScriptedRAVE(ScriptedRAVE):
             z.shape[0],
             self.full_latent_size - self.latent_size,
             z.shape[-1],
-        )
+        ).type_as(z)
         z = torch.cat([z, noise], 1)
         z = F.conv1d(z, self.latent_pca.T.unsqueeze(-1))
         z = z + self.latent_mean.unsqueeze(-1)
