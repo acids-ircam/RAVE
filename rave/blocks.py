@@ -232,12 +232,21 @@ class GRU(nn.Module):
             num_layers=num_layers,
             batch_first=True,
         )
+        self.register_buffer("gru_state", torch.tensor(0))
+        self.enabled = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.enabled: return x
         x = x.permute(0, 2, 1)
         x = self.gru(x)[0]
         x = x.permute(0, 2, 1)
         return x
+
+    def disable(self):
+        self.enabled = False
+
+    def enable(self):
+        self.enabled = True
 
 
 class Generator(nn.Module):

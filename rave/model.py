@@ -172,7 +172,11 @@ class RAVE(pl.LightningModule):
         self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
-        z_pre_reg = self.encoder(x_multiband)
+        if self.enable_pqmf_encode:
+            z_pre_reg = self.encoder(x_multiband)
+        else:
+            z_pre_reg = self.encoder(x)
+
         z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
         p.tick('encode')
 
@@ -306,13 +310,15 @@ class RAVE(pl.LightningModule):
         return self.decode(self.encode(x))
 
     def validation_step(self, batch, batch_idx):
-
         x = batch.unsqueeze(1)
 
         if self.pqmf is not None:
-            x = self.pqmf(x)
+            x_multiband = self.pqmf(x)
 
-        z = self.encoder(x)
+        if self.enable_pqmf_encode:
+            z = self.encoder(x_multiband)
+        else:
+            z = self.encoder(x)
 
         if isinstance(self.encoder, VariationalEncoder):
             mean = torch.split(z, z.shape[1] // 2, 1)[0]
@@ -323,7 +329,7 @@ class RAVE(pl.LightningModule):
         y = self.decoder(z)
 
         if self.pqmf is not None:
-            x = self.pqmf.inverse(x)
+            x = self.pqmf.inverse(x_multiband)
             y = self.pqmf.inverse(y)
 
         distance = self.audio_distance(x, y)
