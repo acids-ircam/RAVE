@@ -13,6 +13,7 @@ configs = [
     ["v2.gin"],
     ["v2.gin", "wasserstein.gin"],
     ["v2.gin", "spherical.gin"],
+    ["v2.gin", "hybrid.gin"],
     ["discrete.gin"],
     ["discrete.gin", "spectral_discriminator.gin"],
 ]

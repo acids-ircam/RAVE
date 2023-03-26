@@ -115,6 +115,10 @@ def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
     return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
 
 
+def n_fft_to_num_bands(n_fft: int) -> int:
+    return n_fft // 2 + 1
+
+
 def hinge_gan(score_real, score_fake):
     loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
     loss_dis = loss_dis.mean()

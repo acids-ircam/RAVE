@@ -87,6 +87,8 @@ class RAVE(pl.LightningModule):
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
+        enable_pqmf_encode: bool = True,
+        enable_pqmf_decode: bool = True,
     ):
         super().__init__()
 
@@ -127,6 +129,9 @@ class RAVE(pl.LightningModule):
 
         self.eval_number = 0
         self.integrator = None
+
+        self.enable_pqmf_encode = enable_pqmf_encode
+        self.enable_pqmf_decode = enable_pqmf_decode
 
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
@@ -286,14 +291,14 @@ class RAVE(pl.LightningModule):
         p.tick('logging')
 
     def encode(self, x):
-        if self.pqmf is not None:
+        if self.pqmf is not None and self.enable_pqmf_encode:
             x = self.pqmf(x)
         z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
     def decode(self, z):
         y = self.decoder(z)
-        if self.pqmf is not None:
+        if self.pqmf is not None and self.enable_pqmf_decode:
             y = self.pqmf.inverse(y)
         return y
 

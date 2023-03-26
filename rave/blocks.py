@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
+from torchaudio.transforms import Spectrogram
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -221,6 +222,24 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
+class GRU(nn.Module):
+
+    def __init__(self, latent_size: int, num_layers: int) -> None:
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=latent_size,
+            hidden_size=latent_size,
+            num_layers=num_layers,
+            batch_first=True,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.permute(0, 2, 1)
+        x = self.gru(x)[0]
+        x = x.permute(0, 2, 1)
+        return x
+
+
 class Generator(nn.Module):
 
     def __init__(
@@ -421,9 +440,13 @@ class EncoderV2(nn.Module):
         dilations: Sequence[int],
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+        spectrogram: Optional[Callable[[], Spectrogram]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
+
+        if spectrogram is not None:
+            self.spectrogram = spectrogram()
 
         net = [
             normalization(
@@ -482,6 +505,8 @@ class EncoderV2(nn.Module):
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.spectrogram is not None:
+            x = self.spectrogram(x[:, 0])[..., :-1]
         return self.net(x)
 
 
