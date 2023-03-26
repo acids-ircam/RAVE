@@ -16,6 +16,7 @@ blocks.EncoderV2:
     data_size = %N_MELS
     spectrogram = @transforms.MelSpectrogram
     ratios = %ENCODER_RATIOS
+    dilations = [1]
 
 core.n_fft_to_num_bands:
     n_fft = %N_FFT
