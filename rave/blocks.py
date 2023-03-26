@@ -516,6 +516,7 @@ class EncoderV2(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.spectrogram is not None:
             x = self.spectrogram(x[:, 0])[..., :-1]
+            x = torch.log1p(x)
         return self.net(x)
 
 
