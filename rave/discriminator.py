@@ -153,6 +153,23 @@ class MultiScaleSpectralDiscriminator(nn.Module):
         return features
 
 
+class MultiScaleSpectralDiscriminator1d(nn.Module):
+
+    def __init__(self, scales: Sequence[int],
+                 convnet: Callable[[int], nn.Module]) -> None:
+        super().__init__()
+        self.specs = nn.ModuleList([spectrogram(n) for n in scales])
+        self.nets = nn.ModuleList([convnet(n + 2) for n in scales])
+
+    def forward(self, x):
+        features = []
+        for spec, net in zip(self.specs, self.nets):
+            spec_x = spec(x).squeeze(1)
+            spec_x = torch.cat([spec_x.real, spec_x.imag], 1)
+            features.append(net(spec_x))
+        return features
+
+
 class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(self, periods, convnet, n_channels=1) -> None:

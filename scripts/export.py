@@ -54,7 +54,10 @@ flags.DEFINE_bool(
 
 class ScriptedRAVE(nn_tilde.Module):
 
-    def __init__(self, pretrained: rave.RAVE, stereo: bool = False) -> None:
+    def __init__(self,
+                 pretrained: rave.RAVE,
+                 stereo: bool,
+                 fidelity: float = .95) -> None:
         super().__init__()
         self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
@@ -71,7 +74,7 @@ class ScriptedRAVE(nn_tilde.Module):
 
         if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
             latent_size = max(
-                np.argmax(pretrained.fidelity.numpy() > FLAGS.fidelity), 1)
+                np.argmax(pretrained.fidelity.numpy() > fidelity), 1)
             latent_size = 2**math.ceil(math.log2(latent_size))
             self.latent_size = latent_size
 
@@ -80,6 +83,9 @@ class ScriptedRAVE(nn_tilde.Module):
 
         elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
             self.latent_size = pretrained.latent_size
+
+        elif isinstance(pretrained.encoder, rave.blocks.SphericalEncoder):
+            self.latent_size = pretrained.latent_size - 1
 
         else:
             raise ValueError(
@@ -199,7 +205,7 @@ class VariationalScriptedRAVE(ScriptedRAVE):
             z.shape[0],
             self.full_latent_size - self.latent_size,
             z.shape[-1],
-        )
+        ).type_as(z)
         z = torch.cat([z, noise], 1)
         z = F.conv1d(z, self.latent_pca.T.unsqueeze(-1))
         z = z + self.latent_mean.unsqueeze(-1)
@@ -216,6 +222,10 @@ class DiscreteScriptedRAVE(ScriptedRAVE):
         z = torch.clamp(z, 0,
                         self.encoder.rvq.layers[0].codebook_size - 1).long()
         z = self.encoder.rvq.decode(z)
+        if self.encoder.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.encoder.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
         return z
 
 
@@ -225,7 +235,20 @@ class WasserteinScriptedRAVE(ScriptedRAVE):
         return z
 
     def pre_process_latent(self, z):
+        if self.encoder.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.encoder.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
         return z
+
+
+class SphericalScriptedRAVE(ScriptedRAVE):
+
+    def post_process_latent(self, z):
+        return rave.blocks.unit_norm_vector_to_angles(z)
+
+    def pre_process_latent(self, z):
+        return rave.blocks.angles_to_unit_norm_vector(z)
 
 
 def main(argv):
@@ -233,9 +256,7 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"),
-                          #      skip_unknown=True,
-                          )
+    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
     checkpoint = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
@@ -252,6 +273,8 @@ def main(argv):
         script_class = DiscreteScriptedRAVE
     elif isinstance(pretrained.encoder, rave.blocks.WasserteinEncoder):
         script_class = WasserteinScriptedRAVE
+    elif isinstance(pretrained.encoder, rave.blocks.SphericalEncoder):
+        script_class = SphericalScriptedRAVE
     else:
         raise ValueError(f"Encoder type {type(pretrained.encoder)} "
                          "not supported for export.")
@@ -268,7 +291,9 @@ def main(argv):
             nn.utils.remove_weight_norm(m)
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained, stereo=FLAGS.stereo)
+    scripted_rave = script_class(pretrained=pretrained,
+                                 stereo=FLAGS.stereo,
+                                 fidelity=FLAGS.fidelity)
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))

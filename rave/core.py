@@ -29,6 +29,10 @@ def random_angle(min_f=20, max_f=8000, sr=24000):
     return rand
 
 
+def get_augmented_latent_size(latent_size: int, noise_augmentation: int):
+    return latent_size + noise_augmentation
+
+
 def pole_to_z_filter(omega, amplitude=.9):
     z0 = amplitude * np.exp(1j * omega)
     a = [1, -2 * np.real(z0), abs(z0)**2]
@@ -109,6 +113,10 @@ def get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta):
 def get_beta_kl_cyclic_annealed(step, cycle_size, warmup, min_beta, max_beta):
     min_beta = get_beta_kl(step, warmup, min_beta, max_beta)
     return get_beta_kl_cyclic(step, cycle_size, min_beta, max_beta)
+
+
+def n_fft_to_num_bands(n_fft: int) -> int:
+    return n_fft // 2 + 1
 
 
 def hinge_gan(score_real, score_fake):

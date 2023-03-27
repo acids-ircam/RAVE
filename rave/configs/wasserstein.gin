@@ -4,13 +4,18 @@ import rave
 from rave import blocks
 from rave import balancer
 
-blocks.Encoder.n_out = 1
+LATENT_SIZE = 16
+NOISE_AUGMENTATION = 128
+
+blocks.EncoderV2.n_out = 1
 
 blocks.WasserteinEncoder:
-    encoder_cls = @blocks.Encoder
+    encoder_cls = @blocks.EncoderV2
+    noise_augmentation = %NOISE_AUGMENTATION
 
 rave.RAVE:
     encoder = @blocks.WasserteinEncoder
+    phase_1_duration = 200000
 
 balancer.Balancer:
     weights = {

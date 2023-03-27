@@ -108,6 +108,9 @@ class Balancer:
             for k in self.deny_list:
                 if k in losses:
                     loss = losses[k] * self.weights.get(k, 1)
+                    if logger is not None:
+                        logger(f'scale_{name}', scale)
+                        logger(f'grad_norm_{name}', grads[name].norm())
                     if loss.requires_grad:
                         loss.backward(retain_graph=True)
 

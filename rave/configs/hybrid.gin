@@ -1,0 +1,39 @@
+from __gin__ import dynamic_registration
+
+from rave import blocks
+from rave import core
+from torchaudio import transforms
+
+import rave
+
+N_FFT = 2048
+N_MELS = 128
+HOP_LENGTH = 256
+ENCODER_RATIOS = [2, 2, 2]
+NUM_GRU_LAYERS = 2
+
+blocks.EncoderV2:
+    data_size = %N_MELS
+    spectrogram = @transforms.MelSpectrogram
+    ratios = %ENCODER_RATIOS
+    dilations = [1]
+
+core.n_fft_to_num_bands:
+    n_fft = %N_FFT
+
+transforms.MelSpectrogram:
+    sample_rate = %SAMPLING_RATE
+    n_fft = %N_FFT
+    win_length = %N_FFT
+    hop_length = %HOP_LENGTH
+    normalized = True
+    n_mels = %N_MELS
+
+blocks.GeneratorV2:
+    recurrent_layer = @blocks.GRU
+
+blocks.GRU:
+    latent_size = %LATENT_SIZE
+    num_layers = %NUM_GRU_LAYERS
+
+rave.RAVE.enable_pqmf_encode = False

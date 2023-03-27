@@ -87,7 +87,9 @@ class RAVE(pl.LightningModule):
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
-        n_channels: int = 1
+        n_channels: int = 1,
+        enable_pqmf_encode: bool = True,
+        enable_pqmf_decode: bool = True,
     ):
         super().__init__()
         self.pqmf = None
@@ -127,6 +129,9 @@ class RAVE(pl.LightningModule):
 
         self.eval_number = 0
         self.integrator = None
+
+        self.enable_pqmf_encode = enable_pqmf_encode
+        self.enable_pqmf_decode = enable_pqmf_decode
 
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
 
@@ -169,7 +174,11 @@ class RAVE(pl.LightningModule):
         self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
-        z_pre_reg = self.encoder(x_multiband)
+        if self.enable_pqmf_encode:
+            z_pre_reg = self.encoder(x_multiband)
+        else:
+            z_pre_reg = self.encoder(x)
+
         z, reg = self.encoder.reparametrize(z_pre_reg)[:2]
         p.tick('encode')
 

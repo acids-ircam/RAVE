@@ -4,6 +4,8 @@ import rave
 from rave import blocks
 from rave import balancer
 
+LATENT_SIZE = 16
+
 blocks.EncoderV2.n_out = 1
 
 blocks.SphericalEncoder:
@@ -11,4 +13,4 @@ blocks.SphericalEncoder:
 
 rave.RAVE:
     encoder = @blocks.SphericalEncoder
-    phase_1_duration = -1
+    phase_1_duration = 200000

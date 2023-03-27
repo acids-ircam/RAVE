@@ -17,6 +17,9 @@ LATENT_SIZE = 128
 CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = False
 CAPACITY = 96
+NOISE_AUGMENTATION = 128
+
+core.AudioDistanceV1.log_epsilon = 1
 
 # ENCODER
 
@@ -24,6 +27,7 @@ blocks.DiscreteEncoder:
     encoder_cls = @blocks.EncoderV2
     vq_cls = @quantization.ResidualVectorQuantization
     num_quantizers = %NUM_QUANTIZERS
+    noise_augmentation = %NOISE_AUGMENTATION
 
 blocks.EncoderV2:
     n_out = 1
@@ -32,6 +36,14 @@ quantization.ResidualVectorQuantization:
     num_quantizers = %NUM_QUANTIZERS
     dim = %LATENT_SIZE
     codebook_size = %CODEBOOK_SIZE
+
+# BALANCER
+balancer.Balancer:
+    weights = {
+        'feature_matching' : 20,
+        'regularization': .1,
+    }
+    scale_gradients = False
 
 # RAVE
 

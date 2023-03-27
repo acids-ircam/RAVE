@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 import cached_conv as cc
 import gin
@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
+from torchaudio.transforms import Spectrogram
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
 
@@ -221,6 +222,33 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
+class GRU(nn.Module):
+
+    def __init__(self, latent_size: int, num_layers: int) -> None:
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=latent_size,
+            hidden_size=latent_size,
+            num_layers=num_layers,
+            batch_first=True,
+        )
+        self.register_buffer("gru_state", torch.tensor(0))
+        self.enabled = True
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.enabled: return x
+        x = x.permute(0, 2, 1)
+        x = self.gru(x)[0]
+        x = x.permute(0, 2, 1)
+        return x
+
+    def disable(self):
+        self.enabled = False
+
+    def enable(self):
+        self.enabled = True
+
+
 class Generator(nn.Module):
 
     def __init__(
@@ -402,6 +430,14 @@ class Encoder(nn.Module):
         return z
 
 
+def normalize_dilations(dilations: Union[Sequence[int],
+                                         Sequence[Sequence[int]]],
+                        ratios: Sequence[int]):
+    if isinstance(dilations[0], int):
+        dilations = [dilations for _ in ratios]
+    return dilations
+
+
 class EncoderV2(nn.Module):
 
     def __init__(
@@ -416,8 +452,14 @@ class EncoderV2(nn.Module):
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
+        spectrogram: Optional[Callable[[], Spectrogram]] = None,
     ) -> None:
         super().__init__()
+        dilations_list = normalize_dilations(dilations, ratios)
+
+        if spectrogram is not None:
+            self.spectrogram = spectrogram()
+
         net = [
             normalization(
                 cc.Conv1d(
@@ -429,7 +471,7 @@ class EncoderV2(nn.Module):
         ]
 
         num_channels = capacity
-        for r in ratios:
+        for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
                 net.append(
@@ -475,6 +517,9 @@ class EncoderV2(nn.Module):
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.spectrogram is not None:
+            x = self.spectrogram(x[:, 0])[..., :-1]
+            x = torch.log1p(x)
         return self.net(x)
 
 
@@ -491,8 +536,10 @@ class GeneratorV2(nn.Module):
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
+        amplitude_modulation: bool = False,
     ) -> None:
         super().__init__()
+        dilations_list = normalize_dilations(dilations, ratios)[::-1]
         ratios = ratios[::-1]
 
         if keep_dim:
@@ -514,7 +561,7 @@ class GeneratorV2(nn.Module):
                     padding=cc.get_padding(kernel_size),
                 )), )
 
-        for r in ratios:
+        for r, dilations in zip(ratios, dilations_list):
             # ADD UPSAMPLING UNIT
             if keep_dim:
                 out_channels = num_channels // r
@@ -546,15 +593,22 @@ class GeneratorV2(nn.Module):
             normalization(
                 cc.Conv1d(
                     num_channels,
-                    data_size * n_channels,
+                    data_size * n_channels * 2 if amplitude_modulation else data_size * n_channels,
                     kernel_size=kernel_size * 2 + 1,
                     padding=cc.get_padding(kernel_size * 2 + 1),
                 )))
 
         self.net = cc.CachedSequential(*net)
+        self.amplitude_modulation = amplitude_modulation
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(self.net(x))
+        x = self.net(x)
+
+        if self.amplitude_modulation:
+            x, amplitude = x.split(x.shape[1] // 2, 1)
+            x = x * torch.sigmoid(amplitude)
+
+        return torch.tanh(x)
 
     def set_warmed_up(self, state: bool):
         pass
@@ -592,10 +646,15 @@ class VariationalEncoder(nn.Module):
 
 class WasserteinEncoder(nn.Module):
 
-    def __init__(self, encoder_cls):
+    def __init__(
+        self,
+        encoder_cls,
+        noise_augmentation: int = 0,
+    ):
         super().__init__()
         self.encoder = encoder_cls()
         self.register_buffer("warmed_up", torch.tensor(0))
+        self.noise_augmentation = noise_augmentation
 
     def compute_mean_kernel(self, x, y):
         kernel_input = (x[:, None] - y[None]).pow(2).mean(2) / x.shape[-1]
@@ -611,6 +670,12 @@ class WasserteinEncoder(nn.Module):
     def reparametrize(self, z):
         z_reshaped = z.permute(0, 2, 1).reshape(-1, z.shape[1])
         reg = self.compute_mmd(z_reshaped, torch.randn_like(z_reshaped))
+
+        if self.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
+
         return z, reg.mean()
 
     def set_warmed_up(self, state: bool):
@@ -626,21 +691,33 @@ class WasserteinEncoder(nn.Module):
 
 class DiscreteEncoder(nn.Module):
 
-    def __init__(self, encoder_cls, vq_cls, num_quantizers, n_channels: int = 1):
+    def __init__(self,
+                 encoder_cls,
+                 vq_cls,
+                 num_quantizers,
+                 noise_augmentation: int = 0,
+                 n_channels: int = 1):
         super().__init__()
         self.encoder = encoder_cls(n_channels=n_channels)
         self.rvq = vq_cls()
         self.num_quantizers = num_quantizers
         self.register_buffer("warmed_up", torch.tensor(0))
         self.register_buffer("enabled", torch.tensor(0))
+        self.noise_augmentation = noise_augmentation
 
     @torch.jit.ignore
     def reparametrize(self, z):
         if self.enabled:
-            q, diff, _ = self.rvq(z)
-            return q, diff.mean()
+            z, diff, _ = self.rvq(z)
         else:
-            return z, torch.zeros_like(z).mean()
+            diff = torch.zeros_like(z).mean()
+
+        if self.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
+
+        return z, diff
 
     def set_warmed_up(self, state: bool):
         state = torch.tensor(int(state), device=self.warmed_up.device)
