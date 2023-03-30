@@ -456,6 +456,8 @@ class EncoderV2(nn.Module):
 
         if spectrogram is not None:
             self.spectrogram = spectrogram()
+        else:
+            self.spectrogram = None
 
         net = [
             normalization(
