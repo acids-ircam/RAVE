@@ -457,6 +457,7 @@ class EncoderV2(nn.Module):
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
 
+        self.spectrogram = None
         if spectrogram is not None:
             self.spectrogram = spectrogram()
 

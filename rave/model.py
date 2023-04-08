@@ -165,7 +165,7 @@ class RAVE(pl.LightningModule):
         x.requires_grad = True
 
         batch_size = batch.shape[:-2]
-        if self.pqmf is not None:
+        if self.enable_pqmf_encode is not None:
             x = batch.reshape(-1, 1, batch.shape[-1])
             x_multiband = self.pqmf(x)
             x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
@@ -183,7 +183,8 @@ class RAVE(pl.LightningModule):
         p.tick('encode')
 
         # DECODE LATENT
-        y_multiband = self.decoder(z)
+        y = self.decoder(z)
+        y_multiband = y
         p.tick('decode')
 
         if self.valid_signal_crop and self.receptive_field.sum():
@@ -200,11 +201,10 @@ class RAVE(pl.LightningModule):
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distances = {}
 
-        if self.pqmf is not None:
+        if self.enable_pqmf_decode:
             multiband_distance = self.multiband_audio_distance(
                 x_multiband, y_multiband)
             p.tick('mb distance')
-
             x_multiband_tmp = x_multiband.reshape(x_multiband.shape[0] * self.n_channels, -1, x_multiband.shape[-1])
             y_multiband_tmp = y_multiband.reshape(y_multiband.shape[0] * self.n_channels, -1, y_multiband.shape[-1])
             x = self.pqmf.inverse(x_multiband_tmp)
@@ -281,7 +281,10 @@ class RAVE(pl.LightningModule):
             p.tick('dis opt')
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(loss_gen, y_multiband, self.log, p.tick)
+            if self.enable_pqmf_decode:
+                self.balancer.backward(loss_gen, y_multiband, self.log, p.tick)
+            else:
+                self.balancer.backward(loss_gen, y, self.log, p.tick) 
             gen_opt.step()
 
         # LOGGING
@@ -294,7 +297,7 @@ class RAVE(pl.LightningModule):
         p.tick('logging')
 
     def encode(self, x):
-        if self.pqmf is not None:
+        if self.enable_pqmf_encode:
             batch_size = x.shape[:-2]
             x = x.reshape(-1, 1, x.shape[-1])
             x = self.pqmf(x)
@@ -305,9 +308,10 @@ class RAVE(pl.LightningModule):
     def decode(self, z):
         batch_size = z.shape[:-2]
         y = self.decoder(z)
-        y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
-        y = self.pqmf.inverse(y)
-        y = y.reshape(*batch_size, self.n_channels, -1)
+        if self.enable_pqmf_decode:
+            y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
+            y = self.pqmf.inverse(y)
+            y = y.reshape(*batch_size, self.n_channels, -1)
         return y
 
     def forward(self, x):
@@ -317,11 +321,13 @@ class RAVE(pl.LightningModule):
         # x = batch.unsqueeze(1)
         x = batch
         batch_size = x.shape[:-2]
-        if self.pqmf is not None:
-            x = x.reshape(-1, 1, x.shape[-1])
-            x = self.pqmf(x)
-            x = x.reshape(*batch_size, -1, x.shape[-1])
-        z = self.encoder(x)
+        if self.enable_pqmf_encode:
+            x_multiband = x.reshape(-1, 1, x.shape[-1])
+            x_multiband = self.pqmf(x_multiband)
+            x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
+            z = self.encoder(x_multiband)
+        else:
+            z = self.encoder(x)
 
         if isinstance(self.encoder, VariationalEncoder):
             mean = torch.split(z, z.shape[1] // 2, 1)[0]
@@ -331,7 +337,7 @@ class RAVE(pl.LightningModule):
         z = self.encoder.reparametrize(z)[0]
         y = self.decoder(z)
 
-        if self.pqmf is not None:
+        if self.enable_pqmf_decode:
             x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
             y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
             x = self.pqmf.inverse(x)
