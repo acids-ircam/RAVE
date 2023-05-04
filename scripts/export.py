@@ -20,6 +20,7 @@ from absl import flags
 import rave
 import rave.blocks
 import rave.core
+import rave.resampler
 
 FLAGS = flags.FLAGS
 
@@ -40,6 +41,9 @@ flags.DEFINE_bool(
     'stereo',
     default=False,
     help='Enable fake stereo mode (one encoding, double decoding')
+flags.DEFINE_integer('sr',
+                     default=None,
+                     help='Optional resampling sample rate')
 
 
 class ScriptedRAVE(nn_tilde.Module):
@@ -47,7 +51,8 @@ class ScriptedRAVE(nn_tilde.Module):
     def __init__(self,
                  pretrained: rave.RAVE,
                  stereo: bool,
-                 fidelity: float = .95) -> None:
+                 fidelity: float = .95,
+                 target_sr: bool = None) -> None:
         super().__init__()
         self.stereo = stereo
 
@@ -56,6 +61,14 @@ class ScriptedRAVE(nn_tilde.Module):
         self.decoder = pretrained.decoder
 
         self.sr = pretrained.sr
+
+        self.resampler = None
+
+        if target_sr is not None:
+            if target_sr != self.sr:
+                assert not target_sr % self.sr, "Incompatible target sampling rate"
+                self.resampler = rave.resampler.Resampler(target_sr, self.sr)
+                self.sr = target_sr
 
         self.full_latent_size = pretrained.latent_size
 
@@ -83,10 +96,16 @@ class ScriptedRAVE(nn_tilde.Module):
                 f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
             )
 
-        x = torch.zeros(1, 1, 2**14)
+        x_len = 2**14
+        x = torch.zeros(1, 1, x_len)
+
+        if self.resampler is not None:
+            x = self.resampler.to_model_sampling_rate(x)
+
         x_m = x.clone() if self.pqmf is None else self.pqmf(x)
+
         z = self.encoder(x_m)
-        ratio_encode = x.shape[-1] // z.shape[-1]
+        ratio_encode = x_len // z.shape[-1]
 
         channels = ["(L)", "(R)"] if stereo else ["(mono)"]
 
@@ -139,6 +158,9 @@ class ScriptedRAVE(nn_tilde.Module):
 
     @torch.jit.export
     def encode(self, x):
+        if self.resampler is not None:
+            x = self.resampler.to_model_sampling_rate(x)
+
         if self.pqmf is not None:
             x = self.pqmf(x)
         z = self.encoder(x)
@@ -151,8 +173,12 @@ class ScriptedRAVE(nn_tilde.Module):
             z = torch.cat([z, z], 0)
         z = self.pre_process_latent(z)
         y = self.decoder(z)
+
         if self.pqmf is not None:
             y = self.pqmf.inverse(y)
+
+        if self.resampler is not None:
+            y = self.resampler.from_model_sampling_rate(y)
 
         if self.stereo:
             y = torch.cat(y.chunk(2, 0), 1)
@@ -263,9 +289,12 @@ def main(argv):
             nn.utils.remove_weight_norm(m)
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained,
-                                 stereo=FLAGS.stereo,
-                                 fidelity=FLAGS.fidelity)
+    scripted_rave = script_class(
+        pretrained=pretrained,
+        stereo=FLAGS.stereo,
+        fidelity=FLAGS.fidelity,
+        target_sr=FLAGS.sr,
+    )
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))

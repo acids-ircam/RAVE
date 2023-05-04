@@ -1,9 +1,10 @@
+import itertools
+
 import gin
 import pytest
+import rave
 import torch
 import torch.nn as nn
-
-import rave
 from scripts import export
 
 gin.enter_interactive_mode()
@@ -20,11 +21,22 @@ configs = [
 
 configs += [c + ["causal.gin"] for c in configs]
 
+model_sampling_rate = [44100, 22050]
+stereo = [True, False]
 
-@pytest.mark.parametrize("config", configs, ids=lambda elm: " ".join(elm))
-def test_config(config):
+configs = list(itertools.product(configs, model_sampling_rate, stereo))
+
+
+@pytest.mark.parametrize(
+    "config,sr,stereo",
+    configs,
+    ids=map(
+        lambda e: " ".join(e[0]) + f" [{e[1]}] " +
+        ("stereo" if e[2] else "mono"), configs),
+)
+def test_config(config, sr, stereo):
     gin.clear_config()
-    gin.parse_config_files_and_bindings(config, [])
+    gin.parse_config_files_and_bindings(config, [f"SAMPLING_RATE={sr}"])
 
     model = rave.RAVE()
 
@@ -54,4 +66,13 @@ def test_config(config):
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
 
-    scripted_rave = script_class(pretrained=model, stereo=False)
+    scripted_rave = script_class(
+        pretrained=model,
+        stereo=stereo,
+    )
+
+    scripted_rave_resampled = script_class(
+        pretrained=model,
+        stereo=stereo,
+        target_sr=44100,
+    )
