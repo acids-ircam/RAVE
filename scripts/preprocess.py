@@ -77,10 +77,10 @@ def load_audio_chunk(path: str, n_signal: int,
         )
         processes.append(process)
     
-    chunk = [p.stdout.read(n_signal * 2) for p in processes]
-    while len(chunk[0]) == n_signal * 2:
+    chunk = [p.stdout.read(n_signal * 4) for p in processes]
+    while len(chunk[0]) == n_signal * 4:
         yield b''.join(chunk)
-        chunk = [p.stdout.read(n_signal * 2) for p in processes]
+        chunk = [p.stdout.read(n_signal * 4) for p in processes]
     process.stdout.close()
 
 
@@ -127,6 +127,14 @@ def flatten(iterator: Iterable):
         for sub_elm in elm:
             yield sub_elm
 
+def get_metadata(audio_samples, channels: int = 1):
+    audio = np.frombuffer(audio_samples, dtype=np.int16)
+    audio = audio.astype(float) / (2**15 - 1)
+    audio = audio.reshape(channels, -1)
+    peak_amplitude = np.amax(np.abs(audio))
+    rms_amplitude = np.sqrt(np.mean(audio**2))
+    return {'peak': peak_amplitude, 'rms_amplitude': rms_amplitude}
+
 
 def process_audio_array(audio: Tuple[int, bytes],
                         env: lmdb.Environment,
@@ -134,11 +142,13 @@ def process_audio_array(audio: Tuple[int, bytes],
     audio_id, audio_samples = audio
 
     buffers = {}
+    # descriptors = get_metadata(audio_samples)
     buffers['waveform'] = AudioExample.AudioBuffer(
         shape=(channels, int(len(audio_samples)/channels)),
         sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,
+        # **descriptors
     )
 
     ae = AudioExample(buffers=buffers)
@@ -148,7 +158,7 @@ def process_audio_array(audio: Tuple[int, bytes],
             key.encode(),
             ae.SerializeToString(),
         )
-    return audio_id
+    return audio_id#, descriptors
 
 
 def process_audio_file(audio: Tuple[int, Tuple[str, float]],
@@ -252,6 +262,7 @@ def main(argv):
         audio_lengths = filter(lambda x: x is not None, audio_lengths)
 
         audio_lengths = enumerate(audio_lengths)
+        # processed_samples, descriptors = map(partial(process_audio_file, env=env),
         processed_samples = map(partial(process_audio_file, env=env),
                                 audio_lengths)
         pbar = tqdm(processed_samples)

@@ -619,9 +619,9 @@ class GeneratorV2(nn.Module):
 
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder, beta: float = 1.0, n_channels=1):
+    def __init__(self, encoder, beta: float = 1.0, data_size: int = 16, n_channels=1):
         super().__init__()
-        self.encoder = encoder(n_channels=n_channels)
+        self.encoder = encoder(data_size = data_size, n_channels=n_channels)
         self.beta = beta
         self.register_buffer("warmed_up", torch.tensor(0))
 

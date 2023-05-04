@@ -496,3 +496,18 @@ class LoggerCallback(pl.Callback):
 
     def load_state_dict(self, state_dict):
         self.state.update(state_dict)
+
+
+class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
+    def __init__(self, step_period: int = None, **kwargs):
+        super().__init__(**kwargs)
+        self.step_period = step_period 
+        self.__counter = 0
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        self.__counter += 1
+        if self.step_period:
+            if self.__counter % self.step_period == 0:
+                filename = os.path.join(self.dirpath, f"epoch_{self.__counter}{self.FILE_EXTENSION}")
+                self._save_checkpoint(trainer, filename)
+

@@ -30,10 +30,16 @@ flags.DEFINE_string('db_path',
                     None,
                     help='Preprocessed dataset path',
                     required=True)
+flags.DEFINE_string('out_path',
+                    default="runs/",
+                    help='Output folder')
 flags.DEFINE_integer('max_steps',
                      6000000,
                      help='Maximum number of training steps')
 flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
+flags.DEFINE_integer('save_every',
+                     None,
+                     help='save every n steps (default: just last)')
 flags.DEFINE_integer('n_signal',
                      131072,
                      help='Number of audio samples to use during training')
@@ -53,9 +59,15 @@ flags.DEFINE_bool('derivative',
 flags.DEFINE_bool('normalize',
                   default=False,
                   help='Train RAVE on normalized signals')
+flags.DEFINE_bool('rand_pitch',
+                  default=False,
+                  help='activates random pitch')
 flags.DEFINE_bool('progress',
                   default=True,
                   help='Display training progress bar')
+flags.DEFINE_bool('smoke_test', 
+                  default=False,
+                  help="Run training with n_batches=1 to test the model")
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -85,6 +97,7 @@ def main(argv):
                                        FLAGS.n_signal,
                                        derivative=FLAGS.derivative,
                                        normalize=FLAGS.normalize,
+                                       rand_pitch=FLAGS.rand_pitch,
                                        n_channels=n_channels)
     
     train, val = rave.dataset.split_dataset(dataset, 98)
@@ -103,21 +116,26 @@ def main(argv):
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
                                                          filename="best")
-    last_checkpoint = pl.callbacks.ModelCheckpoint(filename="last")
+    last_filename = "last" if FLAGS.save_every is None else "epoch-{epoch:04d}"                                                        
+    last_checkpoint = rave.core.ModelCheckpoint(filename=last_filename, step_period=FLAGS.save_every)
 
     val_check = {}
     if len(train) >= FLAGS.val_every:
-        val_check["val_check_interval"] = FLAGS.val_every
+        val_check["val_check_interval"] = 1 if FLAGS.smoke_test else FLAGS.val_every
     else:
         nepoch = FLAGS.val_every // len(train)
         val_check["check_val_every_n_epoch"] = nepoch
+
+    if FLAGS.smoke_test:
+        val_check['limit_train_batches'] = 1
+        val_check['limit_val_batches'] = 1
 
     gin_hash = hashlib.md5(
         gin.operative_config_str().encode()).hexdigest()[:10]
 
     RUN_NAME = f'{FLAGS.name}_{gin_hash}'
 
-    os.makedirs(os.path.join("runs", RUN_NAME), exist_ok=True)
+    os.makedirs(os.path.join(FLAGS.out_path, RUN_NAME), exist_ok=True)
 
     if FLAGS.gpu == [-1]:
         gpu = 0
@@ -143,7 +161,7 @@ def main(argv):
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
-            "runs",
+            FLAGS.out_path,
             name=RUN_NAME,
         ),
         accelerator=accelerator,
@@ -151,6 +169,7 @@ def main(argv):
         callbacks=[
             validation_checkpoint,
             last_checkpoint,
+            pl.callbacks.LearningRateMonitor(logging_interval="epoch", log_momentum=False),
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
             rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
@@ -167,7 +186,7 @@ def main(argv):
         step = torch.load(run, map_location='cpu')["global_step"]
         trainer.fit_loop.epoch_loop._batches_that_stepped = step
 
-    with open(os.path.join("runs", RUN_NAME, "config.gin"), "w") as config_out:
+    with open(os.path.join(FLAGS.out_path, RUN_NAME, "config.gin"), "w") as config_out:
         config_out.write(gin.operative_config_str())
 
     trainer.fit(model, train, val, ckpt_path=run)

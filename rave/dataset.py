@@ -2,7 +2,7 @@ import math
 import os
 import subprocess
 from random import random
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence, Union, Callable
 
 import gin
 import lmdb
@@ -165,12 +165,14 @@ def normalize_signal(x: np.ndarray, max_gain_db: int = 30):
 
     return x * gain
 
-
+@gin.configurable
 def get_dataset(db_path,
                 sr,
                 n_signal,
                 derivative: bool = False,
                 normalize: bool = False,
+                rand_pitch: bool = False,
+                augmentations: Union[None, Iterable[Callable]] = None, 
                 n_channels: int = 1):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
@@ -186,11 +188,18 @@ def get_dataset(db_path,
         transforms.Dequantize(16),
     ]
 
+    if rand_pitch:
+        transform_list.insert(1, transforms.RandomPitch(n_signal, [0.7, 1.2]))
+
     if normalize:
         transform_list.append(normalize_signal)
 
     if derivative:
         transform_list.append(get_derivator_integrator(sr)[0])
+
+    if augmentations:
+        transform_list.extend(augmentations)
+
 
     transform_list.append(lambda x: x.astype(np.float32))
 
