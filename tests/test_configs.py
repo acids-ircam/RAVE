@@ -2,9 +2,10 @@ import itertools
 
 import gin
 import pytest
-import rave
 import torch
 import torch.nn as nn
+
+import rave
 from scripts import export
 
 gin.enter_interactive_mode()

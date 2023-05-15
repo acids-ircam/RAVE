@@ -2,7 +2,9 @@ import sys
 
 from absl import app
 
-AVAILABLE_SCRIPTS = ['preprocess', 'train', 'export', 'export_onnx']
+AVAILABLE_SCRIPTS = [
+    'preprocess', 'train', 'export', 'export_onnx', 'remote_dataset'
+]
 
 
 def help():
@@ -38,5 +40,9 @@ def main():
         from scripts import export_onnx
         sys.argv[0] = export_onnx.__name__
         app.run(export_onnx.main)
+    elif command == 'remote_dataset':
+        from scripts import remote_dataset
+        sys.argv[0] = remote_dataset.__name__
+        app.run(remote_dataset.main)
     else:
         raise Exception(f'Command {command} not found')

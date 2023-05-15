@@ -2,6 +2,7 @@ import cached_conv as cc
 import gin
 import pytest
 import torch
+
 from rave.resampler import Resampler
 
 configs = [(44100, 22050), (48000, 16000)]
