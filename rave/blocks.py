@@ -366,6 +366,7 @@ class Encoder(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
     ):
         super().__init__()
+        data_size = data_size or n_channels
         net = [cc.Conv1d(data_size * n_channels, capacity, 7, padding=cc.get_padding(7))]
 
         for i, r in enumerate(ratios):
@@ -442,7 +443,7 @@ class EncoderV2(nn.Module):
 
     def __init__(
         self,
-        data_size: int,
+        data_size: Union[int, None],
         capacity: int,
         ratios: Sequence[int],
         latent_size: int,
@@ -456,6 +457,7 @@ class EncoderV2(nn.Module):
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
+        data_size = data_size or n_channels
 
         self.spectrogram = None
         if spectrogram is not None:
@@ -530,18 +532,19 @@ class GeneratorV2(nn.Module):
 
     def __init__(
         self,
-        data_size: int,
         capacity: int,
         ratios: Sequence[int],
         latent_size: int,
         kernel_size: int,
         dilations: Sequence[int],
         keep_dim: bool = False,
+        data_size: Union[int, None] = None,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
         amplitude_modulation: bool = False,
     ) -> None:
         super().__init__()
+        data_size = data_size or n_channels
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
         ratios = ratios[::-1]
 
@@ -619,9 +622,9 @@ class GeneratorV2(nn.Module):
 
 class VariationalEncoder(nn.Module):
 
-    def __init__(self, encoder, beta: float = 1.0, data_size: int = 16, n_channels=1):
+    def __init__(self, encoder, beta: float = 1.0, n_channels=1):
         super().__init__()
-        self.encoder = encoder(data_size = data_size, n_channels=n_channels)
+        self.encoder = encoder(n_channels=n_channels)
         self.beta = beta
         self.register_buffer("warmed_up", torch.tensor(0))
 

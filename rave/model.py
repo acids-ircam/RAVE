@@ -98,6 +98,7 @@ class RAVE(pl.LightningModule):
         pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
         n_channels: int = 1,
+        is_mel_input: bool = False,
         enable_pqmf_encode: bool = True,
         enable_pqmf_decode: bool = True,
         audio_monitor_epochs: int = 1
@@ -106,8 +107,12 @@ class RAVE(pl.LightningModule):
         self.pqmf = None
         if pqmf is not None:
             self.pqmf = pqmf(n_channels=n_channels)
-        self.encoder = encoder(data_size=n_bands if enable_pqmf_encode else n_channels, n_channels=n_channels)
-        self.decoder = decoder(data_size=n_bands if enable_pqmf_decode else n_channels, n_channels=n_channels)
+        if enable_pqmf_encode or is_mel_input:
+            enc_data_size = n_bands
+        else:
+            enc_data_size = n_channels
+        self.encoder = encoder(n_channels=n_channels)
+        self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)
 
         self.audio_distance = audio_distance()

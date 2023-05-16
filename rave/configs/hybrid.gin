@@ -36,4 +36,6 @@ blocks.GRU:
     latent_size = %LATENT_SIZE
     num_layers = %NUM_GRU_LAYERS
 
-rave.RAVE.enable_pqmf_encode = False
+rave.RAVE:
+    enable_pqmf_encode = False
+    is_mel_input = True
