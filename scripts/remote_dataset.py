@@ -1,8 +1,8 @@
 import base64
 import logging
+import os
 
 import flask
-import os
 import numpy as np
 from absl import flags
 from udls import AudioExample

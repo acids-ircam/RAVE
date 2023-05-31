@@ -48,7 +48,7 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
 
 def amp_to_impulse_response(amp, target_size):
     """
-    transforms frequecny amps to ir on the last dimension
+    transforms frequency amps to ir on the last dimension
     """
     amp = torch.stack([amp, torch.zeros_like(amp)], -1)
     amp = torch.view_as_complex(amp)

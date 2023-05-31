@@ -222,6 +222,55 @@ class NoiseGenerator(nn.Module):
         return noise
 
 
+class NoiseGeneratorV2(nn.Module):
+
+    def __init__(
+        self,
+        in_size: int,
+        hidden_size: int,
+        data_size: int,
+        ratios: int,
+        noise_bands: int,
+    ):
+        super().__init__()
+        net = []
+        channels = [in_size]
+        channels.extend((len(ratios) - 1) * [hidden_size])
+        channels.append(data_size * noise_bands)
+
+        for i, r in enumerate(ratios):
+            net.append(
+                cc.Conv1d(
+                    channels[i],
+                    channels[i + 1],
+                    2 * r,
+                    padding=(r, 0),
+                    stride=r,
+                ))
+            if i != len(ratios) - 1:
+                net.append(nn.LeakyReLU(.2))
+
+        self.net = nn.Sequential(*net)
+        self.data_size = data_size
+
+        self.register_buffer(
+            "target_size",
+            torch.tensor(np.prod(ratios)).long(),
+        )
+
+    def forward(self, x):
+        amp = mod_sigmoid(self.net(x) - 5)
+        amp = amp.permute(0, 2, 1)
+        amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
+
+        ir = amp_to_impulse_response(amp, self.target_size)
+        noise = torch.rand_like(ir) * 2 - 1
+
+        noise = fft_convolve(noise, ir).permute(0, 2, 1, 3)
+        noise = noise.reshape(noise.shape[0], noise.shape[1], -1)
+        return noise
+
+
 class GRU(nn.Module):
 
     def __init__(self, latent_size: int, num_layers: int) -> None:
@@ -535,6 +584,7 @@ class GeneratorV2(nn.Module):
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         amplitude_modulation: bool = False,
+        noise_module: Optional[NoiseGeneratorV2] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
@@ -587,24 +637,41 @@ class GeneratorV2(nn.Module):
                         )))
 
         net.append(nn.LeakyReLU(.2))
-        net.append(
-            normalization(
-                cc.Conv1d(
-                    num_channels,
-                    data_size * 2 if amplitude_modulation else data_size,
-                    kernel_size=kernel_size * 2 + 1,
-                    padding=cc.get_padding(kernel_size * 2 + 1),
-                )))
+
+        waveform_module = normalization(
+            cc.Conv1d(
+                num_channels,
+                data_size * 2 if amplitude_modulation else data_size,
+                kernel_size=kernel_size * 2 + 1,
+                padding=cc.get_padding(kernel_size * 2 + 1),
+            ))
+
+        self.noise_module = None
+        self.waveform_module = None
+
+        if noise_module is not None:
+            self.waveform_module = waveform_module
+            self.noise_module = noise_module()
+        else:
+            net.append(waveform_module)
 
         self.net = cc.CachedSequential(*net)
+
         self.amplitude_modulation = amplitude_modulation
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.net(x)
+        noise = 0.
+
+        if self.noise_module is not None:
+            noise = self.noise_module(x)
+            x = self.waveform_module(x)
 
         if self.amplitude_modulation:
             x, amplitude = x.split(x.shape[1] // 2, 1)
             x = x * torch.sigmoid(amplitude)
+
+        x = x + noise
 
         return torch.tanh(x)
 
