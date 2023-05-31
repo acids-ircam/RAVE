@@ -651,7 +651,7 @@ class GeneratorV2(nn.Module):
 
         if noise_module is not None:
             self.waveform_module = waveform_module
-            self.noise_module = noise_module()
+            self.noise_module = noise_module(out_channels)
         else:
             net.append(waveform_module)
 
