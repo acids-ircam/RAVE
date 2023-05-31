@@ -4,6 +4,8 @@ from rave import blocks
 
 blocks.GeneratorV2:
     noise_module = @blocks.NoiseGeneratorV2
+    
+blocks.NoiseGeneratorV2:
     hidden_size = 128
     data_size = %N_BAND
     ratios = [2, 2, 2]
