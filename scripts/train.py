@@ -56,6 +56,7 @@ def add_gin_extension(config_name: str) -> str:
 
 
 def main(argv):
+    torch.set_float32_matmul_precision('high')
     torch.backends.cudnn.benchmark = True
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
