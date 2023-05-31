@@ -18,6 +18,7 @@ configs = [
     # ["v2.gin", "hybrid.gin"], NOT READY YET
     ["discrete.gin"],
     ["discrete.gin", "spectral_discriminator.gin"],
+    ["discrete.gin", "spectral_discriminator.gin", "noise.gin"],
 ]
 
 configs += [c + ["causal.gin"] for c in configs]
