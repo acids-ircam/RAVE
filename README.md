@@ -130,9 +130,14 @@ Many other configuration files are available in `rave/configs` and can be combin
 </tr>
 
 <tr>
-<td rowspan=1>Others</td>
+<td rowspan=2>Others</td>
 <td>causal</td>
 <td>Use causal convolutions</td>
+</tr
+
+<tr>
+<td>noise</td>
+<td>Enable noise synthesizer V2</td>
 </tr>
 
 </tbody>
