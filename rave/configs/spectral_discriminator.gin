@@ -10,7 +10,8 @@ discriminator.MultiScaleSpectralDiscriminator:
 discriminator.EncodecConvNet:
     capacity = 32
 
-# RAVE
-rave.RAVE:
-    discriminator = @discriminator.MultiScaleSpectralDiscriminator
-    
+discriminator.CombineDiscriminators:
+    discriminators = [
+        @discriminator.MultiScaleDiscriminator,
+        @discriminator.MultiScaleSpectralDiscriminator
+    ]
