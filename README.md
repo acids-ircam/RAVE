@@ -178,3 +178,13 @@ Demonstration of what you can do with RAVE and the nn~ external for maxmsp !
 Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
 
 [![RAVE x nn~](http://img.youtube.com/vi/jAIRf4nGgYI/mqdefault.jpg)](https://www.youtube.com/watch?v=jAIRf4nGgYI)
+
+# Funding
+
+This work is led at IRCAM, and has been funded by the following projects
+
+- [ANR MakiMono](https://acids.ircam.fr/course/makimono/)
+- [ACTOR](https://www.actorproject.org/)
+- [DAFNE+](https://dafneplus.eu/) N° 101061548
+
+<img src="https://ec.europa.eu/regional_policy/images/information-sources/logo-download-center/eu_co_funded_en.jpg" width=200px/>
