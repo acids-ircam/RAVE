@@ -6,6 +6,7 @@ from rave import balancer
 
 LATENT_SIZE = 16
 NOISE_AUGMENTATION = 128
+PHASE_1_DURATION = 200000
 
 blocks.EncoderV2.n_out = 1
 
@@ -15,7 +16,7 @@ blocks.WasserteinEncoder:
 
 rave.RAVE:
     encoder = @blocks.WasserteinEncoder
-    phase_1_duration = 200000
+    phase_1_duration = %PHASE_1_DURATION
 
 balancer.Balancer:
     weights = {
