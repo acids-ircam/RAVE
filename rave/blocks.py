@@ -47,12 +47,18 @@ class Residual(nn.Module):
 
 class ResidualLayer(nn.Module):
 
-    def __init__(self, dim, kernel_size, dilations, cumulative_delay=0):
+    def __init__(
+        self,
+        dim,
+        kernel_size,
+        dilations,
+        cumulative_delay=0,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)):
         super().__init__()
         net = []
         cd = 0
         for d in dilations:
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(dim))
             net.append(
                 normalization(
                     cc.Conv1d(
@@ -76,10 +82,16 @@ class ResidualLayer(nn.Module):
 
 class DilatedUnit(nn.Module):
 
-    def __init__(self, dim: int, kernel_size: int, dilation: int) -> None:
+    def __init__(
+        self,
+        dim: int,
+        kernel_size: int,
+        dilation: int,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)
+    ) -> None:
         super().__init__()
         net = [
-            nn.LeakyReLU(.2),
+            activation(dim),
             normalization(
                 cc.Conv1d(dim,
                           dim,
@@ -89,7 +101,7 @@ class DilatedUnit(nn.Module):
                               kernel_size,
                               dilation=dilation,
                           ))),
-            nn.LeakyReLU(.2),
+            activation(dim),
             normalization(cc.Conv1d(dim, dim, kernel_size=1)),
         ]
 
@@ -154,9 +166,15 @@ class ResidualStack(nn.Module):
 
 class UpsampleLayer(nn.Module):
 
-    def __init__(self, in_dim, out_dim, ratio, cumulative_delay=0):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        ratio,
+        cumulative_delay=0,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)):
         super().__init__()
-        net = [nn.LeakyReLU(.2)]
+        net = [activation(in_dim)]
         if ratio > 1:
             net.append(
                 normalization(
@@ -231,6 +249,7 @@ class NoiseGeneratorV2(nn.Module):
         data_size: int,
         ratios: int,
         noise_bands: int,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
     ):
         super().__init__()
         net = []
@@ -248,7 +267,7 @@ class NoiseGeneratorV2(nn.Module):
                     stride=r,
                 ))
             if i != len(ratios) - 1:
-                net.append(nn.LeakyReLU(.2))
+                net.append(activation(channels[i + 1]))
 
         self.net = nn.Sequential(*net)
         self.data_size = data_size
@@ -499,6 +518,7 @@ class EncoderV2(nn.Module):
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         spectrogram: Optional[Callable[[], Spectrogram]] = None,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
@@ -531,7 +551,7 @@ class EncoderV2(nn.Module):
                         )))
 
             # ADD DOWNSAMPLING UNIT
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(num_channels))
 
             if keep_dim:
                 out_channels = num_channels * r
@@ -549,7 +569,7 @@ class EncoderV2(nn.Module):
 
             num_channels = out_channels
 
-        net.append(nn.LeakyReLU(.2))
+        net.append(activation(num_channels))
         net.append(
             normalization(
                 cc.Conv1d(
@@ -585,6 +605,7 @@ class GeneratorV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         amplitude_modulation: bool = False,
         noise_module: Optional[NoiseGeneratorV2] = None,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
@@ -615,7 +636,7 @@ class GeneratorV2(nn.Module):
                 out_channels = num_channels // r
             else:
                 out_channels = num_channels // 2
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(num_channels))
             net.append(
                 normalization(
                     cc.ConvTranspose1d(num_channels,
@@ -636,7 +657,7 @@ class GeneratorV2(nn.Module):
                             dilation=d,
                         )))
 
-        net.append(nn.LeakyReLU(.2))
+        net.append(activation(num_channels))
 
         waveform_module = normalization(
             cc.Conv1d(
@@ -808,6 +829,21 @@ class SphericalEncoder(nn.Module):
     def forward(self, x: torch.Tensor):
         z = self.encoder(x)
         return z
+
+
+class Snake(nn.Module):
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(dim, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + (self.alpha + 1e-9).reciprocal() * (self.alpha *
+                                                       x).sin().pow(2)
+
+
+def leaky_relu(dim: int, alpha: float):
+    return nn.LeakyReLU(alpha)
 
 
 def unit_norm_vector_to_angles(x: torch.Tensor) -> torch.Tensor:

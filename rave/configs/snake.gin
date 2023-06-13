@@ -1,0 +1,23 @@
+from __gin__ import dynamic_registration
+
+from rave import blocks
+
+ACTIVATION = @blocks.Snake
+
+blocks.ResidualLayer:
+    activation = %ACTIVATION
+
+blocks.DilatedUnit:
+    activation = %ACTIVATION
+
+blocks.UpsampleLayer:
+    activation = %ACTIVATION
+
+blocks.NoiseGeneratorV2:
+    activation = %ACTIVATION
+
+blocks.EncoderV2:
+    activation = %ACTIVATION
+
+blocks.GeneratorV2:
+    activation = %ACTIVATION
