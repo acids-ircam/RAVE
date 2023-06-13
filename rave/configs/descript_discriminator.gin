@@ -1,0 +1,7 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import descript_discriminator
+
+rave.RAVE:
+    discriminator = @descript_discriminator.DescriptDiscriminator

@@ -18,6 +18,7 @@ configs = [
     # ["v2.gin", "hybrid.gin"], NOT READY YET
     ["discrete.gin"],
     ["discrete.gin", "snake.gin"],
+    ["discrete.gin", "snake.gin", "descript_discriminator.gin"],
     ["discrete.gin", "spectral_discriminator.gin"],
     ["discrete.gin", "spectral_discriminator.gin", "noise.gin"],
 ]
