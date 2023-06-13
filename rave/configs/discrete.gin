@@ -18,6 +18,7 @@ CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = False
 CAPACITY = 96
 NOISE_AUGMENTATION = 128
+PHASE_1_DURATION = 200000
 
 core.AudioDistanceV1.log_epsilon = 1
 
@@ -49,7 +50,7 @@ balancer.Balancer:
 
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
-    phase_1_duration = 200000
+    phase_1_duration = %PHASE_1_DURATION
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.hinge_gan
