@@ -842,6 +842,63 @@ class Snake(nn.Module):
                                                        x).sin().pow(2)
 
 
+class ContextExtraction(nn.Module):
+
+    def __init__(self, in_dim: int, out_dim: int, ratios: Sequence[int],
+                 capacity: int, kernel_size: int) -> None:
+        super().__init__()
+        net = []
+        chans = [in_dim] + [capacity**i for i in range(1, len(ratios) + 1)]
+
+        for ratio, in_chan, out_chan in zip(ratios, chans[:-1], chans[1:]):
+            net.append(
+                nn.Conv1d(
+                    in_chan,
+                    out_chan,
+                    kernel_size=ratio**2,
+                    stride=ratio,
+                    padding=ratio // 2,
+                ))
+
+            net.append(nn.BatchNorm1d(out_chan))
+            net.append(nn.LeakyReLU(.2))
+
+            net.append(
+                nn.Conv1d(
+                    out_chan,
+                    out_chan,
+                    kernel_size=kernel_size,
+                    padding=kernel_size // 2,
+                ))
+
+            net.append(nn.BatchNorm1d(out_chan))
+            net.append(nn.LeakyReLU(.2))
+
+        net.append(nn.Conv1d(out_chan, out_dim, 1))
+        self.net = nn.Sequential(*net)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).mean(-1, keepdim=True)
+
+
+class AdaptiveInstanceNormalization(nn.Module):
+
+    def __init__(self, context_dim: int, feature_dim: int) -> None:
+        super().__init__()
+        self.projection = nn.Conv1d(context_dim,
+                                    2 * feature_dim,
+                                    kernel_size=1)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        y = self.projection(y)
+        mean, scale = y.chunk(2, 1)
+
+        x_mean = x.mean(1, keepdim=True)
+        x_std = x.std(1, keepdim=True)
+
+        return scale * (x - x_mean) / x_std + mean
+
+
 def leaky_relu(dim: int, alpha: float):
     return nn.LeakyReLU(alpha)
 
