@@ -1,3 +1,4 @@
+import math
 from time import time
 from typing import Callable, Optional
 
@@ -64,6 +65,36 @@ class QuantizeCallback(WarmupCallback):
                 pl_module.encoder.enabled = torch.tensor(1).type_as(
                     pl_module.encoder.enabled)
         self.state['training_steps'] += 1
+
+
+class BetaWarmupCallback(pl.Callback):
+
+    def __init__(self, initial_value: float, target_value: float,
+                 warmup_len: int) -> None:
+        super().__init__()
+        self.state = {'training_steps': 0}
+        self.warmup_len = warmup_len
+        self.initial_value = initial_value
+        self.target_value = target_value
+
+    def on_train_batch_start(self, trainer, pl_module, batch,
+                             batch_idx) -> None:
+        self.state['training_steps'] += 1
+        if self.state["training_steps"] >= self.warmup_len:
+            pl_module.beta_factor = self.target_value
+            return
+
+        warmup_ratio = self.state["training_steps"] / self.warmup_len
+
+        beta = math.log(self.initial_value) * (1 - warmup_ratio) + math.log(
+            self.target_value) * warmup_ratio
+        pl_module.beta_factor = math.exp(beta)
+
+    def state_dict(self):
+        return self.state.copy()
+
+    def load_state_dict(self, state_dict):
+        self.state.update(state_dict)
 
 
 @gin.configurable
@@ -133,6 +164,7 @@ class RAVE(pl.LightningModule):
         self.update_discriminator_every = update_discriminator_every
 
         self.eval_number = 0
+        self.beta_factor = 1.
         self.integrator = None
 
         self.enable_pqmf_encode = enable_pqmf_encode
@@ -174,7 +206,11 @@ class RAVE(pl.LightningModule):
         p.tick('decompose')
 
         if self.context_extraction is not None:
-            context = self.context_extraction(x_multiband)
+            if self.warmed_up:
+                self.context_extraction.eval()
+                context = self.context_extraction(x_multiband).detach()
+            else:
+                context = self.context_extraction(x_multiband)
         else:
             context = None
 
@@ -284,7 +320,7 @@ class RAVE(pl.LightningModule):
         p.tick('update loss gen dict')
 
         if reg.item():
-            loss_gen['regularization'] = reg
+            loss_gen['regularization'] = reg * self.beta_factor
 
         if self.warmed_up:
             loss_gen['feature_matching'] = feature_matching_distance
@@ -303,6 +339,8 @@ class RAVE(pl.LightningModule):
             gen_opt.step()
 
         # LOGGING
+        self.log("beta_factor", self.beta_factor)
+
         if self.warmed_up:
             self.log("loss_dis", loss_dis)
             self.log("pred_real", pred_real.mean())
@@ -338,8 +376,17 @@ class RAVE(pl.LightningModule):
         if self.pqmf is not None:
             x_multiband = self.pqmf(x)
 
+        if self.context_extraction is not None:
+            context = self.context_extraction(x_multiband)
+        else:
+            context = None
+
         if self.enable_pqmf_encode:
-            z = self.encoder(x_multiband)
+            if context is not None:
+                z = self.encoder(x_multiband, context)
+            else:
+                z = self.encoder(x_multiband)
+
         else:
             z = self.encoder(x)
 
@@ -349,7 +396,11 @@ class RAVE(pl.LightningModule):
             mean = None
 
         z = self.encoder.reparametrize(z)[0]
-        y = self.decoder(z)
+
+        if context is not None:
+            y = self.decoder(z, context)
+        else:
+            y = self.decoder(z)
 
         if self.pqmf is not None:
             x = self.pqmf.inverse(x_multiband)

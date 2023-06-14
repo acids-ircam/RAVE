@@ -82,7 +82,7 @@ feature_matching/core.mean_difference:
 balancer.Balancer:
     weights = {
         'feature_matching' : 20,
-        'regularization': .02,
+        'regularization': 1,
     }
     scale_gradients = False
 

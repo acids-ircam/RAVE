@@ -542,9 +542,9 @@ class EncoderV2(nn.Module):
         num_channels = capacity
         for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
+            if adain is not None:
+                net.append(adain(num_channels))
             for d in dilations:
-                if adain is not None:
-                    net.append(adain(num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -662,9 +662,9 @@ class GeneratorV2(nn.Module):
             num_channels = out_channels
 
             # ADD RESIDUAL DILATED UNITS
+            if adain is not None:
+                net.append(adain(num_channels))
             for d in dilations:
-                if adain is not None:
-                    net.append(adain(num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -751,6 +751,7 @@ class VariationalEncoder(nn.Module):
             z = self.encoder(x, context)
         else:
             z = self.encoder(x)
+
         if self.warmed_up:
             z = z.detach()
         return z
@@ -911,20 +912,52 @@ class ContextExtraction(nn.Module):
 
 class AdaptiveInstanceNormalization(nn.Module):
 
-    def __init__(self, feature_dim: int, context_dim: int) -> None:
+    def __init__(self,
+                 feature_dim: int,
+                 context_dim: int,
+                 ema_factor: float = .99) -> None:
         super().__init__()
         self.projection = nn.Conv1d(context_dim,
                                     2 * feature_dim,
                                     kernel_size=1)
+        self.noise_weight = nn.Parameter(torch.ones(feature_dim, 1) * .1)
+
+        self.ema_factor = ema_factor
+
+        self.register_buffer("running_mean",
+                             torch.zeros(cc.MAX_BATCH_SIZE, feature_dim))
+        self.register_buffer("running_std",
+                             torch.ones(cc.MAX_BATCH_SIZE, feature_dim))
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # style gan noise addition
+        x = x + self.noise_weight * torch.randn_like(x)
+
+        # norm
+        mean_x = x.mean(-1, keepdim=True)
+        std_x = x.std(-1, keepdim=True)
+
+        if not self.training and cc.USE_BUFFER_CONV:
+            self.running_mean.mul_(self.ema_factor).add_(mean_x *
+                                                         (1 - self.ema_factor))
+            self.running_std.mul_(self.ema_factor).add_(std_x *
+                                                        (1 - self.ema_factor))
+
+            mean_x = self.running_mean[:mean_x.shape[0]]
+            std_x = self.running_std[:std_x.shape[0]]
+
+        if not self.training:
+            mean_x = mean_x.detach()
+            std_x = std_x.detach()
+
+        x = (x - mean_x) / std_x
+
+        # affine transform
         y = self.projection(y)
         mean, scale = y.chunk(2, 1)
+        out = scale * x + mean
 
-        x_mean = x.mean(1, keepdim=True)
-        x_std = x.std(1, keepdim=True)
-
-        return scale * (x - x_mean) / x_std + mean
+        return out
 
 
 def leaky_relu(dim: int, alpha: float):
