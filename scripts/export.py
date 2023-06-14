@@ -59,6 +59,7 @@ class ScriptedRAVE(nn_tilde.Module):
         self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
         self.decoder = pretrained.decoder
+        self.context_extraction = None
 
         self.sr = pretrained.sr
 
@@ -71,6 +72,20 @@ class ScriptedRAVE(nn_tilde.Module):
                 self.sr = target_sr
 
         self.full_latent_size = pretrained.latent_size
+
+        self.register_attribute("learn_context", False)
+        self.register_attribute("context_ema_value", .99)
+
+        if pretrained.context_extraction is not None:
+            self.context_dim = pretrained.context_extraction.context_dim
+            self.context_extraction = pretrained.context_extraction
+        else:
+            self.context_dim = 1
+
+        self.register_buffer(
+            "context",
+            torch.zeros(cc.MAX_BATCH_SIZE, self.context_dim, 1),
+        )
 
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
@@ -104,7 +119,11 @@ class ScriptedRAVE(nn_tilde.Module):
 
         x_m = x.clone() if self.pqmf is None else self.pqmf(x)
 
-        z = self.encoder(x_m)
+        if self.context_extraction is not None:
+            z = self.encoder(x_m, self.context)
+        else:
+            z = self.encoder(x_m)
+
         ratio_encode = x_len // z.shape[-1]
 
         channels = ["(L)", "(R)"] if stereo else ["(mono)"]
@@ -163,16 +182,34 @@ class ScriptedRAVE(nn_tilde.Module):
 
         if self.pqmf is not None:
             x = self.pqmf(x)
-        z = self.encoder(x)
+
+        if self.learn_context[0]:
+            if self.context_extraction is not None:
+                context = self.context_extraction(x)
+                ema = self.context_ema_value[0]
+                self.context[:x.shape[
+                    0]] = self.context[:x.shape[0]] * ema + context * (1 - ema)
+
+        if self.context_extraction is not None:
+            z = self.encoder(x, self.context[:x.shape[0]])
+        else:
+            z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
 
     @torch.jit.export
     def decode(self, z):
+        if self.context_extraction is not None:
+            context = self.context[:z.shape[0]]
+        else:
+            context = None
         if self.stereo:
+            if context is not None:
+                context = torch.cat([context, context], 0)
             z = torch.cat([z, z], 0)
+
         z = self.pre_process_latent(z)
-        y = self.decoder(z)
+        y = self.decoder(z, context)
 
         if self.pqmf is not None:
             y = self.pqmf.inverse(y)
@@ -187,6 +224,27 @@ class ScriptedRAVE(nn_tilde.Module):
 
     def forward(self, x):
         return self.decode(self.encode(x))
+
+    @torch.jit.export
+    def get_learn_context(self) -> bool:
+        return self.learn_context[0]
+
+    @torch.jit.export
+    def set_learn_context(self, learn_context: bool) -> int:
+        self.learn_context = (learn_context, )
+        return 0
+
+    @torch.jit.export
+    def get_context_ema_value(self) -> float:
+        return self.context_ema_value[0]
+
+    @torch.jit.export
+    def set_context_ema_value(self, context_ema_value: float) -> int:
+        if context_ema_value < 0 or context_ema_value > 1:
+            return 1
+        else:
+            self.context_ema_value = (context_ema_value, )
+            return 0
 
 
 class VariationalScriptedRAVE(ScriptedRAVE):

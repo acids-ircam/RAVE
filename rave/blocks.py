@@ -397,7 +397,7 @@ class Generator(nn.Module):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
-    def forward(self, x):
+    def forward(self, x, context=None):
         x = self.net(x)
 
         if self.use_noise:
@@ -491,7 +491,7 @@ class Encoder(nn.Module):
         self.net = cc.CachedSequential(*net)
         self.cumulative_delay = self.net.cumulative_delay
 
-    def forward(self, x):
+    def forward(self, x, context=None):
         z = self.net(x)
         return z
 
@@ -879,23 +879,23 @@ class ContextExtraction(nn.Module):
 
         for ratio, in_chan, out_chan in zip(ratios, chans[:-1], chans[1:]):
             net.append(
-                nn.Conv1d(
+                cc.Conv1d(
                     in_chan,
                     out_chan,
                     kernel_size=ratio**2,
                     stride=ratio,
-                    padding=ratio // 2,
+                    padding=cc.get_padding(ratio**2, stride=ratio),
                 ))
 
             net.append(nn.BatchNorm1d(out_chan))
             net.append(nn.LeakyReLU(.2))
 
             net.append(
-                nn.Conv1d(
+                cc.Conv1d(
                     out_chan,
                     out_chan,
                     kernel_size=kernel_size,
-                    padding=kernel_size // 2,
+                    padding=cc.get_padding(kernel_size=kernel_size),
                 ))
 
             net.append(nn.BatchNorm1d(out_chan))
@@ -903,6 +903,7 @@ class ContextExtraction(nn.Module):
 
         net.append(nn.Conv1d(out_chan, out_dim, 1))
         self.net = nn.Sequential(*net)
+        self.context_dim = out_dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).mean(-1, keepdim=True)

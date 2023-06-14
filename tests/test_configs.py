@@ -41,7 +41,10 @@ configs = list(itertools.product(configs, model_sampling_rate, stereo))
 )
 def test_config(config, sr, stereo):
     gin.clear_config()
-    gin.parse_config_files_and_bindings(config, [f"SAMPLING_RATE={sr}"])
+    gin.parse_config_files_and_bindings(config, [
+        f"SAMPLING_RATE={sr}",
+        "CAPACITY=2",
+    ])
 
     model = rave.RAVE()
 
