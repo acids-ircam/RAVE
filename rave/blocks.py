@@ -519,6 +519,7 @@ class EncoderV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         spectrogram: Optional[Callable[[], Spectrogram]] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+        adain: Optional[Callable[[int], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
@@ -542,6 +543,8 @@ class EncoderV2(nn.Module):
         for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
+                if adain is not None:
+                    net.append(adain(num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -584,11 +587,21 @@ class EncoderV2(nn.Module):
 
         self.net = cc.CachedSequential(*net)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self,
+                x: torch.Tensor,
+                context: Optional[torch.Tensor] = None) -> torch.Tensor:
         if self.spectrogram is not None:
             x = self.spectrogram(x[:, 0])[..., :-1]
             x = torch.log1p(x)
-        return self.net(x)
+
+        for layer in self.net:
+            if isinstance(layer, AdaptiveInstanceNormalization):
+                assert context is not None
+                x = layer(x, context)
+            else:
+                x = layer(x)
+
+        return x
 
 
 class GeneratorV2(nn.Module):
@@ -606,6 +619,7 @@ class GeneratorV2(nn.Module):
         amplitude_modulation: bool = False,
         noise_module: Optional[NoiseGeneratorV2] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+        adain: Optional[Callable[[int], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
@@ -649,6 +663,8 @@ class GeneratorV2(nn.Module):
 
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
+                if adain is not None:
+                    net.append(adain(num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -680,8 +696,16 @@ class GeneratorV2(nn.Module):
 
         self.amplitude_modulation = amplitude_modulation
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.net(x)
+    def forward(self,
+                x: torch.Tensor,
+                context: Optional[torch.Tensor] = None) -> torch.Tensor:
+        for layer in self.net:
+            if isinstance(layer, AdaptiveInstanceNormalization):
+                assert context is not None
+                x = layer(x, context)
+            else:
+                x = layer(x)
+
         noise = 0.
 
         if self.noise_module is not None:
@@ -722,8 +746,11 @@ class VariationalEncoder(nn.Module):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
-    def forward(self, x: torch.Tensor):
-        z = self.encoder(x)
+    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None):
+        if context is not None:
+            z = self.encoder(x, context)
+        else:
+            z = self.encoder(x)
         if self.warmed_up:
             z = z.detach()
         return z
@@ -848,7 +875,7 @@ class ContextExtraction(nn.Module):
                  capacity: int, kernel_size: int) -> None:
         super().__init__()
         net = []
-        chans = [in_dim] + [capacity**i for i in range(1, len(ratios) + 1)]
+        chans = [in_dim] + [capacity * 2**i for i in range(len(ratios))]
 
         for ratio, in_chan, out_chan in zip(ratios, chans[:-1], chans[1:]):
             net.append(
@@ -883,7 +910,7 @@ class ContextExtraction(nn.Module):
 
 class AdaptiveInstanceNormalization(nn.Module):
 
-    def __init__(self, context_dim: int, feature_dim: int) -> None:
+    def __init__(self, feature_dim: int, context_dim: int) -> None:
         super().__init__()
         self.projection = nn.Conv1d(context_dim,
                                     2 * feature_dim,

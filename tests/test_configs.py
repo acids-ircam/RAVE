@@ -13,6 +13,7 @@ gin.enter_interactive_mode()
 configs = [
     ["v1.gin"],
     ["v2.gin"],
+    ["v2adain.gin"],
     ["v2.gin", "wasserstein.gin"],
     ["v2.gin", "spherical.gin"],
     # ["v2.gin", "hybrid.gin"], NOT READY YET
@@ -45,8 +46,13 @@ def test_config(config, sr, stereo):
     model = rave.RAVE()
 
     x = torch.randn(1, 1, 2**15)
-    z = model.encode(x)
-    y = model.decode(z)
+    if model.context_extraction is not None:
+        context = model.context_extraction(model.pqmf(x))
+        z = model.encode(x, context)
+        y = model.decode(z, context)
+    else:
+        z = model.encode(x)
+        y = model.decode(z)
     score = model.discriminator(y)
 
     assert x.shape == y.shape
@@ -64,7 +70,11 @@ def test_config(config, sr, stereo):
                          "not supported for export.")
 
     x = torch.zeros(1, 1, 2**14)
-    model(x)
+
+    if model.context_extraction is not None:
+        model(x, context)
+    else:
+        model(x)
 
     for m in model.modules():
         if hasattr(m, "weight_g"):

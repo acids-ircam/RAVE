@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 import rave.core
 
 from .balancer import Balancer
-from .blocks import DiscreteEncoder, VariationalEncoder
+from .blocks import ContextExtraction, DiscreteEncoder, VariationalEncoder
 
 
 class Profiler:
@@ -86,6 +86,7 @@ class RAVE(pl.LightningModule):
         balancer: Callable[[], Balancer],
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
+        context_extraction: Optional[Callable[[], ContextExtraction]] = None,
         update_discriminator_every: int = 2,
         enable_pqmf_encode: bool = True,
         enable_pqmf_decode: bool = True,
@@ -95,6 +96,10 @@ class RAVE(pl.LightningModule):
         self.pqmf = None
         if pqmf is not None:
             self.pqmf = pqmf()
+
+        self.context_extraction = None
+        if context_extraction is not None:
+            self.context_extraction = context_extraction()
 
         self.encoder = encoder()
         self.decoder = decoder()
@@ -168,12 +173,20 @@ class RAVE(pl.LightningModule):
             x_multiband = x
         p.tick('decompose')
 
+        if self.context_extraction is not None:
+            context = self.context_extraction(x_multiband)
+        else:
+            context = None
+
         self.encoder.set_warmed_up(self.warmed_up)
         self.decoder.set_warmed_up(self.warmed_up)
 
         # ENCODE INPUT
         if self.enable_pqmf_encode:
-            z_pre_reg = self.encoder(x_multiband)
+            if context is not None:
+                z_pre_reg = self.encoder(x_multiband, context)
+            else:
+                z_pre_reg = self.encoder(x_multiband)
         else:
             z_pre_reg = self.encoder(x)
 
@@ -181,7 +194,11 @@ class RAVE(pl.LightningModule):
         p.tick('encode')
 
         # DECODE LATENT
-        y_multiband = self.decoder(z)
+        if context is not None:
+            y_multiband = self.decoder(z, context)
+        else:
+            y_multiband = self.decoder(z)
+
         p.tick('decode')
 
         if self.valid_signal_crop and self.receptive_field.sum():
@@ -294,20 +311,26 @@ class RAVE(pl.LightningModule):
         self.log_dict(loss_gen)
         p.tick('logging')
 
-    def encode(self, x):
+    def encode(self, x, context: Optional[torch.Tensor] = None):
         if self.pqmf is not None and self.enable_pqmf_encode:
             x = self.pqmf(x)
-        z, = self.encoder.reparametrize(self.encoder(x))[:1]
+        if context is not None:
+            z, = self.encoder.reparametrize(self.encoder(x, context))[:1]
+        else:
+            z, = self.encoder.reparametrize(self.encoder(x))[:1]
         return z
 
-    def decode(self, z):
-        y = self.decoder(z)
+    def decode(self, z, context: Optional[torch.Tensor] = None):
+        if context is not None:
+            y = self.decoder(z, context)
+        else:
+            y = self.decoder(z)
         if self.pqmf is not None and self.enable_pqmf_decode:
             y = self.pqmf.inverse(y)
         return y
 
-    def forward(self, x):
-        return self.decode(self.encode(x))
+    def forward(self, x, context: Optional[torch.Tensor] = None):
+        return self.decode(self.encode(x, context), context)
 
     def validation_step(self, batch, batch_idx):
         x = batch.unsqueeze(1)

@@ -1,0 +1,27 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import blocks
+
+include "configs/v2.gin"
+
+CONTEXT_DIM = 128
+
+blocks.EncoderV2:
+    adain = @blocks.AdaptiveInstanceNormalization
+
+blocks.GeneratorV2:
+    adain = @blocks.AdaptiveInstanceNormalization
+
+blocks.AdaptiveInstanceNormalization:
+    context_dim = %CONTEXT_DIM
+
+rave.RAVE:
+    context_extraction = @blocks.ContextExtraction
+
+blocks.ContextExtraction:
+    in_dim = %N_BAND
+    out_dim = %CONTEXT_DIM
+    ratios = [4, 4, 4]
+    capacity = %CAPACITY
+    kernel_size = %KERNEL_SIZE
