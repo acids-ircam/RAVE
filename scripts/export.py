@@ -73,7 +73,7 @@ class ScriptedRAVE(nn_tilde.Module):
 
         self.full_latent_size = pretrained.latent_size
 
-        self.register_attribute("learn_context", False)
+        self.register_attribute("learn_context", True)
         self.register_attribute("context_ema_value", .99)
 
         if pretrained.context_extraction is not None:
