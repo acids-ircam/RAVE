@@ -12,17 +12,7 @@ gin.add_config_file_search_path(
         'configs',
     ))
 
-cc.get_padding = gin.external_configurable(cc.get_padding, module="cc")
-cc.Conv1d = gin.external_configurable(cc.Conv1d, module="cc")
-cc.ConvTranspose1d = gin.external_configurable(cc.ConvTranspose1d, module="cc")
-
 from .blocks import *
 from .discriminator import *
-from .model import RAVE
+from .model import RAVE, BetaWarmupCallback
 from .pqmf import *
-
-try:
-    from .__version__ import *
-except:
-    __version__ = None
-    __commit__ = None

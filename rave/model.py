@@ -1,6 +1,6 @@
 import math
 from time import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 
 import gin
 import numpy as np
@@ -12,7 +12,6 @@ from sklearn.decomposition import PCA
 
 import rave.core
 
-from .balancer import Balancer
 from . import blocks
 
 
@@ -67,6 +66,7 @@ class QuantizeCallback(WarmupCallback):
         self.state['training_steps'] += 1
 
 
+@gin.configurable
 class BetaWarmupCallback(pl.Callback):
 
     def __init__(self, initial_value: float, target_value: float,
@@ -114,7 +114,7 @@ class RAVE(pl.LightningModule):
         num_skipped_features,
         audio_distance: Callable[[], nn.Module],
         multiband_audio_distance: Callable[[], nn.Module],
-        balancer: Callable[[], Balancer],
+        weights: Dict[str, float],
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
         update_discriminator_every: int = 2,
@@ -147,7 +147,7 @@ class RAVE(pl.LightningModule):
         # SCHEDULE
         self.warmup = phase_1_duration
         self.warmup_quantize = warmup_quantize
-        self.balancer = balancer()
+        self.weights = weights
 
         self.warmed_up = False
 
@@ -315,7 +315,10 @@ class RAVE(pl.LightningModule):
             p.tick('dis opt')
         else:
             gen_opt.zero_grad()
-            self.balancer.backward(loss_gen, y_multiband, self.log, p.tick)
+            loss_gen_value = 0.
+            for k, v in loss_gen.items():
+                loss_gen_value += v * self.weights.get(k, 1.)
+            loss_gen_value.backward()
             gen_opt.step()
 
         # LOGGING

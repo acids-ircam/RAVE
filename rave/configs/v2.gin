@@ -4,7 +4,6 @@ import rave
 from rave import core
 from rave import blocks
 from rave import discriminator
-from rave import balancer
 
 import torch.nn as nn
 
@@ -78,14 +77,6 @@ discriminator.CombineDiscriminators:
 feature_matching/core.mean_difference:
     relative = True
 
-# BALANCER
-balancer.Balancer:
-    weights = {
-        'feature_matching' : 20,
-        'regularization': 1,
-    }
-    scale_gradients = False
-
 # RAVE
 rave.RAVE:
     discriminator = @discriminator.CombineDiscriminators
@@ -93,4 +84,6 @@ rave.RAVE:
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
     update_discriminator_every = 4
-    
+    weights = {
+        'feature_matching': 20,
+        }

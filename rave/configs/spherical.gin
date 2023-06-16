@@ -2,7 +2,6 @@ from __gin__ import dynamic_registration
 
 import rave
 from rave import blocks
-from rave import balancer
 
 LATENT_SIZE = 16
 
