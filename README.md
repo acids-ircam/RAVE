@@ -158,13 +158,42 @@ rave export --run /path/to/your/run (--streaming)
 
 Setting the `--streaming` flag will enable cached convolutions, making the model compatible with realtime processing. **If you forget to use the streaming mode and try to load the model in Max, you will hear clicking artifacts.**
 
+## Realtime usage
+
+This section presents how RAVE can be loaded inside [`nn~`](https://acids-ircam.github.io/nn_tilde/) in order to be used live with Max/MSP or PureData.
+
+### Reconstruction
+
+A pretrained RAVE model named `darbouka.gin` available on your computer can be loaded inside `nn~` using the following syntax, where the default method is set to forward (i.e. encode then decode)
+
+<img src="docs/rave_method_forward.png" width=400px/>
+
+This does the same thing as the following patch, but slightly faster.
+
+<img src="docs/rave_encode_decode.png" width=210px />
+
+
+### High-level manipulation
+
+Having an explicit access to the latent representation yielded by RAVE allows us to interact with the representation using Max/MSP or PureData signal processing tools:
+
+<img src="docs/rave_high_level.png" width=310px />
+
+### Style transfer
+
+By default, RAVE can be used as a style transfer tool, based on the large compression ratio of the model. We recently added a technique inspired from StyleGAN to include Adaptive Instance Normalization to the reconstruction process, effectively allowing to define *source* and *target* styles directly inside Max/MSP or PureData, using the attribute system of `nn~`.
+
+<img src="docs/rave_attribute.png" width=550px>
+
+Other attributes, such as `enable` or `gpu` can enable/disable computation, or use the gpu to speed up things (still experimental).
+
 ## Pretrained models
 
 Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
 
 ## Where is the prior ?
 
-The prior model was an experimental feature from RAVEv1 and has been removed from this repository. **However**, we will release a new improved version of the prior soon (very soon in fact).
+[Here !](https://github.com/caillonantoine/msprior)
 
 ## Discussion
 
