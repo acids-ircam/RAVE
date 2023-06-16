@@ -40,6 +40,9 @@ configs = list(itertools.product(configs, model_sampling_rate, stereo))
         ("stereo" if e[2] else "mono"), configs),
 )
 def test_config(config, sr, stereo):
+    if any(map(lambda x: "adain" in x, config)) and stereo:
+        pytest.skip()
+
     gin.clear_config()
     gin.parse_config_files_and_bindings(config, [
         f"SAMPLING_RATE={sr}",

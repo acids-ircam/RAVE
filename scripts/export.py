@@ -72,6 +72,20 @@ class ScriptedRAVE(nn_tilde.Module):
 
         self.full_latent_size = pretrained.latent_size
 
+        self.is_using_adain = False
+        for m in self.modules():
+            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
+                self.is_using_adain = True
+                break
+
+        if self.is_using_adain and stereo:
+            raise ValueError("Stereo mode not yet supported with AdaIN")
+
+        self.register_attribute("learn_target", False)
+        self.register_attribute("reset_target", False)
+        self.register_attribute("learn_source", False)
+        self.register_attribute("reset_source", False)
+
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
         self.register_buffer("fidelity", pretrained.fidelity)
@@ -157,8 +171,30 @@ class ScriptedRAVE(nn_tilde.Module):
     def pre_process_latent(self, z):
         raise NotImplementedError
 
+    def update_adain(self):
+        for m in self.modules():
+            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
+                m.learn_x.zero_()
+                m.learn_y.zero_()
+
+                if self.learn_target[0]:
+                    m.learn_y.add_(1)
+                if self.learn_source[0]:
+                    m.learn_x.add_(1)
+
+                if self.reset_target[0]:
+                    m.reset_y()
+                if self.reset_source[0]:
+                    m.reset_x()
+
+        self.reset_source = False,
+        self.reset_target = False,
+
     @torch.jit.export
     def encode(self, x):
+        if self.is_using_adain:
+            self.update_adain()
+
         if self.resampler is not None:
             x = self.resampler.to_model_sampling_rate(x)
 
@@ -170,7 +206,9 @@ class ScriptedRAVE(nn_tilde.Module):
         return z
 
     @torch.jit.export
-    def decode(self, z):
+    def decode(self, z, from_forward: bool = False):
+        if self.is_using_adain and not from_forward:
+            self.update_adain()
 
         if self.stereo:
             z = torch.cat([z, z], 0)
@@ -190,7 +228,43 @@ class ScriptedRAVE(nn_tilde.Module):
         return y
 
     def forward(self, x):
-        return self.decode(self.encode(x))
+        return self.decode(self.encode(x), from_forward=True)
+
+    @torch.jit.export
+    def get_learn_target(self) -> bool:
+        return self.learn_target[0]
+
+    @torch.jit.export
+    def set_learn_target(self, learn_target: bool) -> int:
+        self.learn_target = (learn_target, )
+        return 0
+
+    @torch.jit.export
+    def get_learn_source(self) -> bool:
+        return self.learn_source[0]
+
+    @torch.jit.export
+    def set_learn_source(self, learn_source: bool) -> int:
+        self.learn_source = (learn_source, )
+        return 0
+
+    @torch.jit.export
+    def get_reset_target(self) -> bool:
+        return self.reset_target[0]
+
+    @torch.jit.export
+    def set_reset_target(self, reset_target: bool) -> int:
+        self.reset_target = (reset_target, )
+        return 0
+
+    @torch.jit.export
+    def get_reset_source(self) -> bool:
+        return self.reset_source[0]
+
+    @torch.jit.export
+    def set_reset_source(self, reset_source: bool) -> int:
+        self.reset_source = (reset_source, )
+        return 0
 
 
 class VariationalScriptedRAVE(ScriptedRAVE):
@@ -264,7 +338,9 @@ def main(argv):
     pretrained = rave.RAVE()
     if checkpoint is not None:
         pretrained.load_state_dict(
-            torch.load(checkpoint, map_location='cpu')["state_dict"])
+            torch.load(checkpoint, map_location='cpu')["state_dict"],
+            strict=False,
+        )
     else:
         print("No checkpoint found, RAVE will remain randomly initialized")
     pretrained.eval()

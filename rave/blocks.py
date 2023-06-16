@@ -884,7 +884,7 @@ class AdaptiveInstanceNormalization(nn.Module):
     def transfer(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
 
-        x = (x - self.mean_x[:bs]) / self.std_x[:bs]
+        x = (x - self.mean_x[:bs]) / (self.std_x[:bs] + 1e-5)
         x = x * self.std_y[:bs] + self.mean_y[:bs]
 
         return x
@@ -912,7 +912,10 @@ class AdaptiveInstanceNormalization(nn.Module):
                 self.update(self.std_x, std, self.num_update_x)
                 self.num_update_x += 1
 
-            return self.transfer(x)
+            if self.num_update_x and self.num_update_y:
+                x = self.transfer(x)
+
+            return x
 
 
 def leaky_relu(dim: int, alpha: float):
