@@ -142,7 +142,7 @@ def main(argv):
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
             rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
-            rave.model.BetaWarmupCallback(1e-6, 1e-1, 4000),
+            rave.model.BetaWarmupCallback(1e-6, 2e-2, 10000),
         ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,

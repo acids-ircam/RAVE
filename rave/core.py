@@ -154,14 +154,8 @@ def get_rave_receptive_field(model: nn.Module):
     while True:
         x = torch.randn(1, 1, N, requires_grad=True, device=device)
 
-        if model.context_extraction is not None:
-            context = model.context_extraction(model.pqmf(x))
-            context = torch.randn_like(context)
-            z = model.encode(x, context)
-            y = model.decode(z, context)
-        else:
-            z = model.encode(x)
-            y = model.decode(z)
+        z = model.encode(x)
+        y = model.decode(z)
 
         y[0, 0, N // 2].backward()
         assert x.grad is not None, "input has no grad"

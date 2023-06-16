@@ -49,13 +49,8 @@ def test_config(config, sr, stereo):
     model = rave.RAVE()
 
     x = torch.randn(1, 1, 2**15)
-    if model.context_extraction is not None:
-        context = model.context_extraction(model.pqmf(x))
-        z = model.encode(x, context)
-        y = model.decode(z, context)
-    else:
-        z = model.encode(x)
-        y = model.decode(z)
+    z = model.encode(x)
+    y = model.decode(z)
     score = model.discriminator(y)
 
     assert x.shape == y.shape
@@ -74,10 +69,7 @@ def test_config(config, sr, stereo):
 
     x = torch.zeros(1, 1, 2**14)
 
-    if model.context_extraction is not None:
-        model(x, context)
-    else:
-        model(x)
+    model(x)
 
     for m in model.modules():
         if hasattr(m, "weight_g"):

@@ -397,7 +397,7 @@ class Generator(nn.Module):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
-    def forward(self, x, context=None):
+    def forward(self, x):
         x = self.net(x)
 
         if self.use_noise:
@@ -491,7 +491,7 @@ class Encoder(nn.Module):
         self.net = cc.CachedSequential(*net)
         self.cumulative_delay = self.net.cumulative_delay
 
-    def forward(self, x, context=None):
+    def forward(self, x):
         z = self.net(x)
         return z
 
@@ -519,7 +519,7 @@ class EncoderV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         spectrogram: Optional[Callable[[], Spectrogram]] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
-        adain: Optional[Callable[[int], nn.Module]] = None,
+        adain: Optional[Callable[[], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
@@ -542,9 +542,9 @@ class EncoderV2(nn.Module):
         num_channels = capacity
         for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
-            if adain is not None:
-                net.append(adain(num_channels))
             for d in dilations:
+                if adain is not None:
+                    net.append(adain())
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -587,20 +587,12 @@ class EncoderV2(nn.Module):
 
         self.net = cc.CachedSequential(*net)
 
-    def forward(self,
-                x: torch.Tensor,
-                context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.spectrogram is not None:
             x = self.spectrogram(x[:, 0])[..., :-1]
             x = torch.log1p(x)
 
-        for layer in self.net:
-            if isinstance(layer, AdaptiveInstanceNormalization):
-                assert context is not None
-                x = layer(x, context)
-            else:
-                x = layer(x)
-
+        x = self.net(x)
         return x
 
 
@@ -619,7 +611,7 @@ class GeneratorV2(nn.Module):
         amplitude_modulation: bool = False,
         noise_module: Optional[NoiseGeneratorV2] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
-        adain: Optional[Callable[[int], nn.Module]] = None,
+        adain: Optional[Callable[[], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
@@ -662,9 +654,9 @@ class GeneratorV2(nn.Module):
             num_channels = out_channels
 
             # ADD RESIDUAL DILATED UNITS
-            if adain is not None:
-                net.append(adain(num_channels))
             for d in dilations:
+                if adain is not None:
+                    net.append(adain())
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -696,15 +688,8 @@ class GeneratorV2(nn.Module):
 
         self.amplitude_modulation = amplitude_modulation
 
-    def forward(self,
-                x: torch.Tensor,
-                context: Optional[torch.Tensor] = None) -> torch.Tensor:
-        for layer in self.net:
-            if isinstance(layer, AdaptiveInstanceNormalization):
-                assert context is not None
-                x = layer(x, context)
-            else:
-                x = layer(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.net(x)
 
         noise = 0.
 
@@ -746,11 +731,8 @@ class VariationalEncoder(nn.Module):
         state = torch.tensor(int(state), device=self.warmed_up.device)
         self.warmed_up = state
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None):
-        if context is not None:
-            z = self.encoder(x, context)
-        else:
-            z = self.encoder(x)
+    def forward(self, x: torch.Tensor):
+        z = self.encoder(x)
 
         if self.warmed_up:
             z = z.detach()
@@ -870,94 +852,25 @@ class Snake(nn.Module):
                                                        x).sin().pow(2)
 
 
-class ContextExtraction(nn.Module):
-
-    def __init__(self, in_dim: int, out_dim: int, ratios: Sequence[int],
-                 capacity: int, kernel_size: int) -> None:
-        super().__init__()
-        net = []
-        chans = [in_dim] + [capacity * 2**i for i in range(len(ratios))]
-
-        for ratio, in_chan, out_chan in zip(ratios, chans[:-1], chans[1:]):
-            net.append(
-                cc.Conv1d(
-                    in_chan,
-                    out_chan,
-                    kernel_size=ratio**2,
-                    stride=ratio,
-                    padding=cc.get_padding(ratio**2, stride=ratio),
-                ))
-
-            net.append(nn.BatchNorm1d(out_chan))
-            net.append(nn.LeakyReLU(.2))
-
-            net.append(
-                cc.Conv1d(
-                    out_chan,
-                    out_chan,
-                    kernel_size=kernel_size,
-                    padding=cc.get_padding(kernel_size=kernel_size),
-                ))
-
-            net.append(nn.BatchNorm1d(out_chan))
-            net.append(nn.LeakyReLU(.2))
-
-        net.append(nn.Conv1d(out_chan, out_dim, 1))
-        self.net = nn.Sequential(*net)
-        self.context_dim = out_dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).mean(-1, keepdim=True)
-
-
 class AdaptiveInstanceNormalization(nn.Module):
 
-    def __init__(self,
-                 feature_dim: int,
-                 context_dim: int,
-                 ema_factor: float = .99) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.projection = nn.Conv1d(context_dim,
-                                    2 * feature_dim,
-                                    kernel_size=1)
-        self.noise_weight = nn.Parameter(torch.ones(feature_dim, 1) * .1)
+        self.saved_mean = None
+        self.saved_std = None
+        self.export_stats = True
 
-        self.ema_factor = ema_factor
-
-        self.register_buffer("running_mean",
-                             torch.zeros(cc.MAX_BATCH_SIZE, feature_dim))
-        self.register_buffer("running_std",
-                             torch.ones(cc.MAX_BATCH_SIZE, feature_dim))
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        # style gan noise addition
-        x = x + self.noise_weight * torch.randn_like(x)
-
-        # norm
-        mean_x = x.mean(-1, keepdim=True)
-        std_x = x.std(-1, keepdim=True)
-
-        if not self.training and cc.USE_BUFFER_CONV:
-            self.running_mean.mul_(self.ema_factor).add_(mean_x *
-                                                         (1 - self.ema_factor))
-            self.running_std.mul_(self.ema_factor).add_(std_x *
-                                                        (1 - self.ema_factor))
-
-            mean_x = self.running_mean[:mean_x.shape[0]]
-            std_x = self.running_std[:std_x.shape[0]]
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not self.training:
-            mean_x = mean_x.detach()
-            std_x = std_x.detach()
+            mean = x.mean(-1, keepdim=True)
+            std = x.std(-1, keepdim=True)
+            if self.export_stats:
+                self.saved_mean = mean.detach()
+                self.saved_std = std.detach()
+            else:
+                x = (x - mean) / std * self.saved_std + self.saved_mean
 
-        x = (x - mean_x) / std_x
-
-        # affine transform
-        y = self.projection(y)
-        mean, scale = y.chunk(2, 1)
-        out = scale * x + mean
-
-        return out
+        return x
 
 
 def leaky_relu(dim: int, alpha: float):
