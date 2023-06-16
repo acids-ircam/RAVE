@@ -3,10 +3,6 @@ from __gin__ import dynamic_registration
 import rave
 from rave import blocks
 
-include "configs/v2.gin"
-
-CONTEXT_DIM = 512
-
 blocks.EncoderV2:
     adain = @blocks.AdaptiveInstanceNormalization
 

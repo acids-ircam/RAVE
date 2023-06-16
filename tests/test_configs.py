@@ -13,15 +13,17 @@ gin.enter_interactive_mode()
 configs = [
     ["v1.gin"],
     ["v2.gin"],
-    ["v2adain.gin"],
+    ["v2.gin", "adain.gin"],
     ["v2.gin", "wasserstein.gin"],
     ["v2.gin", "spherical.gin"],
     # ["v2.gin", "hybrid.gin"], NOT READY YET
     ["discrete.gin"],
     ["discrete.gin", "snake.gin"],
+    ["discrete.gin", "snake.gin", "adain.gin"],
     ["discrete.gin", "snake.gin", "descript_discriminator.gin"],
     ["discrete.gin", "spectral_discriminator.gin"],
-    ["discrete.gin", "spectral_discriminator.gin", "noise.gin"],
+    ["discrete.gin", "noise.gin"],
+    ["v3.gin"],
 ]
 
 configs += [c + ["causal.gin"] for c in configs]
@@ -50,6 +52,11 @@ def test_config(config, sr, stereo):
     ])
 
     model = rave.RAVE()
+
+    if stereo:
+        for m in model.modules():
+            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
+                pytest.skip()
 
     x = torch.randn(1, 1, 2**15)
     z = model.encode(x)

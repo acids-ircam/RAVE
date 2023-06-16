@@ -87,3 +87,8 @@ rave.RAVE:
     weights = {
         'feature_matching': 20,
         }
+
+rave.BetaWarmupCallback:
+    initial_value = .02
+    target_value = .02
+    warmup_len = 1

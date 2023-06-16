@@ -82,7 +82,7 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tbody>
 
 <tr>
-<td rowspan=5>Architecture</td>
+<td rowspan=6>Architecture</td>
 <td>v1</td>
 <td>Original continuous model</td>
 </tr>
@@ -90,6 +90,11 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tr>
 <td>v2</td>
 <td>Improved continuous model (faster, higher quality)</td>
+</tr>
+
+<tr>
+<td>v3</td>
+<td>v2 with Snake activation, descript discriminator and Adaptive Instance Normalization for real style transfer</td>
 </tr>
 
 <tr>
