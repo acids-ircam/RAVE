@@ -13,7 +13,7 @@ from sklearn.decomposition import PCA
 import rave.core
 
 from .balancer import Balancer
-from .blocks import DiscreteEncoder, VariationalEncoder, AdaptiveInstanceNormalization
+from . import blocks
 
 
 class Profiler:
@@ -61,7 +61,7 @@ class QuantizeCallback(WarmupCallback):
         if pl_module.warmup_quantize is None: return
 
         if self.state['training_steps'] >= pl_module.warmup_quantize:
-            if isinstance(pl_module.encoder, DiscreteEncoder):
+            if isinstance(pl_module.encoder, blocks.DiscreteEncoder):
                 pl_module.encoder.enabled = torch.tensor(1).type_as(
                     pl_module.encoder.enabled)
         self.state['training_steps'] += 1
@@ -356,7 +356,7 @@ class RAVE(pl.LightningModule):
         else:
             z = self.encoder(x)
 
-        if isinstance(self.encoder, VariationalEncoder):
+        if isinstance(self.encoder, blocks.VariationalEncoder):
             mean = torch.split(z, z.shape[1] // 2, 1)[0]
         else:
             mean = None
@@ -394,7 +394,8 @@ class RAVE(pl.LightningModule):
         audio = list(map(lambda x: x.cpu(), audio))
 
         # LATENT SPACE ANALYSIS
-        if not self.warmed_up and isinstance(self.encoder, VariationalEncoder):
+        if not self.warmed_up and isinstance(self.encoder,
+                                             blocks.VariationalEncoder):
             z = torch.cat(z, 0)
             z = rearrange(z, "b c t -> (b t) c")
 
