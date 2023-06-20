@@ -47,3 +47,8 @@ rave.RAVE:
     valid_signal_crop = True
     num_skipped_features = 0
     update_discriminator_every = 4
+
+rave.BetaWarmupCallback:
+    initial_value = .1
+    target_value = .1
+    warmup_len = 1
