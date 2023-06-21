@@ -1,6 +1,7 @@
 import hashlib
 import os
 import sys
+from typing import Any, Dict
 
 import gin
 import pytorch_lightning as pl
@@ -44,9 +45,54 @@ flags.DEFINE_bool('derivative',
 flags.DEFINE_bool('normalize',
                   default=False,
                   help='Train RAVE on normalized signals')
+flags.DEFINE_float('ema',
+                   default=None,
+                   help='Exponential weight averaging factor (optional)')
 flags.DEFINE_bool('progress',
                   default=True,
                   help='Display training progress bar')
+
+
+class EMA(pl.Callback):
+
+    def __init__(self, factor=.999) -> None:
+        super().__init__()
+        self.weights = {}
+        self.factor = factor
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch,
+                           batch_idx) -> None:
+        for n, p in pl_module.named_parameters():
+            if n not in self.weights:
+                self.weights[n] = p.data.clone()
+                continue
+
+            self.weights[n] = self.weights[n] * self.factor + p.data * (
+                1 - self.factor)
+
+    def swap_weights(self, module):
+        for n, p in module.named_parameters():
+            current = p.data.clone()
+            p.data.copy_(self.weights[n])
+            self.weights[n] = current
+
+    def on_validation_epoch_start(self, trainer, pl_module) -> None:
+        if self.weights:
+            self.swap_weights(pl_module)
+        else:
+            print("no ema weights available")
+
+    def on_validation_epoch_end(self, trainer, pl_module) -> None:
+        if self.weights:
+            self.swap_weights(pl_module)
+        else:
+            print("no ema weights available")
+
+    def state_dict(self) -> Dict[str, Any]:
+        return self.weights.copy()
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.weights.update(state_dict)
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -129,6 +175,18 @@ def main(argv):
         accelerator = "mps"
         devices = 1
 
+    callbacks = [
+        validation_checkpoint,
+        last_checkpoint,
+        rave.model.WarmupCallback(),
+        rave.model.QuantizeCallback(),
+        rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
+        rave.model.BetaWarmupCallback(),
+    ]
+
+    if FLAGS.ema is not None:
+        callbacks.append(EMA(FLAGS.ema))
+
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(
             "runs",
@@ -136,15 +194,7 @@ def main(argv):
         ),
         accelerator=accelerator,
         devices=devices,
-        callbacks=[
-            validation_checkpoint,
-            last_checkpoint,
-            rave.model.WarmupCallback(),
-            rave.model.QuantizeCallback(),
-            rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
-            rave.model.BetaWarmupCallback(),
-            # rave.model.BetaWarmupCallback(1e-6, 2e-2, 10000),
-        ],
+        callbacks=callbacks,
         max_epochs=100000,
         max_steps=FLAGS.max_steps,
         profiler="simple",

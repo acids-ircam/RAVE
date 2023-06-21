@@ -41,6 +41,9 @@ flags.DEFINE_bool(
     'stereo',
     default=False,
     help='Enable fake stereo mode (one encoding, double decoding')
+flags.DEFINE_bool('ema_weights',
+                  default=False,
+                  help='Use ema weights if avaiable')
 flags.DEFINE_integer('sr',
                      default=None,
                      help='Optional resampling sample rate')
@@ -337,10 +340,17 @@ def main(argv):
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
-        pretrained.load_state_dict(
-            torch.load(checkpoint, map_location='cpu')["state_dict"],
-            strict=False,
-        )
+        checkpoint = torch.load(checkpoint, map_location='cpu')
+        if FLAGS.ema_weights and "EMA" in checkpoint["callbacks"]:
+            pretrained.load_state_dict(
+                checkpoint["callbacks"]["EMA"],
+                strict=False,
+            )
+        else:
+            pretrained.load_state_dict(
+                checkpoint["state_dict"],
+                strict=False,
+            )
     else:
         print("No checkpoint found, RAVE will remain randomly initialized")
     pretrained.eval()
