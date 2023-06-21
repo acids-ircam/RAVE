@@ -1,4 +1,6 @@
 import itertools
+import os
+import tempfile
 
 import gin
 import pytest
@@ -95,3 +97,8 @@ def test_config(config, sr, stereo):
         stereo=stereo,
         target_sr=44100,
     )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scripted_rave.export_to_ts(os.path.join(tmpdir, "ori.ts"))
+        scripted_rave_resampled.export_to_ts(
+            os.path.join(tmpdir, "resampled.ts"))

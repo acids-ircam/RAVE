@@ -127,6 +127,8 @@ class ScriptedRAVE(nn_tilde.Module):
 
         channels = ["(L)", "(R)"] if stereo else ["(mono)"]
 
+        self.fake_adain = rave.blocks.AdaptiveInstanceNormalization(0)
+
         self.register_method(
             "encode",
             in_channels=1,

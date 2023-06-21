@@ -1,6 +1,6 @@
 import math
 from time import time
-from typing import Callable, Optional, Dict
+from typing import Callable, Dict, Optional
 
 import gin
 import numpy as np
