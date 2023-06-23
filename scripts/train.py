@@ -172,7 +172,7 @@ def main(argv):
             pl.callbacks.LearningRateMonitor(logging_interval="epoch", log_momentum=False),
             rave.model.WarmupCallback(),
             rave.model.QuantizeCallback(),
-            rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
+            #rave.core.LoggerCallback(rave.core.ProgressLogger(RUN_NAME)),
         ],
         max_epochs=100000,
         max_steps=FLAGS.max_steps,

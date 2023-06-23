@@ -77,10 +77,10 @@ def load_audio_chunk(path: str, n_signal: int,
         )
         processes.append(process)
     
-    chunk = [p.stdout.read(n_signal * 4) for p in processes]
-    while len(chunk[0]) == n_signal * 4:
+    chunk = [p.stdout.read(n_signal * 2) for p in processes]
+    while len(chunk[0]) == n_signal * 2:
         yield b''.join(chunk)
-        chunk = [p.stdout.read(n_signal * 4) for p in processes]
+        chunk = [p.stdout.read(n_signal * 2) for p in processes]
     process.stdout.close()
 
 
@@ -140,7 +140,6 @@ def process_audio_array(audio: Tuple[int, bytes],
                         env: lmdb.Environment,
                         channels: int = 1) -> int:
     audio_id, audio_samples = audio
-
     buffers = {}
     # descriptors = get_metadata(audio_samples)
     buffers['waveform'] = AudioExample.AudioBuffer(
