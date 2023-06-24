@@ -1,0 +1,9 @@
+dataset.get_dataset:
+    augmentations = [
+        @augmentations/transforms.Compress()
+    ]
+
+augmentations/transforms.Compress:
+    time='0.01,0.01'
+    lookup='6:-30,-15,-10,-8,0,-5'
+    sr=%SAMPLING_RATE

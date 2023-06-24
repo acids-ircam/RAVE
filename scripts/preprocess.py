@@ -77,10 +77,10 @@ def load_audio_chunk(path: str, n_signal: int,
         )
         processes.append(process)
     
-    chunk = [p.stdout.read(n_signal * 2) for p in processes]
-    while len(chunk[0]) == n_signal * 2:
+    chunk = [p.stdout.read(n_signal * 4) for p in processes]
+    while len(chunk[0]) == n_signal * 4:
         yield b''.join(chunk)
-        chunk = [p.stdout.read(n_signal * 2) for p in processes]
+        chunk = [p.stdout.read(n_signal * 4) for p in processes]
     process.stdout.close()
 
 
@@ -143,7 +143,7 @@ def process_audio_array(audio: Tuple[int, bytes],
     buffers = {}
     # descriptors = get_metadata(audio_samples)
     buffers['waveform'] = AudioExample.AudioBuffer(
-        shape=(channels, int(len(audio_samples)/channels)),
+        shape=(channels, int(len(audio_samples)/ 2 / channels)),
         sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,

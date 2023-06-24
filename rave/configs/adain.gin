@@ -1,0 +1,10 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import blocks
+
+blocks.EncoderV2:
+    adain = @blocks.AdaptiveInstanceNormalization
+
+blocks.GeneratorV2:
+    adain = @blocks.AdaptiveInstanceNormalization

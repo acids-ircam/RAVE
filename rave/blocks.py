@@ -47,12 +47,18 @@ class Residual(nn.Module):
 
 class ResidualLayer(nn.Module):
 
-    def __init__(self, dim, kernel_size, dilations, cumulative_delay=0):
+    def __init__(
+        self,
+        dim,
+        kernel_size,
+        dilations,
+        cumulative_delay=0,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)):
         super().__init__()
         net = []
         cd = 0
         for d in dilations:
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(dim))
             net.append(
                 normalization(
                     cc.Conv1d(
@@ -76,10 +82,16 @@ class ResidualLayer(nn.Module):
 
 class DilatedUnit(nn.Module):
 
-    def __init__(self, dim: int, kernel_size: int, dilation: int) -> None:
+    def __init__(
+        self,
+        dim: int,
+        kernel_size: int,
+        dilation: int,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)
+    ) -> None:
         super().__init__()
         net = [
-            nn.LeakyReLU(.2),
+            activation(dim),
             normalization(
                 cc.Conv1d(dim,
                           dim,
@@ -89,7 +101,7 @@ class DilatedUnit(nn.Module):
                               kernel_size,
                               dilation=dilation,
                           ))),
-            nn.LeakyReLU(.2),
+            activation(dim),
             normalization(cc.Conv1d(dim, dim, kernel_size=1)),
         ]
 
@@ -154,9 +166,15 @@ class ResidualStack(nn.Module):
 
 class UpsampleLayer(nn.Module):
 
-    def __init__(self, in_dim, out_dim, ratio, cumulative_delay=0):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        ratio,
+        cumulative_delay=0,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)):
         super().__init__()
-        net = [nn.LeakyReLU(.2)]
+        net = [activation(in_dim)]
         if ratio > 1:
             net.append(
                 normalization(
@@ -203,6 +221,56 @@ class NoiseGenerator(nn.Module):
         self.data_size = data_size
         self.cumulative_delay = self.net.cumulative_delay * int(
             np.prod(ratios))
+
+        self.register_buffer(
+            "target_size",
+            torch.tensor(np.prod(ratios)).long(),
+        )
+
+    def forward(self, x):
+        amp = mod_sigmoid(self.net(x) - 5)
+        amp = amp.permute(0, 2, 1)
+        amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
+
+        ir = amp_to_impulse_response(amp, self.target_size)
+        noise = torch.rand_like(ir) * 2 - 1
+
+        noise = fft_convolve(noise, ir).permute(0, 2, 1, 3)
+        noise = noise.reshape(noise.shape[0], noise.shape[1], -1)
+        return noise
+
+
+class NoiseGeneratorV2(nn.Module):
+
+    def __init__(
+        self,
+        in_size: int,
+        hidden_size: int,
+        data_size: int,
+        ratios: int,
+        noise_bands: int,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+    ):
+        super().__init__()
+        net = []
+        channels = [in_size]
+        channels.extend((len(ratios) - 1) * [hidden_size])
+        channels.append(data_size * noise_bands)
+
+        for i, r in enumerate(ratios):
+            net.append(
+                cc.Conv1d(
+                    channels[i],
+                    channels[i + 1],
+                    2 * r,
+                    padding=(r, 0),
+                    stride=r,
+                ))
+            if i != len(ratios) - 1:
+                net.append(activation(channels[i + 1]))
+
+        self.net = nn.Sequential(*net)
+        self.data_size = data_size
 
         self.register_buffer(
             "target_size",
@@ -454,6 +522,8 @@ class EncoderV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
         spectrogram: Optional[Callable[[], Spectrogram]] = None,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+        adain: Optional[Callable[[int], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
@@ -479,6 +549,8 @@ class EncoderV2(nn.Module):
         for r, dilations in zip(ratios, dilations_list):
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
+                if adain is not None:
+                    net.append(adain(dim=num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -488,7 +560,7 @@ class EncoderV2(nn.Module):
                         )))
 
             # ADD DOWNSAMPLING UNIT
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(num_channels))
 
             if keep_dim:
                 out_channels = num_channels * r
@@ -506,7 +578,7 @@ class EncoderV2(nn.Module):
 
             num_channels = out_channels
 
-        net.append(nn.LeakyReLU(.2))
+        net.append(activation(num_channels))
         net.append(
             normalization(
                 cc.Conv1d(
@@ -525,7 +597,9 @@ class EncoderV2(nn.Module):
         if self.spectrogram is not None:
             x = self.spectrogram(x[:, 0])[..., :-1]
             x = torch.log1p(x)
-        return self.net(x)
+
+        x = self.net(x)
+        return x
 
 
 class GeneratorV2(nn.Module):
@@ -542,9 +616,15 @@ class GeneratorV2(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
         amplitude_modulation: bool = False,
+        noise_module: Optional[NoiseGeneratorV2] = None,
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+        adain: Optional[Callable[[int], nn.Module]] = None,
     ) -> None:
         super().__init__()
-        data_size = data_size or n_channels
+        if data_size is None:
+            data_size = n_channels
+        else:
+            data_size = data_size * n_channels 
         dilations_list = normalize_dilations(dilations, ratios)[::-1]
         ratios = ratios[::-1]
 
@@ -573,7 +653,7 @@ class GeneratorV2(nn.Module):
                 out_channels = num_channels // r
             else:
                 out_channels = num_channels // 2
-            net.append(nn.LeakyReLU(.2))
+            net.append(activation(num_channels))
             net.append(
                 normalization(
                     cc.ConvTranspose1d(num_channels,
@@ -586,6 +666,8 @@ class GeneratorV2(nn.Module):
 
             # ADD RESIDUAL DILATED UNITS
             for d in dilations:
+                if adain is not None:
+                    net.append(adain(num_channels))
                 net.append(
                     Residual(
                         DilatedUnit(
@@ -594,25 +676,43 @@ class GeneratorV2(nn.Module):
                             dilation=d,
                         )))
 
-        net.append(nn.LeakyReLU(.2))
-        net.append(
-            normalization(
-                cc.Conv1d(
-                    num_channels,
-                    data_size * n_channels * 2 if amplitude_modulation else data_size * n_channels,
-                    kernel_size=kernel_size * 2 + 1,
-                    padding=cc.get_padding(kernel_size * 2 + 1),
-                )))
+        net.append(activation(num_channels))
+
+        waveform_module = normalization(
+            cc.Conv1d(
+                num_channels,
+                data_size * 2 if amplitude_modulation else data_size,
+                kernel_size=kernel_size * 2 + 1,
+                padding=cc.get_padding(kernel_size * 2 + 1),
+            ))
+
+        self.noise_module = None
+        self.waveform_module = None
+
+        if noise_module is not None:
+            self.waveform_module = waveform_module
+            self.noise_module = noise_module(out_channels)
+        else:
+            net.append(waveform_module)
 
         self.net = cc.CachedSequential(*net)
+
         self.amplitude_modulation = amplitude_modulation
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.net(x)
 
+        noise = 0.
+
+        if self.noise_module is not None:
+            noise = self.noise_module(x)
+            x = self.waveform_module(x)
+
         if self.amplitude_modulation:
             x, amplitude = x.split(x.shape[1] // 2, 1)
             x = x * torch.sigmoid(amplitude)
+
+        x = x + noise
 
         return torch.tanh(x)
 
@@ -645,6 +745,7 @@ class VariationalEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor):
         z = self.encoder(x)
+
         if self.warmed_up:
             z = z.detach()
         return z
@@ -751,6 +852,87 @@ class SphericalEncoder(nn.Module):
     def forward(self, x: torch.Tensor):
         z = self.encoder(x)
         return z
+
+
+class Snake(nn.Module):
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(dim, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + (self.alpha + 1e-9).reciprocal() * (self.alpha *
+                                                       x).sin().pow(2)
+
+
+class AdaptiveInstanceNormalization(nn.Module):
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.register_buffer("mean_x", torch.zeros(cc.MAX_BATCH_SIZE, dim, 1))
+        self.register_buffer("std_x", torch.ones(cc.MAX_BATCH_SIZE, dim, 1))
+        self.register_buffer("learn_x", torch.zeros(1))
+        self.register_buffer("num_update_x", torch.zeros(1))
+
+        self.register_buffer("mean_y", torch.zeros(cc.MAX_BATCH_SIZE, dim, 1))
+        self.register_buffer("std_y", torch.ones(cc.MAX_BATCH_SIZE, dim, 1))
+        self.register_buffer("learn_y", torch.zeros(1))
+        self.register_buffer("num_update_y", torch.zeros(1))
+
+    def update(self, target: torch.Tensor, source: torch.Tensor,
+               num_updates: torch.Tensor) -> None:
+        bs = source.shape[0]
+        target[:bs] += (source - target[:bs]) / (num_updates + 1)
+
+    def reset_x(self):
+        self.mean_x.zero_()
+        self.std_x.zero_().add_(1)
+        self.num_update_x.zero_()
+
+    def reset_y(self):
+        self.mean_y.zero_()
+        self.std_y.zero_().add_(1)
+        self.num_update_y.zero_()
+
+    def transfer(self, x: torch.Tensor) -> torch.Tensor:
+        bs = x.shape[0]
+
+        x = (x - self.mean_x[:bs]) / (self.std_x[:bs] + 1e-5)
+        x = x * self.std_y[:bs] + self.mean_y[:bs]
+
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training:
+            return x
+
+        if self.learn_y:
+            mean = x.mean(-1, keepdim=True)
+            std = x.std(-1, keepdim=True)
+
+            self.update(self.mean_y, mean, self.num_update_y)
+            self.update(self.std_y, std, self.num_update_y)
+            self.num_update_y += 1
+
+            return x
+
+        else:
+            if self.learn_x:
+                mean = x.mean(-1, keepdim=True)
+                std = x.std(-1, keepdim=True)
+
+                self.update(self.mean_x, mean, self.num_update_x)
+                self.update(self.std_x, std, self.num_update_x)
+                self.num_update_x += 1
+
+            if self.num_update_x and self.num_update_y:
+                x = self.transfer(x)
+
+            return x
+
+
+def leaky_relu(dim: int, alpha: float):
+    return nn.LeakyReLU(alpha)
 
 
 def unit_norm_vector_to_angles(x: torch.Tensor) -> torch.Tensor:

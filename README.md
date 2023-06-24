@@ -82,7 +82,7 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tbody>
 
 <tr>
-<td rowspan=5>Architecture</td>
+<td rowspan=6>Architecture</td>
 <td>v1</td>
 <td>Original continuous model</td>
 </tr>
@@ -90,6 +90,11 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tr>
 <td>v2</td>
 <td>Improved continuous model (faster, higher quality)</td>
+</tr>
+
+<tr>
+<td>v3</td>
+<td>v2 with Snake activation, descript discriminator and Adaptive Instance Normalization for real style transfer</td>
 </tr>
 
 <tr>
@@ -130,9 +135,14 @@ Many other configuration files are available in `rave/configs` and can be combin
 </tr>
 
 <tr>
-<td rowspan=1>Others</td>
+<td rowspan=2>Others</td>
 <td>causal</td>
 <td>Use causal convolutions</td>
+</tr
+
+<tr>
+<td>noise</td>
+<td>Enable noise synthesizer V2</td>
 </tr>
 
 </tbody>
@@ -148,13 +158,42 @@ rave export --run /path/to/your/run (--streaming)
 
 Setting the `--streaming` flag will enable cached convolutions, making the model compatible with realtime processing. **If you forget to use the streaming mode and try to load the model in Max, you will hear clicking artifacts.**
 
+## Realtime usage
+
+This section presents how RAVE can be loaded inside [`nn~`](https://acids-ircam.github.io/nn_tilde/) in order to be used live with Max/MSP or PureData.
+
+### Reconstruction
+
+A pretrained RAVE model named `darbouka.gin` available on your computer can be loaded inside `nn~` using the following syntax, where the default method is set to forward (i.e. encode then decode)
+
+<img src="docs/rave_method_forward.png" width=400px/>
+
+This does the same thing as the following patch, but slightly faster.
+
+<img src="docs/rave_encode_decode.png" width=210px />
+
+
+### High-level manipulation
+
+Having an explicit access to the latent representation yielded by RAVE allows us to interact with the representation using Max/MSP or PureData signal processing tools:
+
+<img src="docs/rave_high_level.png" width=310px />
+
+### Style transfer
+
+By default, RAVE can be used as a style transfer tool, based on the large compression ratio of the model. We recently added a technique inspired from StyleGAN to include Adaptive Instance Normalization to the reconstruction process, effectively allowing to define *source* and *target* styles directly inside Max/MSP or PureData, using the attribute system of `nn~`.
+
+<img src="docs/rave_attribute.png" width=550px>
+
+Other attributes, such as `enable` or `gpu` can enable/disable computation, or use the gpu to speed up things (still experimental).
+
 ## Pretrained models
 
 Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
 
 ## Where is the prior ?
 
-The prior model was an experimental feature from RAVEv1 and has been removed from this repository. **However**, we will release a new improved version of the prior soon (very soon in fact).
+[Here !](https://github.com/caillonantoine/msprior)
 
 ## Discussion
 
@@ -173,3 +212,13 @@ Demonstration of what you can do with RAVE and the nn~ external for maxmsp !
 Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
 
 [![RAVE x nn~](http://img.youtube.com/vi/jAIRf4nGgYI/mqdefault.jpg)](https://www.youtube.com/watch?v=jAIRf4nGgYI)
+
+# Funding
+
+This work is led at IRCAM, and has been funded by the following projects
+
+- [ANR MakiMono](https://acids.ircam.fr/course/makimono/)
+- [ACTOR](https://www.actorproject.org/)
+- [DAFNE+](https://dafneplus.eu/) N° 101061548
+
+<img src="https://ec.europa.eu/regional_policy/images/information-sources/logo-download-center/eu_co_funded_en.jpg" width=200px/>

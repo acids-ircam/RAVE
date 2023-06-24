@@ -1,3 +1,5 @@
+import base64
+import logging
 import math
 import os
 import subprocess
@@ -7,12 +9,14 @@ from typing import Dict, Iterable, Optional, Sequence, Union, Callable
 import gin
 import lmdb
 import numpy as np
+import requests
 import torch
 import yaml
 from scipy.signal import lfilter
 from torch.utils import data
 from tqdm import tqdm
 from . import transforms
+from udls import AudioExample as AudioExampleWrapper
 from udls.generated import AudioExample
 
 
@@ -155,6 +159,28 @@ def get_channels_from_dataset(db_path):
         metadata = yaml.safe_load(metadata)
     return metadata.get('channels', 1)
 
+class HTTPAudioDataset(data.Dataset):
+
+    def __init__(self, db_path: str):
+        super().__init__()
+        self.db_path = db_path
+        logging.info("starting remote dataset session")
+        self.length = int(requests.get("/".join([db_path, "len"])).text)
+        logging.info("connection established !")
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        example = requests.get("/".join([
+            self.db_path,
+            "get",
+            f"{index}",
+        ])).text
+        example = AudioExampleWrapper(base64.b64decode(example)).get("audio")
+        return example.copy()
+
+
 def normalize_signal(x: np.ndarray, max_gain_db: int = 30):
     peak = np.max(abs(x))
     if peak == 0: return x
@@ -174,6 +200,8 @@ def get_dataset(db_path,
                 rand_pitch: bool = False,
                 augmentations: Union[None, Iterable[Callable]] = None, 
                 n_channels: int = 1):
+    if db_path[:4] == "http":
+        return HTTPAudioDataset(db_path=db_path)
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
     lazy = metadata['lazy']

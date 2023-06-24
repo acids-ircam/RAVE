@@ -28,11 +28,5 @@ __safe_configurable("ConvTranspose1d")
 
 from .blocks import *
 from .discriminator import *
-from .model import RAVE
+from .model import RAVE, BetaWarmupCallback
 from .pqmf import *
-
-try:
-    from .__version__ import *
-except:
-    __version__ = None
-    __commit__ = None

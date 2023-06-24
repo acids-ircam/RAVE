@@ -6,7 +6,6 @@ from rave import core
 from rave import blocks
 from rave import discriminator
 from rave import dataset
-from rave import balancer
 
 import cached_conv as cc
 import torch
@@ -91,21 +90,6 @@ discriminator.MultiScaleDiscriminator:
 feature_matching/core.mean_difference:
     norm = 'L1'
 
-# BALANCER
-balancer.Balancer:
-    ema_averager = @balancer.EMA
-    weights = {
-        'regularization': .1,
-        'feature_matching': 10,
-    }
-    deny_list = [
-        'regularization'
-    ]
-    scale_gradients = False
-
-balancer.EMA:
-    beta = 0.999
-
 # MODEL ASSEMBLING
 rave.RAVE:
     latent_size = %LATENT_SIZE
@@ -121,4 +105,11 @@ rave.RAVE:
     num_skipped_features = 0
     audio_distance = @core.AudioDistanceV1
     multiband_audio_distance = @core.AudioDistanceV1
-    balancer = @balancer.Balancer
+    weights = {
+        'feature_matching': 10
+        }
+
+rave.BetaWarmupCallback:
+    initial_value = .1
+    target_value = .1
+    warmup_len = 1

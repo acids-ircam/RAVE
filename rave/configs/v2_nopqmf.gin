@@ -5,7 +5,6 @@ from rave import core
 from rave import dataset
 from rave import blocks
 from rave import discriminator
-from rave import balancer
 from rave import transforms
 
 import torch.nn as nn
@@ -33,13 +32,14 @@ core.get_augmented_latent_size:
 # AUGMENTATIONS
 dataset.get_dataset:
     augmentations = [
-        @augmentations/transforms.Compress()
+        @augmentations/transforms.RandomCompress()
     ]
 
-augmentations/transforms.Compress:
+augmentations/transforms.RandomCompress:
     amp_range = [-60,-10]
     threshold=-40
     prob = 0.5
+    sr=%SAMPLING_RATE
 
 # ENCODER
 blocks.EncoderV2:
@@ -99,9 +99,15 @@ rave.RAVE:
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
     phase_1_duration = 500000
-    loss_weights = {'reg': 0.02, 'feature_matching': 20}
+    weights = {
+        'feature_matching': 20
+    }
     update_discriminator_every = 4
-    enable_pqmf_encode = True 
-    enable_pqmf_decode = False 
+    output_mode = "raw"
     audio_monitor_epochs = 10
+
+rave.BetaWarmupCallback:
+    initial_value = 1e-6
+    target_value = 5e-2
+    warmup_len = 200000
     

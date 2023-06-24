@@ -5,7 +5,6 @@ include "configs/v2.gin"
 import rave
 from rave import core
 from rave import blocks
-from rave import balancer
 from rave import discriminator
 from rave import quantization
 
@@ -18,6 +17,7 @@ CODEBOOK_SIZE = 1024
 DYNAMIC_MASKING = False
 CAPACITY = 96
 NOISE_AUGMENTATION = 128
+PHASE_1_DURATION = 200000
 
 core.AudioDistanceV1.log_epsilon = 1
 
@@ -37,22 +37,18 @@ quantization.ResidualVectorQuantization:
     dim = %LATENT_SIZE
     codebook_size = %CODEBOOK_SIZE
 
-# BALANCER
-balancer.Balancer:
-    weights = {
-        'feature_matching' : 20,
-        'regularization': .1,
-    }
-    scale_gradients = False
-
 # RAVE
-
 rave.RAVE:
     encoder = @blocks.DiscreteEncoder
-    phase_1_duration = 200000
+    phase_1_duration = %PHASE_1_DURATION
     warmup_quantize = -1
     discriminator = @discriminator.CombineDiscriminators
     gan_loss = @core.hinge_gan
     valid_signal_crop = True
     num_skipped_features = 0
     update_discriminator_every = 4
+
+rave.BetaWarmupCallback:
+    initial_value = .1
+    target_value = .1
+    warmup_len = 1

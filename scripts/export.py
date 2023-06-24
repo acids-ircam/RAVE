@@ -29,6 +29,7 @@ except:
     import rave
 import rave.blocks
 import rave.core
+import rave.resampler
 
 FLAGS = flags.FLAGS
 
@@ -49,6 +50,12 @@ flags.DEFINE_bool(
     'stereo',
     default=False,
     help='Enable fake stereo mode (one encoding, double decoding')
+flags.DEFINE_bool('ema_weights',
+                  default=False,
+                  help='Use ema weights if avaiable')
+flags.DEFINE_integer('sr',
+                     default=None,
+                     help='Optional resampling sample rate')
 
 
 
@@ -57,7 +64,8 @@ class ScriptedRAVE(nn_tilde.Module):
     def __init__(self,
                  pretrained: rave.RAVE,
                  stereo: bool,
-                 fidelity: float = .95) -> None:
+                 fidelity: float = .95,
+                 target_sr: bool = None) -> None:
         super().__init__()
         self.pqmf = pretrained.pqmf
         self.encoder = pretrained.encoder
@@ -66,7 +74,29 @@ class ScriptedRAVE(nn_tilde.Module):
 
         self.sr = pretrained.sr
 
+        self.resampler = None
+
+        if target_sr is not None:
+            if target_sr != self.sr:
+                assert not target_sr % self.sr, "Incompatible target sampling rate"
+                self.resampler = rave.resampler.Resampler(target_sr, self.sr)
+                self.sr = target_sr
+
         self.full_latent_size = pretrained.latent_size
+
+        self.is_using_adain = False
+        for m in self.modules():
+            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
+                self.is_using_adain = True
+                break
+
+        if self.is_using_adain and stereo:
+            raise ValueError("Stereo mode not yet supported with AdaIN")
+
+        self.register_attribute("learn_target", False)
+        self.register_attribute("reset_target", False)
+        self.register_attribute("learn_source", False)
+        self.register_attribute("reset_source", False)
 
         self.register_buffer("latent_pca", pretrained.latent_pca)
         self.register_buffer("latent_mean", pretrained.latent_mean)
@@ -92,25 +122,25 @@ class ScriptedRAVE(nn_tilde.Module):
                 f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
             )
 
+        x_len = 2**14
+        x = torch.zeros(1, 1, x_len)
 
-        x = torch.zeros(1, self.n_channels, 2**14)
-        # x_m = x.clone() if self.pqmf is None else self.pqmf(x)
-        # z = self.encoder(x_m)
-        z = self.encode(x)
-        ratio_encode = x.shape[-1] // z.shape[-1]
+        if self.resampler is not None:
+            x = self.resampler.to_model_sampling_rate(x)
+
+        x_m = x.clone() if self.pqmf is None else self.pqmf(x)
+
+        z = self.encode(x_m)
+
+        ratio_encode = x_len // z.shape[-1]
 
         self.stereo = stereo
         if (stereo) and self.n_channels != 1:
             logging.info('[Warning] Stereo mode is only functional when the model has 1 channel. Disabling stereo mode')
             self.stereo = False
 
-        if (stereo):
-            generated_labels = ['reconstructed signal (L)', 'reconstructed signal (R)']
-            n_outs = 2
-        else:
-            generated_labels = ['reconstructed signal (%d)'%i for i in range(1, self.n_channels+1)]
-            n_outs = self.n_channels
-            
+        self.fake_adain = rave.blocks.AdaptiveInstanceNormalization(0)
+
         self.register_method(
             "encode",
             in_channels=self.n_channels,
@@ -159,8 +189,33 @@ class ScriptedRAVE(nn_tilde.Module):
     def pre_process_latent(self, z):
         raise NotImplementedError
 
+    def update_adain(self):
+        for m in self.modules():
+            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
+                m.learn_x.zero_()
+                m.learn_y.zero_()
+
+                if self.learn_target[0]:
+                    m.learn_y.add_(1)
+                if self.learn_source[0]:
+                    m.learn_x.add_(1)
+
+                if self.reset_target[0]:
+                    m.reset_y()
+                if self.reset_source[0]:
+                    m.reset_x()
+
+        self.reset_source = False,
+        self.reset_target = False,
+
     @torch.jit.export
     def encode(self, x):
+        if self.is_using_adain:
+            self.update_adain()
+
+        if self.resampler is not None:
+            x = self.resampler.to_model_sampling_rate(x)
+
         if self.pqmf is not None:
             batch_size = x.shape[:-2]
             x = x.reshape(-1, 1, x.shape[-1])
@@ -171,16 +226,23 @@ class ScriptedRAVE(nn_tilde.Module):
         return z
 
     @torch.jit.export
-    def decode(self, z):
-        if (self.stereo):
-           z = torch.cat([z, z], dim=0)
-        batch_size = z.shape[0]
+    def decode(self, z, from_forward: bool = False):
+        if self.is_using_adain and not from_forward:
+            self.update_adain()
+        if self.stereo:
+            z = torch.cat([z, z], 0)
+
         z = self.pre_process_latent(z)
         y = self.decoder(z)
+
         if self.pqmf is not None:
             y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
             y = self.pqmf.inverse(y)
             y = y.reshape(batch_size, self.n_channels, -1)
+
+        if self.resampler is not None:
+            y = self.resampler.from_model_sampling_rate(y)
+
         if self.stereo:
             #TODO make channels check
             y = torch.cat(y.chunk(2, 0), 1)
@@ -188,7 +250,43 @@ class ScriptedRAVE(nn_tilde.Module):
         return y
 
     def forward(self, x):
-        return self.decode(self.encode(x))
+        return self.decode(self.encode(x), from_forward=True)
+
+    @torch.jit.export
+    def get_learn_target(self) -> bool:
+        return self.learn_target[0]
+
+    @torch.jit.export
+    def set_learn_target(self, learn_target: bool) -> int:
+        self.learn_target = (learn_target, )
+        return 0
+
+    @torch.jit.export
+    def get_learn_source(self) -> bool:
+        return self.learn_source[0]
+
+    @torch.jit.export
+    def set_learn_source(self, learn_source: bool) -> int:
+        self.learn_source = (learn_source, )
+        return 0
+
+    @torch.jit.export
+    def get_reset_target(self) -> bool:
+        return self.reset_target[0]
+
+    @torch.jit.export
+    def set_reset_target(self, reset_target: bool) -> int:
+        self.reset_target = (reset_target, )
+        return 0
+
+    @torch.jit.export
+    def get_reset_source(self) -> bool:
+        return self.reset_source[0]
+
+    @torch.jit.export
+    def set_reset_source(self, reset_source: bool) -> int:
+        self.reset_source = (reset_source, )
+        return 0
 
 
 class VariationalScriptedRAVE(ScriptedRAVE):
@@ -261,8 +359,17 @@ def main(argv):
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
-        pretrained.load_state_dict(
-            torch.load(checkpoint, map_location='cpu')["state_dict"])
+        checkpoint = torch.load(checkpoint, map_location='cpu')
+        if FLAGS.ema_weights and "EMA" in checkpoint["callbacks"]:
+            pretrained.load_state_dict(
+                checkpoint["callbacks"]["EMA"],
+                strict=False,
+            )
+        else:
+            pretrained.load_state_dict(
+                checkpoint["state_dict"],
+                strict=False,
+            )
     else:
         print("No checkpoint found, RAVE will remain randomly initialized")
     pretrained.eval()
@@ -291,9 +398,12 @@ def main(argv):
             nn.utils.remove_weight_norm(m)
     logging.info("script model")
 
-    scripted_rave = script_class(pretrained=pretrained,
-                                 stereo=FLAGS.stereo,
-                                 fidelity=FLAGS.fidelity)
+    scripted_rave = script_class(
+        pretrained=pretrained,
+        stereo=FLAGS.stereo,
+        fidelity=FLAGS.fidelity,
+        target_sr=FLAGS.sr,
+    )
 
     logging.info("save model")
     model_name = os.path.basename(os.path.normpath(FLAGS.run))

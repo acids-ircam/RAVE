@@ -6,6 +6,7 @@ import librosa as li
 import numpy as np
 import torch
 import scipy.signal as signal
+from udls.transforms import *
 
 
 class Transform(object):
@@ -97,8 +98,19 @@ class Dequantize(Transform):
         x += np.random.rand(*x.shape) / 2**self.bit_depth
         return x
 
+
 @gin.configurable
 class Compress(Transform):
+    def __init__(self, time="0.1,0.1", lookup="6:-70,-60,-20 ", gain="0", sr=44100):
+        self.sox_args = ['compand', time, lookup, gain]
+        self.sr = sr
+
+    def __call__(self, x: torch.Tensor):
+        x = torchaudio.sox_effects.apply_effects_tensor(torch.from_numpy(x).float(), self.sr, [self.sox_args])[0].numpy()
+        return x
+
+@gin.configurable
+class RandomCompress(Transform):
     def __init__(self, threshold = -40, amp_range = [-60, 0], attack=0.1, release=0.1, prob=0.5, sr=44100):
         self.amp_range = amp_range
         self.threshold = threshold

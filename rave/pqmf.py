@@ -276,11 +276,13 @@ class CachedPQMF(PQMF):
         self.inverse_conv.script_cache()
 
     def forward(self, x):
+        if self.n_band == 1: return x
         x = self.forward_conv(x)
         x = reverse_half(x)
         return x
 
     def inverse(self, x):
+        if self.n_band == 1: return x
         x = reverse_half(x)
         m = self.hk.shape[0]
         x = self.inverse_conv(x) * m
