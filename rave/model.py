@@ -79,12 +79,13 @@ class QuantizeCallback(WarmupCallback):
 class BetaWarmupCallback(pl.Callback):
 
     def __init__(self, initial_value: float, target_value: float,
-                 warmup_len: int) -> None:
+                 warmup_len: int, log: bool = True) -> None:
         super().__init__()
         self.state = {'training_steps': 0}
         self.warmup_len = warmup_len
         self.initial_value = initial_value
         self.target_value = target_value
+        self.log = log
 
     def on_train_batch_start(self, trainer, pl_module, batch,
                              batch_idx) -> None:
@@ -95,9 +96,13 @@ class BetaWarmupCallback(pl.Callback):
 
         warmup_ratio = self.state["training_steps"] / self.warmup_len
 
-        beta = math.log(self.initial_value) * (1 - warmup_ratio) + math.log(
-            self.target_value) * warmup_ratio
-        pl_module.beta_factor = math.exp(beta)
+        if self.log: 
+            beta = math.log(self.initial_value) * (1 - warmup_ratio) + math.log(
+                self.target_value) * warmup_ratio
+            pl_module.beta_factor = math.exp(beta)
+        else:
+            beta = warmup_ratio * (self.target_value - self.initial_value) + self.initial_value
+            pl_module.beta_factor = min(beta, self.target_value)
 
     def state_dict(self):
         return self.state.copy()
