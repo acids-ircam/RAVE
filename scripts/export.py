@@ -43,7 +43,7 @@ flags.DEFINE_bool(
     help='Enable fake stereo mode (one encoding, double decoding')
 flags.DEFINE_bool('ema_weights',
                   default=False,
-                  help='Use ema weights if avaiable')
+                  help='Use ema weights if available')
 flags.DEFINE_integer('sr',
                      default=None,
                      help='Optional resampling sample rate')
