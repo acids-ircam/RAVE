@@ -368,6 +368,10 @@ class RAVE(pl.LightningModule):
 
         y = self.decoder(z)
 
+        if self.valid_signal_crop and self.receptive_field.sum():
+            x = rave.core.valid_signal_crop(x, *self.receptive_field)
+            y = rave.core.valid_signal_crop(y, *self.receptive_field)
+
         if self.pqmf is not None:
             x = self.pqmf.inverse(x_multiband)
             y = self.pqmf.inverse(y)
