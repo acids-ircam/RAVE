@@ -85,7 +85,7 @@ class BetaWarmupCallback(pl.Callback):
         self.warmup_len = warmup_len
         self.initial_value = initial_value
         self.target_value = target_value
-        self.log = log
+        self.log_warmup = log
 
     def on_train_batch_start(self, trainer, pl_module, batch,
                              batch_idx) -> None:
@@ -96,7 +96,7 @@ class BetaWarmupCallback(pl.Callback):
 
         warmup_ratio = self.state["training_steps"] / self.warmup_len
 
-        if self.log: 
+        if self.log_warmup: 
             beta = math.log(self.initial_value) * (1 - warmup_ratio) + math.log(
                 self.target_value) * warmup_ratio
             pl_module.beta_factor = math.exp(beta)

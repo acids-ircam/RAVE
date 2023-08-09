@@ -98,7 +98,7 @@ rave.RAVE:
     valid_signal_crop = True
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
-    phase_1_duration = 500000
+    phase_1_duration = 1000000
     weights = {
         'feature_matching': 20
     }
