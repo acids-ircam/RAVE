@@ -44,7 +44,7 @@ flags.DEFINE_integer('save_every',
 flags.DEFINE_integer('n_signal',
                      131072,
                      help='Number of audio samples to use during training')
-flags.DEFINE_integer('channels', 1, help="number of audio channels")
+flags.DEFINE_integer('channels', 0, help="number of audio channels")
 flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('ckpt',
                     None,
@@ -60,8 +60,8 @@ flags.DEFINE_bool('derivative',
 flags.DEFINE_bool('normalize',
                   default=False,
                   help='Train RAVE on normalized signals')
-flags.DEFINE_bool('rand_pitch',
-                  default=False,
+flags.DEFINE_list('rand_pitch',
+                  default=None,
                   help='activates random pitch')
 flags.DEFINE_float('ema',
                    default=None,
@@ -125,20 +125,23 @@ def add_gin_extension(config_name: str) -> str:
 def main(argv):
     torch.set_float32_matmul_precision('high')
     torch.backends.cudnn.benchmark = True
+
     # check dataset channels
-    n_channels = FLAGS.channels or rave.dataset.get_channels_from_dataset(FLAGS.db_path)
+    n_channels = rave.dataset.get_training_channels(FLAGS.db_path, FLAGS.channels)
     gin.bind_parameter('RAVE.n_channels', n_channels)
+
+    # parse configuration
     gin.parse_config_files_and_bindings(
         map(add_gin_extension, FLAGS.config),
         FLAGS.override,
     )
+
+    # create model
     model = rave.RAVE()
-
-    print(model)
-
     if FLAGS.derivative:
         model.integrator = rave.dataset.get_derivator_integrator(model.sr)[1]
 
+    # parse datasset
     dataset = rave.dataset.get_dataset(FLAGS.db_path,
                                        model.sr,
                                        FLAGS.n_signal,
@@ -146,13 +149,12 @@ def main(argv):
                                        normalize=FLAGS.normalize,
                                        rand_pitch=FLAGS.rand_pitch,
                                        n_channels=n_channels)
-    
     train, val = rave.dataset.split_dataset(dataset, 98)
-    num_workers = FLAGS.workers
 
+    # get data-loader
+    num_workers = FLAGS.workers
     if os.name == "nt" or sys.platform == "darwin":
         num_workers = 0
-
     train = DataLoader(train,
                        FLAGS.batch,
                        True,

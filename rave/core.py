@@ -69,7 +69,6 @@ def amp_to_impulse_response(amp, target_size):
 
     return amp
 
-
 def fft_convolve(signal, kernel):
     """
     convolves signal by kernel on the last dimension
@@ -83,14 +82,33 @@ def fft_convolve(signal, kernel):
     return output
 
 
-def search_for_run(run_path, mode="last"):
+def get_ckpts(folder, name=None):
+    ckpts = map(str, Path(folder).rglob("*.ckpt"))
+    if name: 
+        ckpts = filter(lambda e: mode in os.path.basename(str(e)), ckpts)
+    ckpts = sorted(ckpts, key=os.path.getmtime)
+    return ckpts
+
+
+def get_versions(folder):
+    ckpts = map(str, Path(folder).rglob("version_*"))
+    ckpts = filter(lambda x: os.path.isdir(x), ckpts)
+    return sorted(Path(dirpath).iterdir(), key=os.path.getmtime)
+
+
+def search_for_run(run_path, name=None):
     if run_path is None: return None
     if ".ckpt" in run_path: return run_path
-    ckpts = map(str, Path(run_path).rglob("*.ckpt"))
-    ckpts = filter(lambda e: mode in os.path.basename(str(e)), ckpts)
-    ckpts = sorted(ckpts)
-    if len(ckpts): return ckpts[-1]
-    else: return None
+    ckpts = get_ckpts(run_path)
+    if len(ckpts) != 0:
+        return ckpts[0]
+    else:
+        print('No checkpoint found')
+    return None
+
+    # if len(ckpts): return ckpts[-1]
+    # elif os.path.isdir(os.path.join(run_path, "checkpoints")): return search_for_run(os.path.join(run_path, "checkpoints"))
+    # else: return None
 
 
 def setup_gpu():

@@ -11,6 +11,7 @@ import lmdb
 import numpy as np
 import requests
 import torch
+import torchaudio
 import yaml
 from scipy.signal import lfilter
 from torch.utils import data
@@ -157,7 +158,18 @@ class LazyAudioDataset(data.Dataset):
 def get_channels_from_dataset(db_path):
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
-    return metadata.get('channels', 1)
+    return metadata.get('channels')
+
+def get_training_channels(db_path, target_channels):
+    dataset_channels = get_channels_from_dataset(db_path)
+    if dataset_channels is not None:
+        if target_channels > dataset_channels:
+            raise RuntimeError('[Error] Requested number of channels is %s, but dataset has %s channels')%(FLAGS.channels, dataset_channels)
+    n_channels = target_channels or dataset_channels
+    if n_channels is None:
+        print('[Warning] channels not found in dataset, taking 1 by default')
+        n_channels = 1
+    return n_channels
 
 class HTTPAudioDataset(data.Dataset):
 
@@ -204,20 +216,27 @@ def get_dataset(db_path,
         return HTTPAudioDataset(db_path=db_path)
     with open(os.path.join(db_path, 'metadata.yaml'), 'r') as metadata:
         metadata = yaml.safe_load(metadata)
+
+    sr_dataset = metadata.get('sr', 44100)
     lazy = metadata['lazy']
 
     transform_list = [
         lambda x: x.astype(np.float32),
         transforms.RandomCrop(n_signal),
         transforms.RandomApply(
-            lambda x: random_phase_mangle(x, 20, 2000, .99, sr),
+            lambda x: random_phase_mangle(x, 20, 2000, .99, sr_dataset),
             p=.8,
         ),
         transforms.Dequantize(16),
     ]
 
     if rand_pitch:
-        transform_list.insert(1, transforms.RandomPitch(n_signal, [0.7, 1.2]))
+        rand_pitch = list(map(float, rand_pitch))
+        assert len(rand_pitch) == 2, "rand_pitch must be given two floats"
+        transform_list.insert(1, transforms.RandomPitch(n_signal, rand_pitch))
+
+    if sr_dataset != sr:
+        transform_list.append(transforms.Resample(sr_dataset, sr))
 
     if normalize:
         transform_list.append(normalize_signal)
@@ -228,13 +247,12 @@ def get_dataset(db_path,
     if augmentations:
         transform_list.extend(augmentations)
 
-
     transform_list.append(lambda x: x.astype(np.float32))
 
     transform_list = transforms.Compose(transform_list)
 
     if lazy:
-        return LazyAudioDataset(db_path, n_signal, sr, transform_list, n_channels)
+        return LazyAudioDataset(db_path, n_signal, sr_dataset, transform_list, n_channels)
     else:
         return AudioDataset(
             db_path,
@@ -288,7 +306,7 @@ def extract_audio(path: str, n_signal: int, sr: int,
         channel_map = (math.ceil(channels / input_channels) * list(range(input_channels)))[:channels]
     # time information
     start_sec = start_sample / sr
-    length = n_signal / sr# + 0.1
+    length = (n_signal * 2) / sr
     chunks = []
     for i in channel_map:
         process = subprocess.Popen(
@@ -315,4 +333,4 @@ def extract_audio(path: str, n_signal: int, sr: int,
         chunk = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 2**15
         chunk = np.concatenate([chunk, np.zeros(n_signal)], -1)
         chunks.append(chunk)
-    return np.stack(chunks)[:, :n_signal]
+    return np.stack(chunks)[:, :(n_signal*2)]

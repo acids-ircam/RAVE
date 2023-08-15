@@ -6,6 +6,8 @@ from torchaudio import transforms
 
 import rave
 
+include "configs/v2.gin"
+
 N_FFT = 2048
 N_MELS = 128
 HOP_LENGTH = 256
@@ -14,7 +16,6 @@ NUM_GRU_LAYERS = 2
 
 blocks.EncoderV2:
     data_size = %N_MELS
-    spectrogram = @transforms.MelSpectrogram
     ratios = %ENCODER_RATIOS
     dilations = [1]
 
@@ -37,5 +38,6 @@ blocks.GRU:
     num_layers = %NUM_GRU_LAYERS
 
 rave.RAVE:
-    enable_pqmf_encode = False
-    is_mel_input = True
+    spectrogram = @transforms.MelSpectrogram
+    input_mode = "mel" 
+    

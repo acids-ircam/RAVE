@@ -132,18 +132,29 @@ class RAVE(pl.LightningModule):
         n_bands: int = 16,
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
+        spectrogram: Optional[Callable] = None,
         update_discriminator_every: int = 2,
         n_channels: int = 1,
         input_mode: str = "pqmf",
         output_mode: str = "pqmf",
-        audio_monitor_epochs: int = 1
+        audio_monitor_epochs: int = 1,
+        # for retro-compatibility
+        enable_pqmf_encode: Optional[bool] = None,
+        enable_pqmf_decode: Optional[bool] = None,
     ):
         super().__init__()
         self.pqmf = pqmf(n_channels=n_channels)
+        self.spectrogram = None
+        if spectrogram is not None:
+            self.spectrogram = spectrogram()
         assert input_mode in ['pqmf', 'mel', 'raw']
         assert output_mode in ['raw', 'pqmf']
         self.input_mode = input_mode
         self.output_mode = output_mode
+        # retro-compatibility
+        if (enable_pqmf_encode is not None) or (enable_pqmf_decode is not None):
+            self.input_mode = "pqmf" if enable_pqmf_encode else "raw"
+            self.output_mode = "pqmf" if enable_pqmf_decode else "raw"
         self.encoder = encoder(n_channels=n_channels)
         self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)
@@ -180,10 +191,6 @@ class RAVE(pl.LightningModule):
         self.beta_factor = 1.
         self.integrator = None
 
-        # self.enable_pqmf_encode = enable_pqmf_encode
-        # self.enable_pqmf_decode = enable_pqmf_decode
-
-
         self.register_buffer("receptive_field", torch.tensor([0, 0]).long())
         self.audio_monitor_epochs = audio_monitor_epochs
 
@@ -211,11 +218,20 @@ class RAVE(pl.LightningModule):
         x = self.pqmf.inverse(x)
         x = x.reshape(*batch_size, self.n_channels, -1)
         return x
+
+    def _mel_encode(self, x: torch.Tensor):
+        batch_size = x.shape[:-2]
+        x = self.spectrogram(x)[..., :-1]
+        x = torch.log1p(x).reshape(*batch_size, -1, x.shape[-1])
+        return x
         
     def encode(self, x, return_mb: bool = False):
         x_enc = x
         if self.input_mode == "pqmf":
             x_enc = self._pqmf_encode(x)
+        elif self.input_mode == "mel":
+            x_enc = self._mel_encode(x)
+            
         z = self.encoder(x_enc)
         if return_mb:
             if self.input_mode == "pqmf":
@@ -233,7 +249,9 @@ class RAVE(pl.LightningModule):
         return y
 
     def forward(self, x):
-        return self.decode(self.encode(x))
+        z = self.encode(x, return_mb=False)
+        z = self.encoder.reparametrize(z)[0]
+        return self.decode(z)
 
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
         self.lr_schedulers().step()

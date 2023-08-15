@@ -27,6 +27,17 @@ class RandomApply(Transform):
             x = self.transform(x)
         return x
 
+class Resample(Transform):
+    """
+    Resample target signal to target sample rate.
+    """
+    def __init__(self, orig_sr: int, target_sr: int):
+        self.orig_sr = orig_sr
+        self.target_sr = target_sr
+
+    def __call__(self, x: np.ndarray):
+        return torchaudio.functional.resample(torch.from_numpy(x).float(), self.orig_sr, self.target_sr).numpy()
+
 
 class Compose(Transform):
     """

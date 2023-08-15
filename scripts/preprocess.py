@@ -141,13 +141,11 @@ def process_audio_array(audio: Tuple[int, bytes],
                         channels: int = 1) -> int:
     audio_id, audio_samples = audio
     buffers = {}
-    # descriptors = get_metadata(audio_samples)
     buffers['waveform'] = AudioExample.AudioBuffer(
-        shape=(channels, int(len(audio_samples)/ 2 / channels)),
+        shape=(channels, int(len(audio_samples) / channels)),
         sampling_rate=FLAGS.sampling_rate,
         data=audio_samples,
         precision=AudioExample.Precision.INT16,
-        # **descriptors
     )
 
     ae = AudioExample(buffers=buffers)
@@ -157,7 +155,7 @@ def process_audio_array(audio: Tuple[int, bytes],
             key.encode(),
             ae.SerializeToString(),
         )
-    return audio_id#, descriptors
+    return audio_id
 
 
 def process_audio_file(audio: Tuple[int, Tuple[str, float]],
@@ -219,10 +217,15 @@ def main(argv):
             print("Aborting...")
             exit()
 
+
     chunk_load = partial(load_audio_chunk,
                          n_signal=FLAGS.num_signal,
                          sr=FLAGS.sampling_rate,
                          channels=FLAGS.channels)
+
+    output_dir = os.path.join(*os.path.split(FLAGS.output_path)[:-1])
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
 
     # create database
     env = lmdb.open(
@@ -232,6 +235,7 @@ def main(argv):
         writemap=not FLAGS.dyndb,
     )
     pool = multiprocessing.Pool()
+
 
     # search for audio files
     audios = search_for_audios(FLAGS.input_path, FLAGS.ext)
@@ -250,32 +254,32 @@ def main(argv):
         processed_samples = map(partial(process_audio_array, env=env, channels=FLAGS.channels), chunks)
 
         pbar = tqdm(processed_samples)
+        n_seconds = 0
         for audio_id in pbar:
-            n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
-
+            n_seconds = (FLAGS.num_signal * 2) / FLAGS.sampling_rate * audio_id
             pbar.set_description(
                 f'dataset length: {timedelta(seconds=n_seconds)}')
-
+        pbar.close()
     else:
         audio_lengths = pool.imap_unordered(get_audio_length, audios)
         audio_lengths = filter(lambda x: x is not None, audio_lengths)
-
         audio_lengths = enumerate(audio_lengths)
-        # processed_samples, descriptors = map(partial(process_audio_file, env=env),
         processed_samples = map(partial(process_audio_file, env=env),
                                 audio_lengths)
         pbar = tqdm(processed_samples)
         n_seconds = 0
         for length in pbar:
+            print(length)
             n_seconds += length
             pbar.set_description(
                 f'dataset length: {timedelta(seconds=n_seconds)}')
+        pbar.close()
 
     with open(os.path.join(
             FLAGS.output_path,
             'metadata.yaml',
     ), 'w') as metadata:
-        yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels, 'n_seconds': n_seconds}, metadata)
+        yaml.safe_dump({'lazy': FLAGS.lazy, 'channels': FLAGS.channels, 'n_seconds': n_seconds, 'sr': FLAGS.sampling_rate}, metadata)
     pool.close()
     env.close()
 

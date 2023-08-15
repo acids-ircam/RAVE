@@ -432,6 +432,8 @@ class Encoder(nn.Module):
         repeat_layers,
         n_channels: int = 1,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
+        # retro-compatiblity
+        spectrogram = None
     ):
         super().__init__()
         data_size = data_size or n_channels
@@ -521,19 +523,12 @@ class EncoderV2(nn.Module):
         keep_dim: bool = False,
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         n_channels: int = 1,
-        spectrogram: Optional[Callable[[], Spectrogram]] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
         adain: Optional[Callable[[int], nn.Module]] = None,
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
         data_size = data_size or n_channels
-
-        self.spectrogram = None
-        if spectrogram is not None:
-            self.spectrogram = spectrogram()
-        else:
-            self.spectrogram = None
 
         net = [
             normalization(
@@ -594,10 +589,6 @@ class EncoderV2(nn.Module):
         self.net = cc.CachedSequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.spectrogram is not None:
-            x = self.spectrogram(x[:, 0])[..., :-1]
-            x = torch.log1p(x)
-
         x = self.net(x)
         return x
 

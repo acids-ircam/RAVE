@@ -19,7 +19,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from absl import flags, app
-from typing import Union
+from typing import Union, Optional
 
 try:
     import rave
@@ -46,13 +46,15 @@ flags.DEFINE_float(
     lower_bound=.1,
     upper_bound=.999,
     help='Fidelity to use during inference (Variational mode only)')
-flags.DEFINE_bool(
-    'stereo',
-    default=False,
-    help='Enable fake stereo mode (one encoding, double decoding')
+flags.DEFINE_string('output', 
+                     default= None,
+                     help = "")
 flags.DEFINE_bool('ema_weights',
                   default=False,
                   help='Use ema weights if avaiable')
+flags.DEFINE_integer('channels',
+                     default=None,
+                     help = "number of out channels for export")
 flags.DEFINE_integer('sr',
                      default=None,
                      help='Optional resampling sample rate')
@@ -63,18 +65,18 @@ class ScriptedRAVE(nn_tilde.Module):
 
     def __init__(self,
                  pretrained: rave.RAVE,
-                 stereo: bool,
+                 channels: Optional[int] = None,
                  fidelity: float = .95,
                  target_sr: bool = None) -> None:
         super().__init__()
         self.pqmf = pretrained.pqmf
-        self.encoder = pretrained.encoder
-        self.decoder = pretrained.decoder
-        self.n_channels = pretrained.n_channels
-
         self.sr = pretrained.sr
-
+        self.spectrogram = pretrained.spectrogram
         self.resampler = None
+        self.input_mode = pretrained.input_mode
+        self.output_mode = pretrained.output_mode
+        self.n_channels = pretrained.n_channels
+        self.target_channels = channels or self.n_channels
 
         if target_sr is not None:
             if target_sr != self.sr:
@@ -83,15 +85,13 @@ class ScriptedRAVE(nn_tilde.Module):
                 self.sr = target_sr
 
         self.full_latent_size = pretrained.latent_size
-
         self.is_using_adain = False
         for m in self.modules():
             if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
                 self.is_using_adain = True
                 break
-
-        if self.is_using_adain and stereo:
-            raise ValueError("Stereo mode not yet supported with AdaIN")
+        if self.is_using_adain and (self.n_channels != self.target_channels):
+            raise ValueError("AdaIN requires the original number of channels")
 
         self.register_attribute("learn_target", False)
         self.register_attribute("reset_target", False)
@@ -122,24 +122,23 @@ class ScriptedRAVE(nn_tilde.Module):
                 f'Encoder type {pretrained.encoder.__class__.__name__} not supported'
             )
 
-        x_len = 2**14
-        x = torch.zeros(1, 1, x_len)
+        self.fake_adain = rave.blocks.AdaptiveInstanceNormalization(0)
 
+        # have to init cached conv before graphing
+        self.encoder = pretrained.encoder
+        self.decoder = pretrained.decoder
+        x_len = 2**14
+        x = torch.zeros(1, self.n_channels, x_len)
         if self.resampler is not None:
             x = self.resampler.to_model_sampling_rate(x)
-
-        x_m = x.clone() if self.pqmf is None else self.pqmf(x)
-
-        z = self.encode(x_m)
-
+        z = self.encode(x)
         ratio_encode = x_len // z.shape[-1]
 
-        self.stereo = stereo
-        if (stereo) and self.n_channels != 1:
-            logging.info('[Warning] Stereo mode is only functional when the model has 1 channel. Disabling stereo mode')
-            self.stereo = False
-
-        self.fake_adain = rave.blocks.AdaptiveInstanceNormalization(0)
+        # configure encoder
+        if pretrained.input_mode == "pqmf":
+            encode_shape = (self.pqmf.n_band, 2**14 // self.pqmf.n_band) 
+        else:
+            encode_shape = (pretrained.n_channels, 2**14) 
 
         self.register_method(
             "encode",
@@ -157,31 +156,24 @@ class ScriptedRAVE(nn_tilde.Module):
             "decode",
             in_channels=self.latent_size,
             in_ratio=ratio_encode,
-            out_channels=n_outs,
+            out_channels=self.target_channels,
             out_ratio=1,
             input_labels=[
                 f'(signal) Latent dimension {i+1}'
                 for i in range(self.latent_size)
             ],
-            output_labels=generated_labels,
+            output_labels=['(signal) Channel %d'%d for d in range(1, self.target_channels+1)]
         )
 
         self.register_method(
             "forward",
             in_channels=self.n_channels,
             in_ratio=1,
-            out_channels=n_outs,
+            out_channels=self.target_channels,
             out_ratio=1,
             input_labels=['(signal) Channel %d'%d for d in range(1, self.n_channels + 1)],
-            output_labels=generated_labels
+            output_labels=['(signal) Channel %d'%d for d in range(1, self.target_channels+1)]
         )
-
-        self.register_attribute('dumb', 0)
-
-    def get_dumb(self) -> int:
-        return 0
-    def set_dumb(self, value: int) -> None:
-        return
 
     def post_process_latent(self, z):
         raise NotImplementedError
@@ -216,11 +208,14 @@ class ScriptedRAVE(nn_tilde.Module):
         if self.resampler is not None:
             x = self.resampler.to_model_sampling_rate(x)
 
-        if self.pqmf is not None:
-            batch_size = x.shape[:-2]
+        batch_size = x.shape[:-2]
+        if self.input_mode == "pqmf":
             x = x.reshape(-1, 1, x.shape[-1])
             x = self.pqmf(x)
             x = x.reshape(batch_size + (-1, x.shape[-1]))
+        elif self.input_mode == "mel":
+            x = self.spectrogram(x)[..., :-1]
+            x = torch.log1p(x).reshape(batch_size + (-1, x.shape[-1]))
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
@@ -229,24 +224,27 @@ class ScriptedRAVE(nn_tilde.Module):
     def decode(self, z, from_forward: bool = False):
         if self.is_using_adain and not from_forward:
             self.update_adain()
-        if self.stereo:
-            z = torch.cat([z, z], 0)
+
+        if self.target_channels > self.n_channels:
+            # z = torch.cat([z, z], 0)
+            z = z.repeat(math.ceil(self.target_channels / self.n_channels), 1, 1)[:self.target_channels]
 
         z = self.pre_process_latent(z)
         y = self.decoder(z)
 
+        batch_size = z.shape[:-2]
         if self.pqmf is not None:
             y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
             y = self.pqmf.inverse(y)
-            y = y.reshape(batch_size, self.n_channels, -1)
+            y = y.reshape(batch_size+(self.n_channels, -1))
 
         if self.resampler is not None:
             y = self.resampler.from_model_sampling_rate(y)
 
-        if self.stereo:
-            #TODO make channels check
-            y = torch.cat(y.chunk(2, 0), 1)
-
+        if self.target_channels > self.n_channels:
+            y = torch.cat(y.chunk(self.target_channels, 0), 1)
+        elif self.target_channels < self.n_channels:
+            y = y[:, :self.target_channels]
         return y
 
     def forward(self, x):
@@ -359,6 +357,7 @@ def main(argv):
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
+        print('model found : %s'%checkpoint)
         checkpoint = torch.load(checkpoint, map_location='cpu')
         if FLAGS.ema_weights and "EMA" in checkpoint["callbacks"]:
             pretrained.load_state_dict(
@@ -371,7 +370,8 @@ def main(argv):
                 strict=False,
             )
     else:
-        print("No checkpoint found, RAVE will remain randomly initialized")
+        print("No checkpoint found")
+        exit()
     pretrained.eval()
 
     if isinstance(pretrained.encoder, rave.blocks.VariationalEncoder):
@@ -400,20 +400,19 @@ def main(argv):
 
     scripted_rave = script_class(
         pretrained=pretrained,
-        stereo=FLAGS.stereo,
+        channels = FLAGS.channels,
         fidelity=FLAGS.fidelity,
         target_sr=FLAGS.sr,
     )
 
     logging.info("save model")
+    output = FLAGS.output or FLAGS.run
     model_name = os.path.basename(os.path.normpath(FLAGS.run))
     if FLAGS.streaming:
         model_name += "_streaming"
-    if FLAGS.stereo:
-        model_name += "_stereo"
     model_name += ".ts"
 
-    scripted_rave.export_to_ts(os.path.join(FLAGS.run, model_name))
+    scripted_rave.export_to_ts(os.path.join(output, model_name))
 
     logging.info(
         f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
