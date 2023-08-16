@@ -68,7 +68,7 @@ def main(argv):
 
     recursive_replace(pretrained)
 
-    x = torch.randn(1, 1, 2**15)
+    x = torch.randn(1, pretrained.n_channels, 2**15)
     pretrained(x)
 
     name = os.path.basename(os.path.normpath(FLAGS.run))

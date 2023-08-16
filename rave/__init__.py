@@ -30,3 +30,4 @@ from .blocks import *
 from .discriminator import *
 from .model import RAVE, BetaWarmupCallback
 from .pqmf import *
+from .balancer import *

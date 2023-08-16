@@ -38,6 +38,6 @@ blocks.GRU:
     num_layers = %NUM_GRU_LAYERS
 
 rave.RAVE:
-    spectrogram = @transforms.MelSpectrogram
+    spectrogram = @transforms.MelSpectrogram()
     input_mode = "mel" 
     

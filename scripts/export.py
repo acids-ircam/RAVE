@@ -68,6 +68,7 @@ class ScriptedRAVE(nn_tilde.Module):
                  channels: Optional[int] = None,
                  fidelity: float = .95,
                  target_sr: bool = None) -> None:
+
         super().__init__()
         self.pqmf = pretrained.pqmf
         self.sr = pretrained.sr
@@ -135,10 +136,11 @@ class ScriptedRAVE(nn_tilde.Module):
         ratio_encode = x_len // z.shape[-1]
 
         # configure encoder
-        if pretrained.input_mode == "pqmf":
-            encode_shape = (self.pqmf.n_band, 2**14 // self.pqmf.n_band) 
-        else:
-            encode_shape = (pretrained.n_channels, 2**14) 
+        if pretrained.input_mode != "pqmf":
+            # scripting fails if cached conv is not initialized
+            self.pqmf(x)
+
+        encode_shape = (pretrained.n_channels, 2**14) 
 
         self.register_method(
             "encode",
@@ -214,8 +216,9 @@ class ScriptedRAVE(nn_tilde.Module):
             x = self.pqmf(x)
             x = x.reshape(batch_size + (-1, x.shape[-1]))
         elif self.input_mode == "mel":
-            x = self.spectrogram(x)[..., :-1]
-            x = torch.log1p(x).reshape(batch_size + (-1, x.shape[-1]))
+            if self.spectrogram is not None:
+                x = self.spectrogram(x)[..., :-1]
+                x = torch.log1p(x).reshape(batch_size + (-1, x.shape[-1]))
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
@@ -245,6 +248,7 @@ class ScriptedRAVE(nn_tilde.Module):
             y = torch.cat(y.chunk(self.target_channels, 0), 1)
         elif self.target_channels < self.n_channels:
             y = y[:, :self.target_channels]
+        # return y[..., ]
         return y
 
     def forward(self, x):
@@ -352,13 +356,16 @@ def main(argv):
 
     logging.info("building rave")
 
-    gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
-    checkpoint = rave.core.search_for_run(FLAGS.run)
+    config_file = rave.core.search_for_config(FLAGS.run)
+    if config_file is None:
+        print('Config file not found in %s'%FLAGS.run)
+    gin.parse_config_file(config_file)
+    FLAGS.run = rave.core.search_for_run(FLAGS.run)
 
     pretrained = rave.RAVE()
-    if checkpoint is not None:
-        print('model found : %s'%checkpoint)
-        checkpoint = torch.load(checkpoint, map_location='cpu')
+    if FLAGS.run is not None:
+        print('model found : %s'%FLAGS.run)
+        checkpoint = torch.load(FLAGS.run, map_location='cpu')
         if FLAGS.ema_weights and "EMA" in checkpoint["callbacks"]:
             pretrained.load_state_dict(
                 checkpoint["callbacks"]["EMA"],
@@ -406,16 +413,15 @@ def main(argv):
     )
 
     logging.info("save model")
-    output = FLAGS.output or FLAGS.run
+    output = FLAGS.output or os.path.dirname(FLAGS.run)
     model_name = os.path.basename(os.path.normpath(FLAGS.run))
     if FLAGS.streaming:
         model_name += "_streaming"
     model_name += ".ts"
 
     scripted_rave.export_to_ts(os.path.join(output, model_name))
-
     logging.info(
-        f"all good ! model exported to {os.path.join(FLAGS.run, model_name)}")
+        f"all good ! model exported to {os.path.join(output, model_name)}")
 
 
 if __name__ == "__main__":

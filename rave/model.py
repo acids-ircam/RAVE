@@ -78,8 +78,10 @@ class QuantizeCallback(WarmupCallback):
 @gin.configurable
 class BetaWarmupCallback(pl.Callback):
 
-    def __init__(self, initial_value: float, target_value: float,
-                 warmup_len: int, log: bool = True) -> None:
+    def __init__(self, initial_value: float = .2,
+                       target_value: float = .2,
+                       warmup_len: int = 1,
+                       log: bool = True) -> None:
         super().__init__()
         self.state = {'training_steps': 0}
         self.warmup_len = warmup_len
@@ -128,8 +130,9 @@ class RAVE(pl.LightningModule):
         num_skipped_features,
         audio_distance: Callable[[], nn.Module],
         multiband_audio_distance: Callable[[], nn.Module],
-        weights: Dict[str, float],
         n_bands: int = 16,
+        balancer = None,
+        weights: Optional[Dict[str, float]] = None,
         warmup_quantize: Optional[int] = None,
         pqmf: Optional[Callable[[], nn.Module]] = None,
         spectrogram: Optional[Callable] = None,
@@ -141,12 +144,14 @@ class RAVE(pl.LightningModule):
         # for retro-compatibility
         enable_pqmf_encode: Optional[bool] = None,
         enable_pqmf_decode: Optional[bool] = None,
+        is_mel_input: Optional[bool] = None,
+        loss_weights = None
     ):
         super().__init__()
         self.pqmf = pqmf(n_channels=n_channels)
         self.spectrogram = None
         if spectrogram is not None:
-            self.spectrogram = spectrogram()
+            self.spectrogram = spectrogram
         assert input_mode in ['pqmf', 'mel', 'raw']
         assert output_mode in ['raw', 'pqmf']
         self.input_mode = input_mode
@@ -155,6 +160,13 @@ class RAVE(pl.LightningModule):
         if (enable_pqmf_encode is not None) or (enable_pqmf_decode is not None):
             self.input_mode = "pqmf" if enable_pqmf_encode else "raw"
             self.output_mode = "pqmf" if enable_pqmf_decode else "raw"
+        if (is_mel_input) is not None:
+            self.input_mode = "mel"
+        if loss_weights is not None:
+            weights = loss_weights
+        assert weights is not None, "RAVE model requires either weights or loss_weights (depreciated) keyword"
+
+        # setup model
         self.encoder = encoder(n_channels=n_channels)
         self.decoder = decoder(n_channels=n_channels)
         self.discriminator = discriminator(n_channels=n_channels)

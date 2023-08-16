@@ -131,10 +131,16 @@ def main(argv):
     gin.bind_parameter('RAVE.n_channels', n_channels)
 
     # parse configuration
-    gin.parse_config_files_and_bindings(
-        map(add_gin_extension, FLAGS.config),
-        FLAGS.override,
-    )
+    if FLAGS.ckpt:
+        config_file = rave.core.search_for_config(FLAGS.ckpt)
+        if config_file is None:
+            print('Config file not found in %s'%FLAGS.run)
+        gin.parse_config_file(config_file)
+    else:
+        gin.parse_config_files_and_bindings(
+            map(add_gin_extension, FLAGS.config),
+            FLAGS.override,
+        )
 
     # create model
     model = rave.RAVE()
@@ -237,9 +243,12 @@ def main(argv):
 
     run = rave.core.search_for_run(FLAGS.ckpt)
     if run is not None:
-        step = torch.load(run, map_location='cpu')["global_step"]
-        trainer.fit_loop.epoch_loop._batches_that_stepped = step
-
+        print('loading state from file %s'%run)
+        loaded = torch.load(run, map_location='cpu')
+        # model = model.load_state_dict(loaded)
+        trainer.fit_loop.epoch_loop._batches_that_stepped = loaded['global_step']
+        # model = model.load_state_dict(loaded['state_dict'])
+    
     with open(os.path.join(FLAGS.out_path, RUN_NAME, "config.gin"), "w") as config_out:
         config_out.write(gin.operative_config_str())
 

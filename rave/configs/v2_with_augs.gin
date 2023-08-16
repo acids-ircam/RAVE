@@ -7,6 +7,8 @@ from rave import blocks
 from rave import discriminator
 from rave import transforms
 
+from torchaudio import transforms as ta_transforms
+
 import torch.nn as nn
 
 include "configs/v1.gin"
@@ -18,9 +20,16 @@ DILATIONS = [
     [1, 3, 9],
     [1, 3],
 ]
+ENCODER_RATIOS = [2, 2, 2]
 RATIOS = [4, 4, 4, 2]
 CAPACITY = 96
 NOISE_AUGMENTATION = 0
+
+# MELSPEC PROPERTIES
+N_FFT = 2048
+N_MELS = 128
+HOP_LENGTH = 256
+NUM_GRU_LAYERS = 2
 
 core.AudioDistanceV1.log_epsilon = 1e-7
 
@@ -32,7 +41,7 @@ core.get_augmented_latent_size:
 dataset.get_dataset:
     augmentations = [
         @augmentations/transforms.RandomCompress(),
-        @augmentations/transforms.FrequencyMasking()
+        # @augmentations/transforms.FrequencyMasking()
     ]
 
 augmentations/transforms.RandomCompress:
@@ -40,11 +49,19 @@ augmentations/transforms.RandomCompress:
     threshold=-40
     prob = 0.5
 
+ta_transforms.MelSpectrogram:
+    sample_rate = %SAMPLING_RATE
+    n_fft = %N_FFT
+    win_length = %N_FFT
+    hop_length = %HOP_LENGTH
+    normalized = True
+    n_mels = %N_MELS
+
 # ENCODER
 blocks.EncoderV2:
-    data_size = %N_BAND
+    data_size = %N_MELS
+    ratios = %ENCODER_RATIOS
     capacity = %CAPACITY
-    ratios = %RATIOS
     latent_size = %LATENT_SIZE
     n_out = 2
     kernel_size = %KERNEL_SIZE
@@ -98,8 +115,9 @@ rave.RAVE:
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
     phase_1_duration = 500000
+    spectrogram = @ta_transforms.MelSpectrogram()
     update_discriminator_every = 4
-    enable_pqmf_encode = True
-    enable_pqmf_decode = True
+    input_mode = "mel"
+    output_mode = "pqmf"
     audio_monitor_epochs = 10
     

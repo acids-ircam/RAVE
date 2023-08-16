@@ -39,7 +39,6 @@ def pole_to_z_filter(omega, amplitude=.9):
     b = [abs(z0)**2, -2 * np.real(z0), 1]
     return b, a
 
-
 def random_phase_mangle(x, min_f, max_f, amp, sr):
     angle = random_angle(min_f, max_f, sr)
     b, a = pole_to_z_filter(angle, amp)
@@ -95,20 +94,32 @@ def get_versions(folder):
     ckpts = filter(lambda x: os.path.isdir(x), ckpts)
     return sorted(Path(dirpath).iterdir(), key=os.path.getmtime)
 
+def search_for_config(folder):
+    if os.path.isfile(folder):
+        folder = os.path.dirname(folder)
+    configs = list(map(str, Path(folder).rglob("config.gin")))
+    if configs != []:
+        return os.path.abspath(os.path.join(folder, "config.gin"))
+    configs = list(map(str, Path(folder).rglob("../config.gin")))
+    if configs != []:
+        return os.path.abspath(os.path.join(folder, "../config.gin"))
+    configs = list(map(str, Path(folder).rglob("../../config.gin")))
+    if configs != []:
+        return os.path.abspath(os.path.join(folder, "../../config.gin"))
+    else:
+        return None
+
+    
 
 def search_for_run(run_path, name=None):
     if run_path is None: return None
     if ".ckpt" in run_path: return run_path
     ckpts = get_ckpts(run_path)
     if len(ckpts) != 0:
-        return ckpts[0]
+        return ckpts[-1]
     else:
         print('No checkpoint found')
     return None
-
-    # if len(ckpts): return ckpts[-1]
-    # elif os.path.isdir(os.path.join(run_path, "checkpoints")): return search_for_run(os.path.join(run_path, "checkpoints"))
-    # else: return None
 
 
 def setup_gpu():
