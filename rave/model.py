@@ -113,6 +113,23 @@ class BetaWarmupCallback(pl.Callback):
         self.state.update(state_dict)
 
 
+@torch.fx.wrap
+def _pqmf_encode(pqmf, x: torch.Tensor):
+    batch_size = x.shape[:-2]
+    x_multiband = x.reshape(-1, 1, x.shape[-1])
+    x_multiband = pqmf(x_multiband)
+    x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
+    return x_multiband
+
+
+@torch.fx.wrap
+def _pqmf_decode(pqmf, x: torch.Tensor, batch_size: Iterable[int], n_channels: int):
+    x = x.reshape(x.shape[0] * n_channels, -1, x.shape[-1])
+    x = pqmf.inverse(x)
+    x = x.reshape(*batch_size, n_channels, -1)
+    return x
+
+
 @gin.configurable
 class RAVE(pl.LightningModule):
 
@@ -218,19 +235,6 @@ class RAVE(pl.LightningModule):
                  'lr_scheduler': {'scheduler': torch.optim.lr_scheduler.LinearLR(gen_opt, start_factor=1.0, end_factor=0.1, total_iters=self.warmup)}},
                 {'optimizer':dis_opt})
 
-    def _pqmf_encode(self, x: torch.Tensor):
-        batch_size = x.shape[:-2]
-        x_multiband = x.reshape(-1, 1, x.shape[-1])
-        x_multiband = self.pqmf(x_multiband)
-        x_multiband = x_multiband.reshape(*batch_size, -1, x_multiband.shape[-1])
-        return x_multiband
-    
-    def _pqmf_decode(self, x: torch.Tensor, batch_size: Iterable[int]):
-        x = x.reshape(x.shape[0] * self.n_channels, -1, x.shape[-1])
-        x = self.pqmf.inverse(x)
-        x = x.reshape(*batch_size, self.n_channels, -1)
-        return x
-
     def _mel_encode(self, x: torch.Tensor):
         batch_size = x.shape[:-2]
         x = self.spectrogram(x)[..., :-1]
@@ -240,7 +244,7 @@ class RAVE(pl.LightningModule):
     def encode(self, x, return_mb: bool = False):
         x_enc = x
         if self.input_mode == "pqmf":
-            x_enc = self._pqmf_encode(x)
+            x_enc = _pqmf_encode(self.pqmf, x_enc)
         elif self.input_mode == "mel":
             x_enc = self._mel_encode(x)
             
@@ -249,7 +253,7 @@ class RAVE(pl.LightningModule):
             if self.input_mode == "pqmf":
                 return z, x_enc
             else:
-                x_multiband = self._pqmf_encode(x)
+                x_multiband = _pqmf_encode(self.pqmf, x_enc)
                 return z, x_multiband
         return z
 
@@ -257,7 +261,7 @@ class RAVE(pl.LightningModule):
         batch_size = z.shape[:-2]
         y = self.decoder(z)
         if self.output_mode == "pqmf":
-            y = self._pqmf_decode(y, batch_size=batch_size)
+            y = _pqmf_decode(self.pqmf, y, batch_size=batch_size, n_channels=self.n_channels)
         return y
 
     def forward(self, x):

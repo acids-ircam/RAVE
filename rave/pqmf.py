@@ -176,6 +176,7 @@ def classic_inverse(x, hk):
     return y
 
 
+@torch.fx.wrap
 class PQMF(nn.Module):
     """
     Pseudo Quadrature Mirror Filter multiband decomposition / reconstruction
