@@ -525,6 +525,7 @@ class EncoderV2(nn.Module):
         n_channels: int = 1,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
         adain: Optional[Callable[[int], nn.Module]] = None,
+        spectrogram = None
     ) -> None:
         super().__init__()
         dilations_list = normalize_dilations(dilations, ratios)
