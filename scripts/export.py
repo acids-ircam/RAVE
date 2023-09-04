@@ -28,6 +28,10 @@ flags.DEFINE_string('run',
                     default=None,
                     help='Path to the run to export',
                     required=True)
+flags.DEFINE_string('mode',
+                    default='last',
+                    help='Choose between exporting the last checkpoint or the best. Default is "last"',
+                    required=False)
 flags.DEFINE_bool('streaming',
                   default=False,
                   help='Enable the model streaming mode')
@@ -338,7 +342,7 @@ def main(argv):
     logging.info("building rave")
 
     gin.parse_config_file(os.path.join(FLAGS.run, "config.gin"))
-    checkpoint = rave.core.search_for_run(FLAGS.run)
+    checkpoint = rave.core.search_for_run(FLAGS.run, FLAGS.mode)
 
     pretrained = rave.RAVE()
     if checkpoint is not None:
