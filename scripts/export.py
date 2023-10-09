@@ -60,7 +60,6 @@ flags.DEFINE_integer('sr',
                      help='Optional resampling sample rate')
 
 
-
 class ScriptedRAVE(nn_tilde.Module):
 
     def __init__(self,
@@ -203,7 +202,13 @@ class ScriptedRAVE(nn_tilde.Module):
         self.reset_target = False,
 
     @torch.jit.export
-    def encode(self, x):
+    def encode(self, x, stereo: bool = False):
+        if stereo:
+            if self.n_channels == 1:
+                x = x[:, 0].unsqueeze(0)
+            elif self.n_channels > 2:
+                raise RuntimeError("stereo mode is not available when n_channels > 2")
+
         if self.is_using_adain:
             self.update_adain()
 
@@ -224,12 +229,13 @@ class ScriptedRAVE(nn_tilde.Module):
         return z
 
     @torch.jit.export
-    def decode(self, z, from_forward: bool = False):
+    def decode(self, z, from_forward: bool = False, stereo: bool = False):
         if self.is_using_adain and not from_forward:
             self.update_adain()
 
-        if self.target_channels > self.n_channels:
-            # z = torch.cat([z, z], 0)
+        if stereo:
+            z = torch.cat([z, z], 0)
+        elif self.target_channels > self.n_channels:
             z = z.repeat(math.ceil(self.target_channels / self.n_channels), 1, 1)[:self.target_channels]
 
         z = self.pre_process_latent(z)
@@ -244,15 +250,17 @@ class ScriptedRAVE(nn_tilde.Module):
         if self.resampler is not None:
             y = self.resampler.from_model_sampling_rate(y)
 
-        if self.target_channels > self.n_channels:
+        if stereo:
+            y = torch.cat([y[:int(z.shape[0]/2)], y[int(z.shape[0]/2):]], 1)
+        elif self.target_channels > self.n_channels:
             y = torch.cat(y.chunk(self.target_channels, 0), 1)
         elif self.target_channels < self.n_channels:
             y = y[:, :self.target_channels]
         # return y[..., ]
         return y
 
-    def forward(self, x):
-        return self.decode(self.encode(x), from_forward=True)
+    def forward(self, x, stereo: bool = False):
+        return self.decode(self.encode(x, stereo=stereo), from_forward=True, stereo=stereo)
 
     @torch.jit.export
     def get_learn_target(self) -> bool:
@@ -398,6 +406,7 @@ def main(argv):
     x = torch.zeros(1, pretrained.n_channels, 2**14)
     pretrained(x)
 
+
     logging.info("optimize model")
 
     for m in pretrained.modules():
@@ -419,7 +428,18 @@ def main(argv):
         model_name += "_streaming"
     model_name += ".ts"
 
+    output = os.path.abspath(output)
+    if not os.path.isdir(output):
+        os.makedirs(output)
     scripted_rave.export_to_ts(os.path.join(output, model_name))
+    try:
+        if pretrained.n_channels <= 2:
+            # test stereo mode for VST export
+            x = scripted_rave(torch.cat([x, x], 1), stereo=True)
+            logging.info(f"this model seems compatible with the RAVE vst. Enjoy!")
+    except Exception as e:
+        logging.warning(f"this model will not work with the RAVE VST. \n Caught error : %s"%e)
+
     logging.info(
         f"all good ! model exported to {os.path.join(output, model_name)}")
 

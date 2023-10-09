@@ -307,6 +307,11 @@ class RAVE(pl.LightningModule):
             y_raw = y 
             y_multiband = self._pqmf_encode(y)
 
+        # TODO this has been added for training with num_samples = 65536 samples, output padding seems to mess with output dimensions. 
+        # this may probably conflict with cached_conv
+        y_raw = y_raw[..., :x_raw.shape[-1]]
+        y_multiband = y_multiband[..., :x_multiband.shape[-1]]
+
         p.tick('decode')
 
         if self.valid_signal_crop and self.receptive_field.sum():
@@ -425,7 +430,7 @@ class RAVE(pl.LightningModule):
         z = self.encoder.reparametrize(z)[0]
         y = self.decode(z)
 
-        distance = self.audio_distance(x, y)
+        distance = self.audio_distance(x, y[..., :x.shape[-1]])
         full_distance = sum(distance.values())
 
         if self.trainer is not None:

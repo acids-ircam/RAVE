@@ -234,7 +234,7 @@ def main(argv):
         accelerator=accelerator,
         devices=devices,
         callbacks=callbacks,
-        max_epochs=100000,
+        max_epochs=300000,
         max_steps=FLAGS.max_steps,
         profiler="simple",
         enable_progress_bar=FLAGS.progress,
