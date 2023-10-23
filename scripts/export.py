@@ -46,9 +46,12 @@ flags.DEFINE_float(
     lower_bound=.1,
     upper_bound=.999,
     help='Fidelity to use during inference (Variational mode only)')
+flags.DEFINE_string('name', 
+                     default= None,
+                     help = "custom name for the scripted model (default: run name)")
 flags.DEFINE_string('output', 
                      default= None,
-                     help = "")
+                     help = "output location of scripted model")
 flags.DEFINE_bool('ema_weights',
                   default=False,
                   help='Use ema weights if avaiable')
@@ -77,6 +80,7 @@ class ScriptedRAVE(nn_tilde.Module):
         self.output_mode = pretrained.output_mode
         self.n_channels = pretrained.n_channels
         self.target_channels = channels or self.n_channels
+        self.stereo_mode = False
 
         if target_sr is not None:
             if target_sr != self.sr:
@@ -202,8 +206,12 @@ class ScriptedRAVE(nn_tilde.Module):
         self.reset_target = False,
 
     @torch.jit.export
-    def encode(self, x, stereo: bool = False):
-        if stereo:
+    def set_stereo_mode(self, stereo):
+        self.stereo_mode = bool(stereo);
+
+    @torch.jit.export
+    def encode(self, x):
+        if self.stereo_mode:
             if self.n_channels == 1:
                 x = x[:, 0].unsqueeze(0)
             elif self.n_channels > 2:
@@ -229,13 +237,14 @@ class ScriptedRAVE(nn_tilde.Module):
         return z
 
     @torch.jit.export
-    def decode(self, z, from_forward: bool = False, stereo: bool = False):
+    def decode(self, z, from_forward: bool = False):
         if self.is_using_adain and not from_forward:
             self.update_adain()
+        n_batch = z.shape[0]
+        if self.stereo_mode:
+            n_batch = int(n_batch / 2)
 
-        if stereo:
-            z = torch.cat([z, z], 0)
-        elif self.target_channels > self.n_channels:
+        if self.target_channels > self.n_channels:
             z = z.repeat(math.ceil(self.target_channels / self.n_channels), 1, 1)[:self.target_channels]
 
         z = self.pre_process_latent(z)
@@ -250,8 +259,12 @@ class ScriptedRAVE(nn_tilde.Module):
         if self.resampler is not None:
             y = self.resampler.from_model_sampling_rate(y)
 
-        if stereo:
-            y = torch.cat([y[:int(z.shape[0]/2)], y[int(z.shape[0]/2):]], 1)
+        # if (output-) padding is scrambled
+        if y.shape[-1] > z.shape[-1] * self.decode_params[1]:
+            y = y[..., :z.shape[-1] * self.decode_params[1]]
+
+        if self.stereo_mode:
+            y = torch.cat([y[:n_batch], y[n_batch:]], 1)
         elif self.target_channels > self.n_channels:
             y = torch.cat(y.chunk(self.target_channels, 0), 1)
         elif self.target_channels < self.n_channels:
@@ -259,8 +272,8 @@ class ScriptedRAVE(nn_tilde.Module):
         # return y[..., ]
         return y
 
-    def forward(self, x, stereo: bool = False):
-        return self.decode(self.encode(x, stereo=stereo), from_forward=True, stereo=stereo)
+    def forward(self, x):
+        return self.decode(self.encode(x), from_forward=True)
 
     @torch.jit.export
     def get_learn_target(self) -> bool:
@@ -311,7 +324,7 @@ class VariationalScriptedRAVE(ScriptedRAVE):
     def pre_process_latent(self, z):
         noise = torch.randn(
             z.shape[0],
-            self.full_latent_size - self.latent_size,
+            self.full_latent_size - z.shape[1],
             z.shape[-1],
         ).type_as(z)
         z = torch.cat([z, noise], 1)
@@ -404,7 +417,7 @@ def main(argv):
     logging.info("warmup pass")
 
     x = torch.zeros(1, pretrained.n_channels, 2**14)
-    pretrained(x)
+    # pretrained(x)
 
 
     logging.info("optimize model")
@@ -420,10 +433,12 @@ def main(argv):
         fidelity=FLAGS.fidelity,
         target_sr=FLAGS.sr,
     )
+    z = scripted_rave.encode(x)
+    x = scripted_rave.decode(z)
 
     logging.info("save model")
     output = FLAGS.output or os.path.dirname(FLAGS.run)
-    model_name = os.path.basename(os.path.normpath(FLAGS.run))
+    model_name = FLAGS.name or FLAGS.run.split(os.sep)[-4]
     if FLAGS.streaming:
         model_name += "_streaming"
     model_name += ".ts"
@@ -435,8 +450,11 @@ def main(argv):
     try:
         if pretrained.n_channels <= 2:
             # test stereo mode for VST export
-            x = scripted_rave(torch.cat([x, x], 1), stereo=True)
-            logging.info(f"this model seems compatible with the RAVE vst. Enjoy!")
+            scripted_rave.set_stereo_mode(True)
+            z_vst_input = torch.zeros(2, scripted_rave.full_latent_size, z.shape[-1])
+            out = scripted_rave.decode(z_vst_input)
+            assert out.shape[1] == 2, "model output is not stereo"
+            logging.info(f"this model seems compatible with the RAVE vst.")
     except Exception as e:
         logging.warning(f"this model will not work with the RAVE VST. \n Caught error : %s"%e)
 
