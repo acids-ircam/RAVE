@@ -205,11 +205,14 @@ def main(argv):
         processed_samples = map(partial(process_audio_array, env=env), chunks)
 
         pbar = tqdm(processed_samples)
-        for audio_id in pbar:
-            n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
+        try:
+            for audio_id in pbar:
+                n_seconds = FLAGS.num_signal / FLAGS.sampling_rate * audio_id
 
-            pbar.set_description(
-                f'dataset length: {timedelta(seconds=n_seconds)}')
+                pbar.set_description(
+                    f'dataset length: {timedelta(seconds=n_seconds)}')
+        except lmdb.MapFullError:
+            pass
 
     else:
         audio_lengths = pool.imap_unordered(get_audio_length, audios)
