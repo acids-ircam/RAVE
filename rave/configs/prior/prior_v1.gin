@@ -1,0 +1,8 @@
+VariationalPrior:
+    resolution = 32
+    res_size = 512
+    skp_size=256
+    kernel_size=3
+    cycle_size=4
+    n_layers=10
+    
