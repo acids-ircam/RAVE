@@ -269,7 +269,6 @@ def main(argv):
         pbar = tqdm(processed_samples)
         n_seconds = 0
         for length in pbar:
-            print(length)
             n_seconds += length
             pbar.set_description(
                 f'dataset length: {timedelta(seconds=n_seconds)}')

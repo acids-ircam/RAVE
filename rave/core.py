@@ -169,6 +169,13 @@ def nonsaturating_gan(score_real, score_fake):
     loss_gen = -torch.log(score_fake).mean()
     return loss_dis, loss_gen
 
+def get_minimum_size(model):
+    N = 2**15
+    device = next(iter(model.parameters())).device
+    x = torch.randn(1, model.n_channels, N, requires_grad=True, device=device)
+    z = model.encode(x)
+    return int(x.shape[-1] / z.shape[-1])
+
 
 @torch.enable_grad()
 def get_rave_receptive_field(model, n_channels=1):
@@ -540,4 +547,15 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
             if self.__counter % self.step_period == 0:
                 filename = os.path.join(self.dirpath, f"epoch_{self.__counter}{self.FILE_EXTENSION}")
                 self._save_checkpoint(trainer, filename)
+
+
+def get_valid_extensions():
+    import torchaudio
+    backend = torchaudio.get_audio_backend()
+    if backend in ["sox_io", "sox"]:
+        return ['.'+f for f in torchaudio.utils.sox_utils.list_read_formats()]
+    elif backend == "ffmpeg":
+        return ['.'+f for f in torchaudio.utils.ffmpeg_utils.get_audio_decoders()]
+    elif backend == "soundfile":
+        return ['.wav', '.flac', '.ogg', '.aiff', '.aif', '.aifc']
 
