@@ -1,4 +1,5 @@
 from absl import app, flags, logging
+import pdb
 import torch, torchaudio, argparse, os, tqdm, re, gin
 import cached_conv as cc
 
@@ -11,6 +12,8 @@ except:
 
 
 FLAGS = flags.FLAGS
+flags.DEFINE_string('model', required=True, default=None, help="model path")
+flags.DEFINE_multi_string('input', required=True, default=None, help="model inputs (file or folder)")
 flags.DEFINE_string('out_path', 'generations', help="output path")
 flags.DEFINE_string('name', None, help="name of the model")
 flags.DEFINE_integer('gpu', default=-1, help='GPU to use')
@@ -28,17 +31,17 @@ def get_audio_files(path):
 
 
 def main(argv):
-    assert len(argv) >= 3
-    _, model_path, *paths = argv
-
     torch.set_float32_matmul_precision('high')
     cc.use_cached_conv(FLAGS.stream)
 
+    model_path = FLAGS.model
+    paths = FLAGS.input
     # load model
     logging.info("building rave")
     is_scripted = False
     if not os.path.exists(model_path):
         logging.error('path %s does not seem to exist.'%model_path)
+        exit()
     if os.path.splitext(model_path)[1] == ".ts":
         model = torch.jit.load(model_path)
         is_scripted = True
@@ -64,7 +67,7 @@ def main(argv):
     # make output directories
     if FLAGS.name is None:
         FLAGS.name = "_".join(os.path.basename(model_path).split('_')[:-1])
-    out_path = os.path.join(FLAGS.out, FLAGS.name)
+    out_path = os.path.join(FLAGS.out_path, FLAGS.name)
     os.makedirs(out_path, exist_ok=True)
 
     # parse inputs
@@ -115,7 +118,7 @@ def main(argv):
 
         # save file
         out_path = re.sub(d, "", f)
-        out_path = os.path.join(FLAGS.out, f)
+        out_path = os.path.join(FLAGS.out_path, f)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torchaudio.save(out_path, out[0].cpu(), sample_rate=model.sr)
 

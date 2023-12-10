@@ -74,7 +74,7 @@ class AudioDataset(data.Dataset):
         assert buffer.precision == AudioExample.Precision.INT16
 
         audio = np.frombuffer(buffer.data, dtype=np.int16)
-        audio = audio.astype(np.float) / (2**15 - 1)
+        audio = audio.astype(np.float32) / (2**15 - 1)
         audio = audio.reshape(self._n_channels, -1)
 
         if self._transforms is not None:
