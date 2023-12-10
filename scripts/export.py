@@ -30,6 +30,7 @@ except:
 import rave.blocks
 import rave.core
 import rave.resampler
+from rave.prior import model as prior
 
 FLAGS = flags.FLAGS
 
@@ -46,6 +47,7 @@ flags.DEFINE_float(
     lower_bound=.1,
     upper_bound=.999,
     help='Fidelity to use during inference (Variational mode only)')
+
 flags.DEFINE_string('name', 
                      default= None,
                      help = "custom name for the scripted model (default: run name)")
@@ -61,7 +63,14 @@ flags.DEFINE_integer('channels',
 flags.DEFINE_integer('sr',
                      default=None,
                      help='Optional resampling sample rate')
+flags.DEFINE_string('prior', 
+                    default=None,
+                    help = "path to prior (optional)")
 
+
+class DumbPrior(nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x
 
 class ScriptedRAVE(nn_tilde.Module):
 
@@ -69,7 +78,8 @@ class ScriptedRAVE(nn_tilde.Module):
                  pretrained: rave.RAVE,
                  channels: Optional[int] = None,
                  fidelity: float = .95,
-                 target_sr: bool = None) -> None:
+                 target_sr: bool = None, 
+                 prior: prior.Prior = None) -> None:
 
         super().__init__()
         self.pqmf = pretrained.pqmf
@@ -180,6 +190,22 @@ class ScriptedRAVE(nn_tilde.Module):
             output_labels=['(signal) Channel %d'%d for d in range(1, self.target_channels+1)]
         )
 
+        # init prior in case
+        self._has_prior = False
+        
+        if prior is not None:
+            self._has_prior = True
+            self.prior_module = prior
+            self.register_method(
+                "prior",
+                in_channels=1,
+                in_ratio=prior.ratio,
+                out_channels = self.latent_size,
+                out_ratio=prior.ratio
+            )
+        else:
+            self.prior_module = DumbPrior()
+
     def post_process_latent(self, z):
         raise NotImplementedError
 
@@ -235,6 +261,9 @@ class ScriptedRAVE(nn_tilde.Module):
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
+
+    @torch.jit.export
+
 
     @torch.jit.export
     def decode(self, z, from_forward: bool = False):
@@ -311,6 +340,14 @@ class ScriptedRAVE(nn_tilde.Module):
         self.reset_source = (reset_source, )
         return 0
 
+    @torch.jit.export
+    def prior(self, temp: torch.Tensor):
+        if self._has_prior:
+            return self.prior_module.forward(temp)
+        else:
+            return torch.tensor(0)
+        
+
 
 class VariationalScriptedRAVE(ScriptedRAVE):
 
@@ -372,6 +409,87 @@ class SphericalScriptedRAVE(ScriptedRAVE):
         return rave.blocks.angles_to_unit_norm_vector(z)
 
 
+class TraceModel(nn.Module):
+    def __init__(self, pretrained: prior.Prior, model: rave.RAVE):
+        super().__init__()
+        pretrained._jit_is_scripting = True
+        self.pretrained = pretrained
+        self.latent_size = pretrained.latent_size
+
+        x = torch.zeros(1, self.pretrained.n_channels, 2**14)
+        z = model.encode(x)
+        z = pretrained.post_process_latent(z)
+        self.ratio = x.shape[-1] // z.shape[-1]
+
+        # self.register_buffer(
+        #     "forward_params",
+        #     torch.tensor([1, self.ratio, self.latent_size, self.ratio]),
+        # )
+
+        self.pretrained.synth = None
+
+        self.register_buffer(
+            "previous_step",
+            self.pretrained.quantized_normal.encode(
+                torch.zeros(1, self.latent_size, 1)),
+        )
+
+        self.pre_diag_cache = cc.CachedPadding1d(self.latent_size - 1)
+        self.pre_diag_cache(z)
+        self.pre_diag_cache = torch.jit.script(self.pre_diag_cache)
+
+    def step_forward(self, temp):
+        # PREDICT NEXT STEP
+        x = self.pretrained.forward(self.previous_step)
+        x = x / temp
+        x = self.pretrained.post_process_prediction(x, argmax=False)
+        self.previous_step.copy_(x.clone())
+
+        # DECODE AND SHIFT PREDICTION
+        x = self.pretrained.quantized_normal.decode(x)
+        x = self.pre_diag_cache(x)
+        x = self.pretrained.diagonal_shift.inverse(x)
+        return x
+
+    def forward(self, temp: torch.Tensor):
+        x = torch.zeros(
+            temp.shape[0],
+            self.latent_size,
+            temp.shape[-1],
+        ).to(temp)
+
+        temp = temp.mean(-1, keepdim=True)
+        temp = nn.functional.softplus(temp) / math.log(2)
+
+        for i in range(x.shape[-1]):
+            x[..., i:i + 1] = self.step_forward(temp)
+
+        return x
+
+
+
+prior_classes = ['VariationalPrior']
+def get_prior_class_from_config():
+    prior_class = None
+    for cl in prior_classes:
+        try:
+            gin.get_bindings(cl)
+            prior_class = cl
+        except:
+            pass
+    if prior_class is None:
+        raise RuntimeError('Could not retrive Prior class from gin config')
+    return prior_class
+
+
+def get_state_dict(RUN, PRIOR):
+    state_dict = torch.load(PRIOR, map_location="cpu")['state_dict']
+    for k, v in RUN.state_dict().items():
+        state_dict[f'synth.{k}'] = v
+    return state_dict
+
+
+
 def main(argv):
     cc.use_cached_conv(FLAGS.streaming)
 
@@ -385,7 +503,7 @@ def main(argv):
 
     pretrained = rave.RAVE()
     if FLAGS.run is not None:
-        print('model found : %s'%FLAGS.run)
+        logging.info('model found : %s'%FLAGS.run)
         checkpoint = torch.load(FLAGS.run, map_location='cpu')
         if FLAGS.ema_weights and "EMA" in checkpoint["callbacks"]:
             pretrained.load_state_dict(
@@ -398,7 +516,7 @@ def main(argv):
                 strict=False,
             )
     else:
-        print("No checkpoint found")
+        logging.error("No checkpoint found")
         exit()
     pretrained.eval()
 
@@ -419,19 +537,39 @@ def main(argv):
     x = torch.zeros(1, pretrained.n_channels, 2**14)
     # pretrained(x)
 
-
     logging.info("optimize model")
+
+
+    # parse prior
+    prior_scripted=None
+    if FLAGS.prior is not None:
+        logging.info("loading prior from checkpoint")
+        prior_config_file = rave.core.search_for_config(FLAGS.prior)
+        if prior_config_file is None:
+            print('Config file for prior not found in %s'%FLAGS.prior)
+        else:
+            gin.clear_config()
+            logging.info("prior config file : ", prior_config_file)
+            gin.parse_config_file(prior_config_file)
+            PRIOR = rave.core.search_for_run(FLAGS.prior)
+            logging.info(f"using prior model at {PRIOR}")
+            prior_class = get_prior_class_from_config()
+            prior_pretrained = getattr(prior, prior_class)(pretrained_vae=pretrained, n_channels=pretrained.n_channels)
+            prior_pretrained.load_state_dict(get_state_dict(pretrained, PRIOR))
+            prior_scripted = TraceModel(prior_pretrained, pretrained)
+
 
     for m in pretrained.modules():
         if hasattr(m, "weight_g"):
             nn.utils.remove_weight_norm(m)
-    logging.info("script model")
 
+    logging.info("script model")
     scripted_rave = script_class(
         pretrained=pretrained,
         channels = FLAGS.channels,
         fidelity=FLAGS.fidelity,
         target_sr=FLAGS.sr,
+        prior = prior_scripted
     )
     z = scripted_rave.encode(x)
     x = scripted_rave.decode(z)

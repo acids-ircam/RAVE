@@ -2,6 +2,7 @@ from random import choice, randint, random, randrange
 import bisect
 import torchaudio
 import gin.torch
+from typing import Tuple
 import librosa as li
 import numpy as np
 import torch
@@ -122,7 +123,8 @@ class Compress(Transform):
 
 @gin.configurable
 class RandomCompress(Transform):
-    def __init__(self, threshold = -40, amp_range = [-60, 0], attack=0.1, release=0.1, prob=0.5, sr=44100):
+    def __init__(self, threshold = -40, amp_range = [-60, 0], attack=0.1, release=0.1, prob=0.8, sr=44100):
+        assert prob >= 0. and prob <= 1., "prob must be between 0. and 1."
         self.amp_range = amp_range
         self.threshold = threshold
         self.attack = attack
@@ -133,12 +135,47 @@ class RandomCompress(Transform):
     def __call__(self, x: torch.Tensor):
         perform = bool(torch.bernoulli(torch.full((1,), self.prob)))
         if perform:
-            amp_factor = torch.rand((1,)) / (self.amp_range[1] - self.amp_range[0]) + self.amp_range[0]
-            x = torchaudio.sox_effects.apply_effects_tensor(torch.from_numpy(x).float(),
+            amp_factor = torch.rand((1,)) * (self.amp_range[1] - self.amp_range[0]) + self.amp_range[0]
+            x_aug = torchaudio.sox_effects.apply_effects_tensor(torch.from_numpy(x).float(),
                                                             self.sr,
                                                              [['compand', f'{self.attack},{self.release}', f'6:-80,{self.threshold},{float(amp_factor)}']]
                                                             )[0].numpy()
-        return x
+            return x_aug
+        else:
+            return x
+
+@gin.configurable
+class RandomGain(Transform):
+    def __init__(self, gain_range: Tuple[int, int] = [-6, 3], prob: float = 0.5, limit = True):
+        assert prob >= 0. and prob <= 1., "prob must be between 0. and 1."
+        self.gain_range = gain_range
+        self.prob = prob
+        self.limit = limit
+
+    def __call__(self, x: torch.Tensor):
+        perform = bool(torch.bernoulli(torch.full((1,), self.prob)))
+        if perform:
+            gain_factor = np.random.rand(1)[None, None][0] * (self.gain_range[1] - self.gain_range[0]) + self.gain_range[0]
+            amp_factor = np.power(10, gain_factor / 20)
+            x_amp = x * amp_factor
+            if (self.limit) and (x_amp.abs().max() > 1): 
+                x_amp = x_amp / x_amp.abs().max()
+            return x
+        else:
+            return x
+
+
+@gin.configurable
+class RandomMute(Transform):
+    def __init__(self, prob: torch.Tensor = 0.1):
+        assert prob >= 0. and prob <= 1., "prob must be between 0. and 1."
+        self.prob = prob
+
+    def __call__(self, x: torch.Tensor):
+        mask = torch.bernoulli(torch.full((x.shape[0],), 1 - self.prob))
+        mask = np.random.binomial(1, 1-self.prob, size=1)
+        return x * mask
+
 
 @gin.configurable
 class FrequencyMasking(Transform):
@@ -157,3 +194,17 @@ class FrequencyMasking(Transform):
         x_inv = signal.istft(spectrogram)[1]
         return x_inv
             
+
+
+# Utilitary for GIN recording of augmentations
+
+
+_augmentations = []
+
+@gin.configurable()
+def add_augmentation(aug):
+    global _augmentations
+    _augmentations.append(aug)
+
+def get_augmentations():
+    return _augmentations

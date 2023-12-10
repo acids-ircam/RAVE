@@ -306,10 +306,10 @@ class RAVE(pl.LightningModule):
         y = self.decoder(z)
         if self.output_mode == "pqmf":
             y_multiband = y
-            y_raw = self._pqmf_decode(y, batch_size=batch_size)
+            y_raw = _pqmf_decode(self.pqmf, y, batch_size=batch_size, n_channels=self.n_channels)
         else:
             y_raw = y 
-            y_multiband = self._pqmf_encode(y)
+            y_multiband = _pqmf_encode(self.pqmf, y)
 
         # TODO this has been added for training with num_samples = 65536 samples, output padding seems to mess with output dimensions. 
         # this may probably conflict with cached_conv

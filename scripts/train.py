@@ -19,6 +19,7 @@ except:
 import rave
 import rave.core
 import rave.dataset
+from rave.transforms import get_augmentations, add_augmentation
 
 
 FLAGS = flags.FLAGS
@@ -27,6 +28,9 @@ flags.DEFINE_string('name', None, help='Name of the run', required=True)
 flags.DEFINE_multi_string('config',
                           default='v2.gin',
                           help='RAVE configuration to use')
+flags.DEFINE_multi_string('augment',
+                           default = [],
+                            help = 'augmentation configurations to use')
 flags.DEFINE_string('db_path',
                     None,
                     help='Preprocessed dataset path',
@@ -39,7 +43,7 @@ flags.DEFINE_integer('max_steps',
                      help='Maximum number of training steps')
 flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('save_every',
-                     None,
+                     500000,
                      help='save every n steps (default: just last)')
 flags.DEFINE_integer('n_signal',
                      131072,
@@ -115,12 +119,17 @@ class EMA(pl.Callback):
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         self.weights.update(state_dict)
 
-
 def add_gin_extension(config_name: str) -> str:
     if config_name[-4:] != '.gin':
         config_name += '.gin'
     return config_name
 
+def parse_augmentations(augmentations):
+    for a in augmentations:
+        gin.parse_config_file(a)
+        add_augmentation()
+        gin.clear_config()
+    return get_augmentations()
 
 def main(argv):
     torch.set_float32_matmul_precision('high')
@@ -129,6 +138,10 @@ def main(argv):
     # check dataset channels
     n_channels = rave.dataset.get_training_channels(FLAGS.db_path, FLAGS.channels)
     gin.bind_parameter('RAVE.n_channels', n_channels)
+
+    # parse augmentations
+    augmentations = parse_augmentations(map(add_gin_extension, FLAGS.augment))
+    gin.bind_parameter('dataset.get_dataset.augmentations', augmentations)
 
     # parse configuration
     if FLAGS.ckpt:

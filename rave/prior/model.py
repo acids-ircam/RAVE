@@ -17,17 +17,23 @@ import cached_conv as cc
 class Prior(pl.LightningModule):
 
     def __init__(self, resolution, res_size, skp_size, kernel_size, cycle_size,
-                 n_layers, pretrained_vae, fidelity=0.95):
+                 n_layers, pretrained_vae=None, fidelity=None, n_channels=1, latent_size=None, sr=44100):
         super().__init__()
 
         self.diagonal_shift = DiagonalShift()
         self.quantized_normal = QuantizedNormal(resolution)
 
         self.synth = pretrained_vae
-        self.sr = self.synth.sr
+        self.sr = sr
 
-        latent_size = torch.where(pretrained_vae.fidelity > fidelity)[0][0]
-        self.latent_size = 2**math.ceil(math.log2(latent_size))
+        if latent_size is not None:
+            self.latent_size = 2**math.ceil(math.log2(latent_size))
+        elif fidelity is not None:
+            assert pretrained_vae, "giving fidelity keyword needs the pretrained_vae keyword to be given"
+            latent_size = torch.where(pretrained_vae.fidelity > fidelity)[0][0]
+            self.latent_size = 2**math.ceil(math.log2(latent_size))
+        else:
+            raise RuntimeError('please init Prior with either fidelity or latent_size keywords')
 
         self.pre_net = nn.Sequential(
             cc.Conv1d(
@@ -60,15 +66,16 @@ class Prior(pl.LightningModule):
             ),
         )
 
-
+        self.n_channels = n_channels
         self.val_idx = 0
         rf = (kernel_size - 1) * sum(2**(np.arange(n_layers) % cycle_size)) + 1
-        ratio = self.get_model_ratio()
-        self.min_receptive_field = 2**math.ceil(math.log2(rf * ratio))
+        if pretrained_vae is not None:
+            ratio = self.get_model_ratio()
+            self.min_receptive_field = 2**math.ceil(math.log2(rf * ratio))
 
     def get_model_ratio(self):
         x_len = 2**14
-        x = torch.zeros(1, self.synth.n_channels, x_len)
+        x = torch.zeros(1, self.n_channels, x_len)
         z = self.encode(x)
         ratio_encode = x_len // z.shape[-1]
         return ratio_encode

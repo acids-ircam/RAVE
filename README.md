@@ -54,7 +54,7 @@ rave preprocess --input_path /audio/folder --output_path /dataset/path (--lazy)
 RAVEv2 has many different configurations. The improved version of the v1 is called `v2`, and can therefore be trained with
 
 ```bash
-rave train --config v2 --db_path /dataset/path --name give_a_name
+rave train --config v2 --db_path /dataset/path --out_path /model/out --name give_a_name
 ```
 
 We also provide a discrete configuration, similar to SoundStream or EnCodec
@@ -69,7 +69,13 @@ By default, RAVE is built with non-causal convolutions. If you want to make the 
 rave train --config discrete --config causal ...
 ```
 
-Many other configuration files are available in `rave/configs` and can be combined. Here is a list of all the available configurations
+New in 2.3, data augmentations are also available to improve the model's generalization in low data regimes. You can add data augmentation by adding augmentation configuration files with the `--augment` keyword
+
+```bash
+rave train --config v2 --augment mute --augment compress 
+```
+
+Many other configuration files are available in `rave/configs` and can be combined. Here is a list of all the available configurations & augmentations :
 
 <table>
 <thead>
@@ -82,7 +88,7 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tbody>
 
 <tr>
-<td rowspan=6>Architecture</td>
+<td rowspan=8>Architecture</td>
 <td>v1</td>
 <td>Original continuous model</td>
 </tr>
@@ -90,6 +96,16 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tr>
 <td>v2</td>
 <td>Improved continuous model (faster, higher quality)</td>
+</tr>
+
+<tr>
+<td>v2_small</td>
+<td>v2 with a smaller receptive field, adpated adversarial training, and noise generator, adapted for timbre transfer for stationary signals</td>
+</tr>
+
+<tr>
+<td>v2_nopqmf</td>
+<td>(experimental) v2 without pqmf in generator (more efficient for bending purposes)</td>
 </tr>
 
 <tr>
@@ -138,11 +154,28 @@ Many other configuration files are available in `rave/configs` and can be combin
 <td rowspan=2>Others</td>
 <td>causal</td>
 <td>Use causal convolutions</td>
-</tr
+</tr>
 
 <tr>
 <td>noise</td>
 <td>Enable noise synthesizer V2</td>
+</tr>
+
+
+<tr>
+<td rowspan=3>Augmentations</td>
+<td>mute</td>
+<td>Randomly mutes data batches (default prob : 0.1). Enforces the model to learn silence</td>
+</tr>
+
+<tr>
+<td>compress</td>
+<td>Randomly compresses the waveform (equivalent to light non-linear amplification of batches)</td>
+</tr>
+
+<tr>
+<td>gain</td>
+<td>Applies a random gain to waveform (default range : [-6, 3]) </td>
 </tr>
 
 </tbody>
@@ -157,6 +190,25 @@ rave export --run /path/to/your/run (--streaming)
 ```
 
 Setting the `--streaming` flag will enable cached convolutions, making the model compatible with realtime processing. **If you forget to use the streaming mode and try to load the model in Max, you will hear clicking artifacts.**
+
+## Prior
+For discrete models, we redirect the user to the `msprior` library [here](https://github.com/caillonantoine/msprior). However, as this library is still experimental, the prior from version 1.x has been re-integrated in v2.3.
+
+### Training
+To train a prior for a pretrained RAVE model : 
+```bash
+rave train_prior --model /path/to/your/run --db_path /path/to/your_preprocessed_data --out_path /path/to/output
+```
+this will train a prior over the latent of the pretrained model `path/to/your/run`, and save the model and tensorboard logs to folder `/path/to/output`.
+
+### Scripting
+To script a prior along with a RAVE model, export your model by providing the `--prior` keyword to your pretrained prior :
+```bash
+rave export --run /path/to/your/run --prior /path/to/your/prior (--streaming)
+```
+## Pretrained models
+
+Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
 
 ## Realtime usage
 
@@ -187,13 +239,16 @@ By default, RAVE can be used as a style transfer tool, based on the large compre
 
 Other attributes, such as `enable` or `gpu` can enable/disable computation, or use the gpu to speed up things (still experimental).
 
-## Pretrained models
+## Offline usage
 
-Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
+A batch generation script has been released in v2.3 to allow transformation of large amount of files
 
-## Where is the prior ?
+```bash
+rave generate model_path path_1 path_2 --out out_path
+```
 
-[Here !](https://github.com/caillonantoine/msprior)
+where `model_path` is the path to your trained model (original or scripted), `path_X` a list of audio files or directories, and `out_path` the out directory of the generations.
+
 
 ## Discussion
 

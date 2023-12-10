@@ -1,0 +1,8 @@
+# dataset.get_dataset:
+#     augmentations = [
+#         @augmentations/transforms.RandomCompress(),
+#     ]
+
+add_augmentation:
+    aug = @augmentations/transforms.RandomCompress()
+

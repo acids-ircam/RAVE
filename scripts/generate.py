@@ -11,12 +11,11 @@ except:
 
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('out', 'generations', help="output path")
+flags.DEFINE_string('out_path', 'generations', help="output path")
 flags.DEFINE_string('name', None, help="name of the model")
 flags.DEFINE_integer('gpu', default=-1, help='GPU to use')
-flags.DEFINE_bool('stream', default=False, help='GPU to use')
-flags.DEFINE_integer('batch_size', default=8, help="batch size for encoding/decoding")
-flags.DEFINE_integer('chunk_size', default=65536, help="chunk size for encoding/decoding")
+flags.DEFINE_bool('stream', default=False, help='simulates streaming mode')
+flags.DEFINE_integer('chunk_size', default=None, help="chunk size for encoding/decoding (default: full file)")
 
 
 def get_audio_files(path):
@@ -69,13 +68,11 @@ def main(argv):
     os.makedirs(out_path, exist_ok=True)
 
     # parse inputs
-    valid_exts = rave.core.get_valid_extensions()
     audio_files = sum([get_audio_files(f) for f in paths], [])
     receptive_field = rave.core.get_minimum_size(model)
 
     progress_bar = tqdm.tqdm(audio_files)
-    n_files = len(audio_files)
-    cc.MAX_BATCH_SIZE = FLAGS.batch_size
+    cc.MAX_BATCH_SIZE = 8
 
     for i, (d, f) in enumerate(progress_bar):
         #TODO reset cache
@@ -97,11 +94,14 @@ def main(argv):
                 print('[Warning] file %s has %d channels, butt model has %d channels ; skipping'%(f, model.n_channels))
         x = x.to(device)
         if FLAGS.stream:
-            assert FLAGS.chunk_size > receptive_field, "chunk_size must be higher than models' receptive field (here : %s)"%receptive_field
-            x = list(x.split(FLAGS.chunk_size, dim=-1))
-            if x[-1].shape[0] < FLAGS.chunk_size:
-                x[-1] = torch.nn.functional.pad(x[-1], (0, FLAGS.chunk_size - x[-1].shape[-1]))
-            x = torch.stack(x, 0)
+            if FLAGS.chunk_size:
+                assert FLAGS.chunk_size > receptive_field, "chunk_size must be higher than models' receptive field (here : %s)"%receptive_field
+                x = list(x.split(FLAGS.chunk_size, dim=-1))
+                if x[-1].shape[0] < FLAGS.chunk_size:
+                    x[-1] = torch.nn.functional.pad(x[-1], (0, FLAGS.chunk_size - x[-1].shape[-1]))
+                x = torch.stack(x, 0)
+            else:
+                x = x[None]
             
             # forward into model
             out = []
