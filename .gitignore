@@ -12,3 +12,4 @@ runs
 *.onnx
 __version__*
 PKG-INFO
+.junit-test-report.xml
