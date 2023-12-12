@@ -5,6 +5,8 @@ import cached_conv as cc
 import gin
 import torch
 
+from .version import __version__
+
 gin.add_config_file_search_path(os.path.dirname(__file__))
 gin.add_config_file_search_path(
     os.path.join(

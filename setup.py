@@ -3,7 +3,8 @@ import subprocess
 
 import setuptools
 
-version = os.environ["RAVE_VERSION"]
+# imports __version__
+exec(open('rave/version.py').read())
 
 with open("README.md", "r") as readme:
     readme = readme.read()
@@ -13,7 +14,7 @@ with open("requirements.txt", "r") as requirements:
 
 setuptools.setup(
     name="acids-rave",
-    version=version,
+    version=__version__,  # type: ignore
     author="Antoine CAILLON",
     author_email="caillon@ircam.fr",
     description="RAVE: a Realtime Audio Variatione autoEncoder",
