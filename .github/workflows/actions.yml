@@ -50,7 +50,6 @@ jobs:
           python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt
       - name: Run tests
-        continue-on-error: true
         run: pytest --junitxml=.test-report.xml
       - uses: actions/upload-artifact@v3
         if: success() || failure()
