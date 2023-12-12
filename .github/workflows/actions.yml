@@ -1,5 +1,11 @@
 name: CI
 
+permissions:
+  pull-requests: write
+  issues: write
+  repository-projects: write
+  contents: write
+
 on:
   pull_request:
   push:
