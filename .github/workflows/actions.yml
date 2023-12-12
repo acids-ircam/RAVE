@@ -52,10 +52,8 @@ jobs:
       - name: Run tests
         continue-on-error: true
         run: pytest --junitxml=.test-report.xml
-      - name: Test Report
-        uses: dorny/test-reporter@v1
-        continue-on-error: true
+      - uses: actions/upload-artifact@v3
+        if: success() || failure()
         with:
-          name: Test reporting
+          name: test-report
           path: .test-report.xml
-          reporter: java-junit
