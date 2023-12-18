@@ -1,2 +1,3 @@
 include rave/configs/*.gin
+include rave/configs/augmentations/*.gin
 include requirements.txt

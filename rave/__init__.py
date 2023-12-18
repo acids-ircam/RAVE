@@ -1,18 +1,16 @@
-import os
-import pathlib
+from pathlib import Path
 
 import cached_conv as cc
 import gin
 import torch
 
-from .version import __version__
 
-gin.add_config_file_search_path(os.path.dirname(__file__))
-gin.add_config_file_search_path(
-    os.path.join(
-        os.path.dirname(__file__),
-        'configs',
-    ))
+BASE_PATH: Path = Path(__file__).parent
+
+gin.add_config_file_search_path(BASE_PATH)
+gin.add_config_file_search_path(BASE_PATH.joinpath('configs'))
+gin.add_config_file_search_path(BASE_PATH.joinpath('configs', 'augmentations'))
+
 
 def __safe_configurable(name):
     try: 
