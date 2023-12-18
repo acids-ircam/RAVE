@@ -29,11 +29,11 @@ def WNConv2d(*args, **kwargs):
 
 class MPD(nn.Module):
 
-    def __init__(self, period):
+    def __init__(self, period, n_channels: int = 1):
         super().__init__()
         self.period = period
         self.convs = nn.ModuleList([
-            WNConv2d(1, 32, (5, 1), (3, 1), padding=(2, 0)),
+            WNConv2d(n_channels, 32, (5, 1), (3, 1), padding=(2, 0)),
             WNConv2d(32, 128, (5, 1), (3, 1), padding=(2, 0)),
             WNConv2d(128, 512, (5, 1), (3, 1), padding=(2, 0)),
             WNConv2d(512, 1024, (5, 1), (3, 1), padding=(2, 0)),
@@ -68,10 +68,10 @@ class MPD(nn.Module):
 
 class MSD(nn.Module):
 
-    def __init__(self, scale: int):
+    def __init__(self, scale: int, n_channels: int = 1):
         super().__init__()
         self.convs = nn.ModuleList([
-            WNConv1d(1, 16, 15, 1, padding=7),
+            WNConv1d(n_channels, 16, 15, 1, padding=7),
             WNConv1d(16, 64, 41, 4, groups=4, padding=20),
             WNConv1d(64, 256, 41, 4, groups=16, padding=20),
             WNConv1d(256, 1024, 41, 4, groups=64, padding=20),
@@ -123,6 +123,7 @@ class MRD(nn.Module):
         hop_factor: float = 0.25,
         sample_rate: int = 44100,
         bands: list = BANDS,
+        n_channels: int = 1
     ):
         super().__init__()
 
@@ -136,7 +137,7 @@ class MRD(nn.Module):
 
         ch = 32
         convs = lambda: nn.ModuleList([
-            WNConv2d(2, ch, (3, 9), (1, 1), padding=(1, 4)),
+            WNConv2d(2 * n_channels, ch, (3, 9), (1, 1), padding=(1, 4)),
             WNConv2d(ch, ch, (3, 9), (1, 2), padding=(1, 4)),
             WNConv2d(ch, ch, (3, 9), (1, 2), padding=(1, 4)),
             WNConv2d(ch, ch, (3, 9), (1, 2), padding=(1, 4)),
@@ -160,7 +161,7 @@ class MRD(nn.Module):
 
     def spectrogram(self, x):
         x = torch.view_as_real(self.stft(x))
-        x = rearrange(x, "b 1 f t c -> (b 1) c t f")
+        x = rearrange(x, "b c f t p -> b (c p) t f")
         # Split into bands
         x_bands = [x[..., b[0]:b[1]] for b in self.bands]
         return x_bands
@@ -192,13 +193,14 @@ class DescriptDiscriminator(nn.Module):
         fft_sizes: list = [2048, 1024, 512],
         sample_rate: int = 44100,
         bands: list = BANDS,
+        n_channels: int = 1,
     ):
         super().__init__()
         discs = []
-        discs += [MPD(p) for p in periods]
-        discs += [MSD(r, sample_rate=sample_rate) for r in rates]
+        discs += [MPD(p, n_channels=n_channels) for p in periods]
+        discs += [MSD(r, sample_rate=sample_rate, n_channels=n_channels) for r in rates]
         discs += [
-            MRD(f, sample_rate=sample_rate, bands=bands) for f in fft_sizes
+            MRD(f, sample_rate=sample_rate, bands=bands, n_channels=n_channels) for f in fft_sizes
         ]
         self.discriminators = nn.ModuleList(discs)
 

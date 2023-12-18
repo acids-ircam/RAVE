@@ -158,8 +158,8 @@ class RandomGain(Transform):
             gain_factor = np.random.rand(1)[None, None][0] * (self.gain_range[1] - self.gain_range[0]) + self.gain_range[0]
             amp_factor = np.power(10, gain_factor / 20)
             x_amp = x * amp_factor
-            if (self.limit) and (x_amp.abs().max() > 1): 
-                x_amp = x_amp / x_amp.abs().max()
+            if (self.limit) and (np.abs(x_amp).max() > 1): 
+                x_amp = x_amp / np.abs(x_amp).max()
             return x
         else:
             return x
