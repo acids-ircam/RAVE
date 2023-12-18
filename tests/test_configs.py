@@ -18,14 +18,20 @@ configs = [
     ["v2.gin", "adain.gin"],
     ["v2.gin", "wasserstein.gin"],
     ["v2.gin", "spherical.gin"],
-    # ["v2.gin", "hybrid.gin"], NOT READY YET
+    ["v2.gin", "hybrid.gin"],
+    ["v2_small.gin", "adain.gin"],
+    ["v2_small.gin", "wasserstein.gin"],
+    ["v2_small.gin", "spherical.gin"],
+    ["v2_small.gin", "hybrid.gin"],
     ["discrete.gin"],
     ["discrete.gin", "snake.gin"],
     ["discrete.gin", "snake.gin", "adain.gin"],
     ["discrete.gin", "snake.gin", "descript_discriminator.gin"],
     ["discrete.gin", "spectral_discriminator.gin"],
     ["discrete.gin", "noise.gin"],
+    ["discrete.gin", "hybrid.gin"],
     ["v3.gin"],
+    ["v3.gin", "hybrid.gin"]
 ]
 
 configs += [c + ["causal.gin"] for c in configs]
@@ -44,8 +50,6 @@ configs = list(itertools.product(configs, model_sampling_rate, stereo))
         ("stereo" if e[2] else "mono"), configs),
 )
 def test_config(config, sr, stereo):
-    if any(map(lambda x: "adain" in x, config)) and stereo:
-        pytest.skip()
 
     gin.clear_config()
     gin.parse_config_files_and_bindings(config, [
@@ -53,15 +57,12 @@ def test_config(config, sr, stereo):
         "CAPACITY=2",
     ])
 
-    model = rave.RAVE()
+    n_channels = 2 if stereo else 1
+    model = rave.RAVE(n_channels=n_channels)
 
-    if stereo:
-        for m in model.modules():
-            if isinstance(m, rave.blocks.AdaptiveInstanceNormalization):
-                pytest.skip()
-
-    x = torch.randn(1, 1, 2**15)
-    z = model.encode(x)
+    x = torch.randn(1, n_channels, 2**15)
+    z, _ = model.encode(x, return_mb=True)
+    z, _ = model.encoder.reparametrize(z)[:2]
     y = model.decode(z)
     score = model.discriminator(y)
 
@@ -79,7 +80,7 @@ def test_config(config, sr, stereo):
         raise ValueError(f"Encoder type {type(model.encoder)} "
                          "not supported for export.")
 
-    x = torch.zeros(1, 1, 2**14)
+    x = torch.zeros(1, n_channels, 2**14)
 
     model(x)
 
@@ -89,12 +90,12 @@ def test_config(config, sr, stereo):
 
     scripted_rave = script_class(
         pretrained=model,
-        stereo=stereo,
+        channels=n_channels,
     )
 
     scripted_rave_resampled = script_class(
         pretrained=model,
-        stereo=stereo,
+        channels=n_channels,
         target_sr=44100,
     )
 

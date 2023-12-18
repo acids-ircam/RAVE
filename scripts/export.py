@@ -143,15 +143,13 @@ class ScriptedRAVE(nn_tilde.Module):
         self.decoder = pretrained.decoder
         x_len = 2**14
         x = torch.zeros(1, self.n_channels, x_len)
-        if self.resampler is not None:
-            x = self.resampler.to_model_sampling_rate(x)
         z = self.encode(x)
         ratio_encode = x_len // z.shape[-1]
 
         # configure encoder
-        if pretrained.input_mode != "pqmf":
+        if (pretrained.input_mode == "pqmf") or (pretrained.output_mode == "pqmf"):
             # scripting fails if cached conv is not initialized
-            self.pqmf(x)
+            self.pqmf(torch.zeros(1, 1, x_len))
 
         encode_shape = (pretrained.n_channels, 2**14) 
 
@@ -258,6 +256,8 @@ class ScriptedRAVE(nn_tilde.Module):
             if self.spectrogram is not None:
                 x = self.spectrogram(x)[..., :-1]
                 x = torch.log1p(x).reshape(batch_size + (-1, x.shape[-1]))
+            else:
+                raise RuntimeError()
         z = self.encoder(x)
         z = self.post_process_latent(z)
         return z
@@ -298,7 +298,6 @@ class ScriptedRAVE(nn_tilde.Module):
             y = torch.cat(y.chunk(self.target_channels, 0), 1)
         elif self.target_channels < self.n_channels:
             y = y[:, :self.target_channels]
-        # return y[..., ]
         return y
 
     def forward(self, x):

@@ -53,10 +53,10 @@ def rectified_2d_conv_block(
 
 class EncodecConvNet(nn.Module):
 
-    def __init__(self, capacity: int) -> None:
+    def __init__(self, capacity: int, n_channels: int = 1) -> None:
         super().__init__()
         self.net = nn.Sequential(
-            rectified_2d_conv_block(capacity, (9, 3), in_size=2),
+            rectified_2d_conv_block(capacity, (9, 3), in_size=2*n_channels),
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 1)),
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 2)),
             rectified_2d_conv_block(capacity, (9, 3), (2, 1), (1, 4)),
@@ -139,10 +139,10 @@ class MultiScaleDiscriminator(nn.Module):
 class MultiScaleSpectralDiscriminator(nn.Module):
 
     def __init__(self, scales: Sequence[int],
-                 convnet: Callable[[], nn.Module]) -> None:
+                 convnet: Callable[[], nn.Module], n_channels: int = 1) -> None:
         super().__init__()
         self.specs = nn.ModuleList([spectrogram(n) for n in scales])
-        self.nets = nn.ModuleList([convnet() for _ in scales])
+        self.nets = nn.ModuleList([convnet(n_channels=n_channels) for _ in scales])
 
     def forward(self, x):
         features = []
@@ -156,10 +156,11 @@ class MultiScaleSpectralDiscriminator(nn.Module):
 class MultiScaleSpectralDiscriminator1d(nn.Module):
 
     def __init__(self, scales: Sequence[int],
-                 convnet: Callable[[int], nn.Module]) -> None:
+                 convnet: Callable[[int], nn.Module], 
+                 n_channels: int = 1) -> None:
         super().__init__()
         self.specs = nn.ModuleList([spectrogram(n) for n in scales])
-        self.nets = nn.ModuleList([convnet(n + 2) for n in scales])
+        self.nets = nn.ModuleList([convnet(n + 2, n_channels) for n in scales])
 
     def forward(self, x):
         features = []

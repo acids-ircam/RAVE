@@ -58,9 +58,13 @@ class Resampler(nn.Module):
         self.ratio = ratio
 
     def to_model_sampling_rate(self, x):
-        return self.downsample(x)
+        x_down = x.reshape(-1, 1, x.shape[-1])
+        x_down = self.downsample(x_down)
+        return x_down.reshape(x.shape[0], x.shape[1], -1)
 
     def from_model_sampling_rate(self, x):
-        x = self.upsample(x)  # B x 2 x T
-        x = x.permute(0, 2, 1).reshape(x.shape[0], -1).unsqueeze(1)
-        return x
+        x_up = x.reshape(-1, 1, x.shape[-1])
+        x_up = self.upsample(x_up)  # B x 2 x T
+        x_up = x_up.permute(0, 2, 1).reshape(x_up.shape[0], -1).unsqueeze(1)
+        x_up = x_up.reshape(x.shape[0], x.shape[1], -1)
+        return x_up

@@ -249,13 +249,15 @@ class NoiseGeneratorV2(nn.Module):
         data_size: int,
         ratios: int,
         noise_bands: int,
+        n_channels: int = 1,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
     ):
         super().__init__()
         net = []
+        self.n_channels = n_channels
         channels = [in_size]
         channels.extend((len(ratios) - 1) * [hidden_size])
-        channels.append(data_size * noise_bands)
+        channels.append(data_size * noise_bands * n_channels)
 
         for i, r in enumerate(ratios):
             net.append(
@@ -280,7 +282,7 @@ class NoiseGeneratorV2(nn.Module):
     def forward(self, x):
         amp = mod_sigmoid(self.net(x) - 5)
         amp = amp.permute(0, 2, 1)
-        amp = amp.reshape(amp.shape[0], amp.shape[1], self.data_size, -1)
+        amp = amp.reshape(amp.shape[0], amp.shape[1], self.n_channels * self.data_size, -1)
 
         ir = amp_to_impulse_response(amp, self.target_size)
         noise = torch.rand_like(ir) * 2 - 1
@@ -683,7 +685,7 @@ class GeneratorV2(nn.Module):
 
         if noise_module is not None:
             self.waveform_module = waveform_module
-            self.noise_module = noise_module(out_channels)
+            self.noise_module = noise_module(out_channels, n_channels = n_channels)
         else:
             net.append(waveform_module)
 
@@ -749,9 +751,10 @@ class WasserteinEncoder(nn.Module):
         self,
         encoder_cls,
         noise_augmentation: int = 0,
+        n_channels: int = 1
     ):
         super().__init__()
-        self.encoder = encoder_cls()
+        self.encoder = encoder_cls(n_channels=n_channels)
         self.register_buffer("warmed_up", torch.tensor(0))
         self.noise_augmentation = noise_augmentation
 
@@ -829,9 +832,9 @@ class DiscreteEncoder(nn.Module):
 
 class SphericalEncoder(nn.Module):
 
-    def __init__(self, encoder_cls: Callable[[], nn.Module]) -> None:
+    def __init__(self, encoder_cls: Callable[[], nn.Module], n_channels: int = 1) -> None:
         super().__init__()
-        self.encoder = encoder_cls()
+        self.encoder = encoder_cls(n_channels=n_channels)
 
     def reparametrize(self, z):
         norm_z = z / torch.norm(z, p=2, dim=1, keepdim=True)
