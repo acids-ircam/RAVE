@@ -72,7 +72,7 @@ rave train --config discrete --config causal ...
 New in 2.3, data augmentations are also available to improve the model's generalization in low data regimes. You can add data augmentation by adding augmentation configuration files with the `--augment` keyword
 
 ```bash
-rave train --config v2 --augment mute --augment compress 
+rave train --config v2 --augment mute --augment compress
 ```
 
 Many other configuration files are available in `rave/configs` and can be combined. Here is a list of all the available configurations & augmentations :
@@ -151,16 +151,20 @@ Many other configuration files are available in `rave/configs` and can be combin
 </tr>
 
 <tr>
-<td rowspan=2>Others</td>
+<td rowspan=3>Others</td>
 <td>causal</td>
 <td>Use causal convolutions</td>
 </tr>
 
 <tr>
 <td>noise</td>
-<td>Enable noise synthesizer V2</td>
+<td>Enables noise synthesizer V2</td>
 </tr>
 
+<tr>
+<td>hybrid</td>
+<td>Enable mel-spectrogram input</td>
+</tr>
 
 <tr>
 <td rowspan=3>Augmentations</td>
@@ -192,20 +196,27 @@ rave export --run /path/to/your/run (--streaming)
 Setting the `--streaming` flag will enable cached convolutions, making the model compatible with realtime processing. **If you forget to use the streaming mode and try to load the model in Max, you will hear clicking artifacts.**
 
 ## Prior
+
 For discrete models, we redirect the user to the `msprior` library [here](https://github.com/caillonantoine/msprior). However, as this library is still experimental, the prior from version 1.x has been re-integrated in v2.3.
 
 ### Training
-To train a prior for a pretrained RAVE model : 
+
+To train a prior for a pretrained RAVE model :
+
 ```bash
 rave train_prior --model /path/to/your/run --db_path /path/to/your_preprocessed_data --out_path /path/to/output
 ```
+
 this will train a prior over the latent of the pretrained model `path/to/your/run`, and save the model and tensorboard logs to folder `/path/to/output`.
 
 ### Scripting
+
 To script a prior along with a RAVE model, export your model by providing the `--prior` keyword to your pretrained prior :
+
 ```bash
 rave export --run /path/to/your/run --prior /path/to/your/prior (--streaming)
 ```
+
 ## Pretrained models
 
 Several pretrained streaming models [are available here](https://acids-ircam.github.io/rave_models_download). We'll keep the list updated with new models.
@@ -224,7 +235,6 @@ This does the same thing as the following patch, but slightly faster.
 
 <img src="docs/rave_encode_decode.png" width=210px />
 
-
 ### High-level manipulation
 
 Having an explicit access to the latent representation yielded by RAVE allows us to interact with the representation using Max/MSP or PureData signal processing tools:
@@ -233,7 +243,7 @@ Having an explicit access to the latent representation yielded by RAVE allows us
 
 ### Style transfer
 
-By default, RAVE can be used as a style transfer tool, based on the large compression ratio of the model. We recently added a technique inspired from StyleGAN to include Adaptive Instance Normalization to the reconstruction process, effectively allowing to define *source* and *target* styles directly inside Max/MSP or PureData, using the attribute system of `nn~`.
+By default, RAVE can be used as a style transfer tool, based on the large compression ratio of the model. We recently added a technique inspired from StyleGAN to include Adaptive Instance Normalization to the reconstruction process, effectively allowing to define _source_ and _target_ styles directly inside Max/MSP or PureData, using the attribute system of `nn~`.
 
 <img src="docs/rave_attribute.png" width=550px>
 
@@ -248,7 +258,6 @@ rave generate model_path path_1 path_2 --out out_path
 ```
 
 where `model_path` is the path to your trained model (original or scripted), `path_X` a list of audio files or directories, and `out_path` the out directory of the generations.
-
 
 ## Discussion
 
