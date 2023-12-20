@@ -8,6 +8,8 @@ If you use RAVE as a part of a music performance or installation, be sure to cit
 
 If you want to share / discuss / ask things about RAVE you can do so in our [discord server](https://discord.gg/dhX73sPTBb) !
 
+Please check the FAQ before posting an issue!
+
 ## Previous versions
 
 The original implementation of the RAVE model can be restored using
@@ -23,6 +25,8 @@ Install RAVE using
 ```bash
 pip install acids-rave
 ```
+
+**Warning** It is strongly advised to install `torch` and `torchaudio` before `acids-rave`, so you can choose the appropriate version of torch on the [library website](http://www.pytorch.org). For future compatibility with new devices (and modern Python environments), `rave-acids` does not enforce torch==1.13 anymore.
 
 You will need **ffmpeg** on your computer. You can install it locally inside your virtual environment using
 
@@ -276,6 +280,15 @@ Demonstration of what you can do with RAVE and the nn~ external for maxmsp !
 Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
 
 [![RAVE x nn~](http://img.youtube.com/vi/jAIRf4nGgYI/mqdefault.jpg)](https://www.youtube.com/watch?v=jAIRf4nGgYI)
+
+# Frequently Asked Question (FAQ)
+
+**Question** my preprocessing is stuck, showing `0it[00:00, ?it/s]`
+**Answer** This means that the audio files in your dataset are too short to provide a sufficient temporal scope to RAVE. Try decreasing the signal window with the `--num_signal XXX(samples)` with `preprocess`, without forgetting afterwards to add the `--n_signal XXX(samples)` with `train`
+
+**Question** During training I got an exception resembling `ValueError: n_components=128 must be between 0 and min(n_samples, n_features)=64 with svd_solver='full'`
+**Answer** This means that your dataset does not have enough data batches to compute the intern latent PCA, that requires at least 128 examples (then batches). 
+
 
 # Funding
 
