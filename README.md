@@ -283,11 +283,11 @@ Using nn~ for puredata, RAVE can be used in realtime on embedded platforms !
 
 # Frequently Asked Question (FAQ)
 
-**Question** my preprocessing is stuck, showing `0it[00:00, ?it/s]`
-**Answer** This means that the audio files in your dataset are too short to provide a sufficient temporal scope to RAVE. Try decreasing the signal window with the `--num_signal XXX(samples)` with `preprocess`, without forgetting afterwards to add the `--n_signal XXX(samples)` with `train`
+**Question** : my preprocessing is stuck, showing `0it[00:00, ?it/s]`<br/>
+**Answer** : This means that the audio files in your dataset are too short to provide a sufficient temporal scope to RAVE. Try decreasing the signal window with the `--num_signal XXX(samples)` with `preprocess`, without forgetting afterwards to add the `--n_signal XXX(samples)` with `train`
 
-**Question** During training I got an exception resembling `ValueError: n_components=128 must be between 0 and min(n_samples, n_features)=64 with svd_solver='full'`
-**Answer** This means that your dataset does not have enough data batches to compute the intern latent PCA, that requires at least 128 examples (then batches). 
+**Question** : During training I got an exception resembling `ValueError: n_components=128 must be between 0 and min(n_samples, n_features)=64 with svd_solver='full'`<br/>
+**Answer** : This means that your dataset does not have enough data batches to compute the intern latent PCA, that requires at least 128 examples (then batches). 
 
 
 # Funding
