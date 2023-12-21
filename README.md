@@ -58,7 +58,7 @@ rave preprocess --input_path /audio/folder --output_path /dataset/path (--lazy)
 RAVEv2 has many different configurations. The improved version of the v1 is called `v2`, and can therefore be trained with
 
 ```bash
-rave train --config v2 --db_path /dataset/path --out_path /model/out --name give_a_name
+rave train --config v2 --db_path /dataset/path --out_path /model/out --name give_a_name --channels X
 ```
 
 We also provide a discrete configuration, similar to SoundStream or EnCodec
