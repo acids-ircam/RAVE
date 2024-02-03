@@ -156,7 +156,7 @@ def main(argv):
         )
 
     # create model
-    model = rave.RAVE(n_channels=FLAGS.channels)
+    model = rave.RAVE()
     if FLAGS.derivative:
         model.integrator = rave.dataset.get_derivator_integrator(model.sr)[1]
 
