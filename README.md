@@ -94,42 +94,42 @@ Many other configuration files are available in `rave/configs` and can be combin
 <tr>
 <td rowspan=8>Architecture</td>
 <td>v1</td>
-<td>Original continuous model</td>
+<td>Original continuous model (minimum GPU memory : 8Go)</td>
 </tr>
 
 <tr>
 <td>v2</td>
-<td>Improved continuous model (faster, higher quality)</td>
+<td>Improved continuous model (faster, higher quality) (minimum GPU memory : 16Go)</td>
 </tr>
 
 <tr>
 <td>v2_small</td>
-<td>v2 with a smaller receptive field, adpated adversarial training, and noise generator, adapted for timbre transfer for stationary signals</td>
+<td>v2 with a smaller receptive field, adpated adversarial training, and noise generator, adapted for timbre transfer for stationary signals (minimum GPU memory : 8Go)</td>
 </tr>
 
 <tr>
 <td>v2_nopqmf</td>
-<td>(experimental) v2 without pqmf in generator (more efficient for bending purposes)</td>
+<td>(experimental) v2 without pqmf in generator (more efficient for bending purposes) (minimum GPU memory : 16Go)</td>
 </tr>
 
 <tr>
 <td>v3</td>
-<td>v2 with Snake activation, descript discriminator and Adaptive Instance Normalization for real style transfer</td>
+<td>v2 with Snake activation, descript discriminator and Adaptive Instance Normalization for real style transfer (minimum GPU memory : 32Go)</td>
 </tr>
 
 <tr>
 <td>discrete</td>
-<td>Discrete model (similar to SoundStream or EnCodec)</td>
+<td>Discrete model (similar to SoundStream or EnCodec) (minimum GPU memory : 18Go)</td>
 </tr>
 
 <tr>
 <td>onnx</td>
-<td>Noiseless v1 configuration for onnx usage</td>
+<td>Noiseless v1 configuration for onnx usage (minimum GPU memory : 6Go)</td>
 </tr>
 
 <tr>
 <td>raspberry</td>
-<td>Lightweight configuration compatible with realtime RaspberryPi 4 inference</td>
+<td>Lightweight configuration compatible with realtime RaspberryPi 4 inference (minimum GPU memory : 5Go)</td>
 </tr>
 
 <tr>
