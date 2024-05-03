@@ -935,6 +935,7 @@ def unit_norm_vector_to_angles(x: torch.Tensor) -> torch.Tensor:
     norms[:, 1] += norms[:, 0]
     norms = norms[:, 1:]
     norms = norms.cumsum(1).flip(1).sqrt()
+    norms = torch.where(norms == 0, 1e-24, norms)
     angles = torch.arccos(x[:, :-1] / norms)
     angles[:, -1] = torch.where(
         x[:, -1] >= 0,
