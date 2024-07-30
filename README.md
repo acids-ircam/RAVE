@@ -13,7 +13,7 @@ Please check the FAQ before posting an issue!
 **RAVE VST** RAVE VST for Windows, Mac and Linux is available as beta on the [corresponding Forum IRCAM webpage](https://forum.ircam.fr/projects/detail/rave-vst/). For problems, please write an issue here or [on the Forum IRCAM discussion page](https://discussion.forum.ircam.fr/c/rave-vst/651).
 
 **Tutorials** : new tutorials are available on the Forum IRCAM webpage, and video versions are coming soon!
-- [Tutorial: Neural Synthesis in a DAW with RAVE](https://forum.ircam.fr/article/detail/neural-synthesis-in-a-daw-with-rave/)
+- [Tutorial: Neural Synthesis in a DAW with RAVE](https://forum.ircam.fr/article/detail/tutorial-neural-synthesis-in-a-daw-with-rave/)
 - [Tutorial: Neural Synthesis in Max 8 with RAVE](https://forum.ircam.fr/article/detail/tutorial-neural-synthesis-in-max-8-with-rave/)
 - [Tutorial: Training RAVE models on custom data](https://forum.ircam.fr/article/detail/training-rave-models-on-custom-data/)
 
