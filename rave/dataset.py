@@ -62,7 +62,6 @@ class AudioDataset(data.Dataset):
                ae = AudioExample.FromString(txn.get(k)) 
                lens.append(np.frombuffer(ae.buffers['waveform'].data, dtype=np.int16).shape)
 
-
     def __len__(self):
         return len(self.keys)
 

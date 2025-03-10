@@ -15,6 +15,7 @@ import torch.nn as nn
 import torchaudio
 from einops import rearrange
 from scipy.signal import lfilter
+from torch import hann_window
 
 
 def mod_sigmoid(x):
@@ -44,7 +45,6 @@ def random_phase_mangle(x, min_f, max_f, amp, sr):
     b, a = pole_to_z_filter(angle, amp)
     return lfilter(b, a, x)
 
-
 def amp_to_impulse_response(amp, target_size):
     """
     transforms frequency amps to ir on the last dimension
@@ -55,8 +55,8 @@ def amp_to_impulse_response(amp, target_size):
 
     filter_size = amp.shape[-1]
 
-    amp = torch.roll(amp, filter_size // 2, -1)
-    win = torch.hann_window(filter_size, dtype=amp.dtype, device=amp.device)
+    amp = amp.roll(filter_size // 2, -1)
+    win = hann_window(filter_size).to(amp)
 
     amp = amp * win
 
@@ -64,7 +64,7 @@ def amp_to_impulse_response(amp, target_size):
         amp,
         (0, int(target_size) - int(filter_size)),
     )
-    amp = torch.roll(amp, -filter_size // 2, -1)
+    amp = amp.roll(-int(filter_size) // 2, -1)
 
     return amp
 

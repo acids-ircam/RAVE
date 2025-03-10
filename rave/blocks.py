@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Callable, Optional, Sequence, Union
 
+import torchbend as tb
 import cached_conv as cc
 import gin
 import numpy as np
@@ -10,6 +11,7 @@ from torch.nn.utils import weight_norm
 from torchaudio.transforms import Spectrogram
 
 from .core import amp_to_impulse_response, fft_convolve, mod_sigmoid
+amp_to_impulse_response = torch.fx.wrap(amp_to_impulse_response)
 
 
 @gin.configurable
@@ -558,7 +560,9 @@ class EncoderV2(nn.Module):
                         )))
 
             # ADD DOWNSAMPLING UNIT
-            net.append(activation(num_channels))
+            net.append(
+                tb.mark(activation(num_channels), "encoder_act", "pre")
+            )
 
             if keep_dim:
                 out_channels = num_channels * r
@@ -576,7 +580,9 @@ class EncoderV2(nn.Module):
 
             num_channels = out_channels
 
-        net.append(activation(num_channels))
+        net.append(
+            tb.mark(activation(num_channels), "encoder_act", "pre")
+        )
         net.append(
             normalization(
                 cc.Conv1d(
@@ -647,7 +653,8 @@ class GeneratorV2(nn.Module):
                 out_channels = num_channels // r
             else:
                 out_channels = num_channels // 2
-            net.append(activation(num_channels))
+            activation_layer = tb.mark(activation(num_channels), "decoder_act", "pre")
+            net.append(activation_layer)
             net.append(
                 normalization(
                     cc.ConvTranspose1d(num_channels,
@@ -670,7 +677,9 @@ class GeneratorV2(nn.Module):
                             dilation=d,
                         )))
 
-        net.append(activation(num_channels))
+        net.append(
+            tb.mark(activation(num_channels), "decoder_act")
+        )
 
         waveform_module = normalization(
             cc.Conv1d(
@@ -697,14 +706,15 @@ class GeneratorV2(nn.Module):
         x = self.net(x)
 
         noise = 0.
-
         if self.noise_module is not None:
-            noise = self.noise_module(x)
+            noise = tb.mark(self.noise_module(x), "noise")
             x = self.waveform_module(x)
 
         if self.amplitude_modulation:
             x, amplitude = x.split(x.shape[1] // 2, 1)
-            x = x * torch.sigmoid(amplitude)
+            x = tb.mark(x, "audio")
+            amplitude = tb.mark(torch.sigmoid(amplitude), "amplitude")
+            x = x * amplitude
 
         x = x + noise
 
@@ -772,12 +782,10 @@ class WasserteinEncoder(nn.Module):
     def reparametrize(self, z):
         z_reshaped = z.permute(0, 2, 1).reshape(-1, z.shape[1])
         reg = self.compute_mmd(z_reshaped, torch.randn_like(z_reshaped))
-
         if self.noise_augmentation:
             noise = torch.randn(z.shape[0], self.noise_augmentation,
                                 z.shape[-1]).type_as(z)
             z = torch.cat([z, noise], 1)
-
         return z, reg.mean()
 
     def set_warmed_up(self, state: bool):
@@ -848,13 +856,13 @@ class SphericalEncoder(nn.Module):
         z = self.encoder(x)
         return z
 
-
 class Snake(nn.Module):
 
     def __init__(self, dim: int) -> None:
         super().__init__()
         self.alpha = nn.Parameter(torch.ones(dim, 1))
 
+    @tb.mark(name="snake")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + (self.alpha + 1e-9).reciprocal() * (self.alpha *
                                                        x).sin().pow(2)

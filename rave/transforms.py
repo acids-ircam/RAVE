@@ -123,13 +123,14 @@ class Compress(Transform):
 
 @gin.configurable
 class RandomCompress(Transform):
-    def __init__(self, threshold = -40, amp_range = [-60, 0], attack=0.1, release=0.1, prob=0.8, sr=44100):
+    def __init__(self, threshold = -40, amp_range = [-60, 0], attack=0.1, release=0.1, prob=0.8, limit=True, sr=44100):
         assert prob >= 0. and prob <= 1., "prob must be between 0. and 1."
         self.amp_range = amp_range
         self.threshold = threshold
         self.attack = attack
         self.release = release
         self.prob = prob
+        self.limit = limit
         self.sr = sr
 
     def __call__(self, x: torch.Tensor):
@@ -140,6 +141,8 @@ class RandomCompress(Transform):
                                                             self.sr,
                                                              [['compand', f'{self.attack},{self.release}', f'6:-80,{self.threshold},{float(amp_factor)}']]
                                                             )[0].numpy()
+            if (self.limit) and (np.abs(x_aug).max() > 1): 
+                x_aug = x_aug / np.abs(x_aug).max()
             return x_aug
         else:
             return x
