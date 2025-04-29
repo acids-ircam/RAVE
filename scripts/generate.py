@@ -29,7 +29,7 @@ def get_audio_files(path):
         audio_files.extend([(path, os.path.join(root, f)) for f in valid_files])
     return audio_files
 
-
+@torch.no_grad()
 def main(argv):
     torch.set_float32_matmul_precision('high')
     cc.use_cached_conv(FLAGS.stream)
@@ -117,7 +117,6 @@ def main(argv):
             out = model.forward(x[None])
 
         # save file
-        out_path = re.sub(d, "", f)
         out_path = os.path.join(FLAGS.out_path, f)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         torchaudio.save(out_path, out[0].cpu(), sample_rate=model.sr)
