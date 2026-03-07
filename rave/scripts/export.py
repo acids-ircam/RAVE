@@ -327,6 +327,35 @@ class ScriptedRAVE(nn_tilde.Module):
             y = y[:, :self.target_channels]
         return y
 
+    @torch.jit.export
+    def decode_full(self, z, from_forward: bool = False):
+        n_batch = z.shape[0]
+        if self.stereo_mode:
+            n_batch = int(n_batch / 2)
+        z = self.pre_process_latent_full(z)
+        y = self.decoder(z)
+
+        batch_size = z.shape[:-2]
+        if self.output_mode == "pqmf":
+            y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
+            y = self.pqmf.inverse(y)
+            y = y.reshape(batch_size+(self.n_channels, -1))
+
+        if self.resampler is not None:
+            y = self.resampler.from_model_sampling_rate(y)
+
+        # if (output-) padding is scrambled
+        if y.shape[-1] > z.shape[-1] * self.decode_params[1]:
+            y = y[..., :z.shape[-1] * self.decode_params[1]]
+
+        if self.stereo_mode:
+            y = torch.cat([y[:n_batch], y[n_batch:]], 1)
+        elif self.target_channels > self.n_channels:
+            y = torch.cat(y.chunk(self.target_channels, 0), 1)
+        elif self.target_channels < self.n_channels:
+            y = y[:, :self.target_channels]
+        return y
+
     def forward(self, x):
         return self.decode(self.encode(x), from_forward=True)
 
@@ -472,35 +501,6 @@ class VariationalScriptedRAVE(ScriptedRAVE):
         return z
 
     @torch.jit.export
-    def decode_full(self, z, from_forward: bool = False):
-        n_batch = z.shape[0]
-        if self.stereo_mode:
-            n_batch = int(n_batch / 2)
-
-        y = self.decoder(z)
-
-        batch_size = z.shape[:-2]
-        if self.output_mode == "pqmf":
-            y = y.reshape(y.shape[0] * self.n_channels, -1, y.shape[-1])
-            y = self.pqmf.inverse(y)
-            y = y.reshape(batch_size+(self.n_channels, -1))
-
-        if self.resampler is not None:
-            y = self.resampler.from_model_sampling_rate(y)
-
-        # if (output-) padding is scrambled
-        if y.shape[-1] > z.shape[-1] * self.decode_params[1]:
-            y = y[..., :z.shape[-1] * self.decode_params[1]]
-
-        if self.stereo_mode:
-            y = torch.cat([y[:n_batch], y[n_batch:]], 1)
-        elif self.target_channels > self.n_channels:
-            y = torch.cat(y.chunk(self.target_channels, 0), 1)
-        elif self.target_channels < self.n_channels:
-            y = y[:, :self.target_channels]
-        return y
-
-    @torch.jit.export
     def encode_dist(self, x):
         if self.stereo_mode:
             if self.n_channels == 1:
@@ -537,14 +537,6 @@ class VariationalScriptedRAVE(ScriptedRAVE):
         std = std[:, :self.latent_size]
         return torch.cat([z, std], dim=-2)
 
-
-    def post_process_latent_full(self, z):
-        z = self.encoder.reparametrize(z, temperature=self.temperature[0])[0]
-        if self.use_pca:
-            z = z - self.latent_mean.unsqueeze(-1)
-            z = F.conv1d(z, self.latent_pca.unsqueeze(-1))
-        return z
-
     def post_process_latent(self, z):
         z = self.encoder.reparametrize(z, temperature=self.temperature[0])[0]
         if self.use_pca:
@@ -552,8 +544,14 @@ class VariationalScriptedRAVE(ScriptedRAVE):
             z = F.conv1d(z, self.latent_pca.unsqueeze(-1))
         z = z[:, :self.latent_size]
         return z
-        
-
+       
+    def post_process_latent_full(self, z):
+        z = self.encoder.reparametrize(z, temperature=self.temperature[0])[0]
+        if self.use_pca:
+            z = z - self.latent_mean.unsqueeze(-1)
+            z = F.conv1d(z, self.latent_pca.unsqueeze(-1))
+        return z
+ 
     def pre_process_latent(self, z):
         if z.shape[1] < self.full_latent_size:
             noise = torch.randn(
@@ -562,6 +560,12 @@ class VariationalScriptedRAVE(ScriptedRAVE):
                 z.shape[-1],
             ).type_as(z)
             z = torch.cat([z, noise * self.temperature[0]], 1)
+        if self.use_pca:
+            z = F.conv1d(z, self.latent_pca.T.unsqueeze(-1))
+            z = z + self.latent_mean.unsqueeze(-1)
+        return z
+
+    def pre_process_latent_full(self, z):
         if self.use_pca:
             z = F.conv1d(z, self.latent_pca.T.unsqueeze(-1))
             z = z + self.latent_mean.unsqueeze(-1)
