@@ -64,13 +64,8 @@ def get_run_name(run_path):
         return None
     return ((version_path / "..").resolve()).stem
 
-<<<<<<< HEAD
 def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", remove_keys=None, configs=[], overrides=[]):
     model_path = Path(model_path)
-=======
-def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", remove_keys=None):
-    model_path = Path(model_path).resolve()
->>>>>>> 19f16e0 (weights_only and resolve)
     if not model_path.exists():
         raise FileNotFoundError(str(model_path))
     if model_path.suffix == ".ts":
