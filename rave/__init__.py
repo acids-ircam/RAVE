@@ -64,8 +64,13 @@ def get_run_name(run_path):
         return None
     return ((version_path / "..").resolve()).stem
 
+<<<<<<< HEAD
 def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", remove_keys=None, configs=[], overrides=[]):
     model_path = Path(model_path)
+=======
+def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", remove_keys=None):
+    model_path = Path(model_path).resolve()
+>>>>>>> 19f16e0 (weights_only and resolve)
     if not model_path.exists():
         raise FileNotFoundError(str(model_path))
     if model_path.suffix == ".ts":
@@ -79,7 +84,7 @@ def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", 
         if run_path is None: 
             raise FileNotFoundError("no model found with name: %s"%name)
         rave_model = RAVE()
-        checkpoint = torch.load(run_path, map_location='cpu')
+        checkpoint = torch.load(run_path, map_location='cpu', weights_only=True)
         if remove_keys is not None: 
             if not isinstance(remove_keys, list): remove_keys = [remove_keys]
             weights_to_remove = []
