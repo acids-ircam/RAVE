@@ -14,7 +14,7 @@ from absl import flags, app, logging
 from itertools import product
 from pathlib import Path
 
-valid_exts = [".wav", ".aif", ".aiff", ".opus", ".mp3", ".aac"]
+valid_exts = rave.core.get_valid_extensions()
 flags.DEFINE_multi_string('model', required=True, default=None, help="model path")
 flags.DEFINE_multi_string('input', required=True, default=None, help="model inputs (file or folder)")
 flags.DEFINE_multi_enum('mode', 'stream', ['stream', 'full'], help="streaming mode")

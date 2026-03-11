@@ -569,13 +569,15 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
 
 def get_valid_extensions():
     import torchaudio
-    backend = torchaudio.get_audio_backend()
-    if backend in ["sox_io", "sox"]:
-        return ['.'+f for f in torchaudio.utils.sox_utils.list_read_formats()]
-    elif backend == "ffmpeg":
-        return ['.'+f for f in torchaudio.utils.ffmpeg_utils.get_audio_decoders()]
-    elif backend == "soundfile":
-        return ['.wav', '.flac', '.ogg', '.aiff', '.aif', '.aifc']
+    backends = torchaudio.list_audio_backends()
+    formats = set()
+    if "sox_io" in backends or "sox" in backends:
+        formats = formats.union(['.'+f for f in torchaudio.utils.sox_utils.list_read_formats()])
+    if "ffmpeg" in backends:
+        formats = formats.union(['.'+f for f in torchaudio.utils.ffmpeg_utils.get_audio_decoders()])
+    if "soundfile" in backends:
+        formats = formats.union(['.wav', '.flac', '.ogg', '.aiff', '.aif', '.aifc'])
+    return list(formats)
 
 accelerator_map = {
     'cpu': pl.accelerators.CPUAccelerator, 
