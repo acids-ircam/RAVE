@@ -406,9 +406,7 @@ class RAVE(pl.LightningModule):
             p.tick('dis opt')
         else:
             gen_opt.zero_grad()
-            loss_gen_value = 0.
-            for k, v in loss_gen.items():
-                loss_gen_value += v * self.weights.get(k, 1.)
+            loss_gen_value = sum(loss_gen.values(), 0.)
             loss_gen_value.backward()
             gen_opt.step()
 
