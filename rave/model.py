@@ -817,22 +817,23 @@ class RAVE(pl.LightningModule):
         if self.trainer.state.stage == RunningStage.SANITY_CHECKING:
             return
 
-        if len(self.latent_val_buffer) + z.shape[0] < MAX_LATENT_FOR_VALIDATION: 
-            self.latent_val_buffer.extend(z.detach().cpu())
+        remaining = MAX_LATENT_FOR_VALIDATION - len(self.latent_val_buffer)
+        if z is not None and remaining > 0:
+            self.latent_val_buffer.extend(z[:remaining].detach().cpu())
         
-        if len(self.audio_val_buffer) + len(audio) < MAX_AUDIO_FOR_LOGGING:
-            self.audio_val_buffer.extend(audio)
+        remaining_audio = MAX_AUDIO_FOR_LOGGING - len(self.audio_val_buffer)
+        if remaining_audio > 0:
+            self.audio_val_buffer.extend(audio[:remaining_audio])
 
     def on_validation_epoch_end(self):
 
         if self.trainer.state.stage == RunningStage.SANITY_CHECKING:
             return
 
-        z = torch.stack(self.latent_val_buffer, 0) 
         audio = torch.cat(self.audio_val_buffer, 0)
         if isinstance(self.encoder, blocks.VariationalEncoder):
             if not (self.warmed_up and not self.no_freeze_when_warmed_up) and (self.update_pca):
-                #z = torch.cat(z, 0)
+                z = torch.stack(self.latent_val_buffer, 0)
                 z = rearrange(z, "b c t -> (b t) c")
 
                 self.latent_mean.copy_(z.mean(0))

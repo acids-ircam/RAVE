@@ -168,15 +168,13 @@ class StreamableSTFT(torch.nn.Module):
         x = x.reshape(batch_size * n_channels, 1, x.shape[-1])
 
         if self.stream == True:
-            if self.audio_buffer.shape[0] != x.shape[0]:
-                print(
-                    "Resizing and resetting buffer - the batch size has changed"
-                )
-                self.audio_buffer = torch.zeros(
-                    (x.shape[0], 1, self.nfft - self.hop_size)).to(x)
-
-            x = torch.cat([self.audio_buffer, x], dim=-1)
-            self.audio_buffer = x[..., -(self.nfft - self.hop_size):]
+            if self.audio_buffer.shape[0] < x.shape[0]:
+                extra = x.new_zeros((x.shape[0] - self.audio_buffer.shape[0], 1,
+                                     self.nfft - self.hop_size))
+                self.audio_buffer = torch.cat((self.audio_buffer, extra), dim=0)
+            n = x.shape[0]
+            x = torch.cat([self.audio_buffer[:n], x], dim=-1)
+            self.audio_buffer[:n].copy_(x[..., -(self.nfft - self.hop_size):].detach())
 
         spec = self.transform(x)
         spec = spec.squeeze(1)
@@ -222,7 +220,7 @@ class StreamableSTFT(torch.nn.Module):
         return spec, batch_size, n_channels
 
     def _resize_stream_buffers(self, n:int, spec):
-        if self.spec_buffer.shape[0] != n or self.spec_buffer.shape[1] != spec.shape[-2]:
+        if self.spec_buffer.shape[1] != spec.shape[-2]:
             self.spec_buffer = torch.zeros(
                 n,
                 spec.shape[-2],
@@ -230,14 +228,18 @@ class StreamableSTFT(torch.nn.Module):
                 dtype=spec.dtype,
                 device=spec.device,
             )
-        if self.out_buffer.shape[0] != n:
-            self.out_buffer = torch.zeros(
-                n,
+        elif self.spec_buffer.shape[0] < n:
+            self.spec_buffer = torch.cat((self.spec_buffer, spec.new_zeros(
+                (n - self.spec_buffer.shape[0], spec.shape[-2], self.n_fade))), dim=0)
+        if self.out_buffer.shape[0] < n:
+            extra = torch.zeros(
+                n - self.out_buffer.shape[0],
                 1,
                 self.hop_size * self.n_fade,
                 dtype=spec.real.dtype,
                 device=spec.device,
             )
+            self.out_buffer = torch.cat((self.out_buffer, extra), dim=0)
 
     # @torch.no_grad
     def inverse(self, spec):
@@ -331,28 +333,29 @@ class CausalSTFT(torch.nn.Module):
         return mag.to(unit_phase.dtype) * unit_phase
 
     def _resize_buffers(self, n:int, x):
-        if self.audio_buffer.shape[0] != n:
-            self.audio_buffer = torch.zeros(
-                n,
+        if self.audio_buffer.shape[0] < n:
+            extra = n - self.audio_buffer.shape[0]
+            self.audio_buffer = torch.cat((self.audio_buffer, torch.zeros(
+                extra,
                 1,
                 self.nfft - self.hop_size,
                 dtype=x.dtype,
                 device=x.device,
-            )
-            self.ola_buffer = torch.zeros(
-                n,
+            )), dim=0)
+            self.ola_buffer = torch.cat((self.ola_buffer, torch.zeros(
+                extra,
                 1,
                 self.nfft,
                 dtype=x.dtype,
                 device=x.device,
-            )
-            self.envelope_buffer = torch.zeros(
-                n,
+            )), dim=0)
+            self.envelope_buffer = torch.cat((self.envelope_buffer, torch.zeros(
+                extra,
                 1,
                 self.nfft,
                 dtype=x.dtype,
                 device=x.device,
-            )
+            )), dim=0)
 
     def _trim_features(self, spec):
         if self.skip_features is not None:

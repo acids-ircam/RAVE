@@ -33,6 +33,7 @@ except:
 import rave.blocks
 import rave.core
 from rave.stft import CausalSTFT, StreamableSTFT
+from rave.cachedConv2D import CachedPadding2d, CachedConvTranspose2d
 import rave.resampler
 from rave.prior import model as prior
 
@@ -826,7 +827,6 @@ def main(argv):
             nn.utils.remove_weight_norm(m)
 
 
-    # cc.MAX_BATCH_SIZE = 1
     logging.info("script model")
     scripted_rave = script_class(
         pretrained=pretrained,
@@ -851,6 +851,21 @@ def main(argv):
     output = os.path.abspath(output)
     if not os.path.isdir(output):
         os.makedirs(output)
+    if FLAGS.streaming:
+        # Warmup and nn~ checks populate caches. Do not serialize that state.
+        for module in scripted_rave.modules():
+            if isinstance(module, CachedPadding2d):
+                module.pad = module.pad[:0].clone()
+            elif isinstance(module, CachedConvTranspose2d):
+                module.cache = module.cache[:0].clone()
+            elif isinstance(module, CausalSTFT):
+                module.audio_buffer = module.audio_buffer[:0].clone()
+                module.ola_buffer = module.ola_buffer[:0].clone()
+                module.envelope_buffer = module.envelope_buffer[:0].clone()
+            elif isinstance(module, StreamableSTFT):
+                module.audio_buffer = module.audio_buffer[:0].clone()
+                module.out_buffer = module.out_buffer[:0].clone()
+                module.spec_buffer = module.spec_buffer[:0].clone()
     scripted_rave.export_to_ts(os.path.join(output, model_name))
     try:
         if pretrained.n_channels <= 2:

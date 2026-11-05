@@ -220,3 +220,34 @@ def test_full_resume_preserves_discriminator_cadence():
     resumed = Toy('full')
     resumed.on_load_checkpoint(checkpoint)
     assert step(resumed) == {'encoder', 'decoder'}
+
+
+def test_validation_updates_pca_from_small_dataset():
+    import numpy as np
+    from einops import rearrange
+    from sklearn.decomposition import PCA
+
+    hooks = [node for node in model.body if isinstance(node, ast.FunctionDef)
+             and node.name in {'on_validation_batch_end', 'on_validation_epoch_end'}]
+    scope = {'torch': torch, 'np': np, 'rearrange': rearrange, 'PCA': PCA,
+             'MAX_LATENT_FOR_VALIDATION': 2000, 'MAX_AUDIO_FOR_LOGGING': 32,
+             'blocks': SimpleNamespace(VariationalEncoder=Encoder),
+             'RunningStage': SimpleNamespace(SANITY_CHECKING='sanity')}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=hooks, type_ignores=[])),
+                 'rave/model.py', 'exec'), scope)
+    instance = SimpleNamespace(
+        receptive_field=torch.ones(2),
+        trainer=SimpleNamespace(state=SimpleNamespace(stage='validation')),
+        encoder=Encoder(3, 3), warmed_up=True, no_freeze_when_warmed_up=True,
+        update_pca=True, latent_val_buffer=[], audio_val_buffer=[],
+        latent_mean=torch.zeros(3), latent_pca=torch.eye(3), fidelity=torch.zeros(3),
+        integrator=None, eval_number=0, sr=44100,
+        logger=SimpleNamespace(experiment=SimpleNamespace(add_audio=lambda *args: None)),
+        log=lambda *args: None)
+    z = torch.tensor([[[1., 2., 3., 4.], [2., 1., 4., 2.], [0., 3., 2., 1.]]])
+    scope['on_validation_batch_end'](instance, (torch.zeros(1, 8), z))
+    scope['on_validation_epoch_end'](instance)
+    assert torch.allclose(instance.latent_mean, z.mean(dim=(0, 2)))
+    assert instance.fidelity[-1] == pytest.approx(1.)
+    assert not torch.equal(instance.latent_pca, torch.eye(3))
+    assert not instance.latent_val_buffer

@@ -5,8 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import cached_conv as cc
 
-MAX_BATCH_SIZE = 64
-
 class CachedPadding2d(nn.Module):
 
     def __init__(self, padding, crop=False):
@@ -14,22 +12,15 @@ class CachedPadding2d(nn.Module):
 
         self.padding = padding
         self.crop = crop
-        self.initialized = 0
-
-    @torch.jit.unused
-    @torch.no_grad()
-    def init_cache(self, x: torch.Tensor) -> None:
-        b, c, h, _ = x.shape
-        self.register_buffer(
-            'pad',
-            torch.zeros((MAX_BATCH_SIZE, c, h, self.padding)).to(x))
-        self.initialized += 1
+        self.register_buffer('pad', torch.empty(0, 0, 0, padding))
 
     def forward(self, x):
-        if not self.initialized:
-            self.init_cache(x)
-
         if self.padding:
+            if self.pad.shape[0] == 0:
+                self.pad = x.new_zeros((x.shape[0], x.shape[1], x.shape[2], self.padding))
+            elif x.shape[0] > self.pad.shape[0]:
+                extra = x.new_zeros((x.shape[0] - self.pad.shape[0], x.shape[1], x.shape[2], self.padding))
+                self.pad = torch.cat((self.pad, extra), dim=0)
             x = torch.cat([self.pad[:x.shape[0]], x], -1)
 
             self.pad[:x.shape[0]].copy_(x[..., -self.padding:])
@@ -220,24 +211,7 @@ class CachedConvTranspose2d(nn.ConvTranspose2d):
             self._padding = [self.padding[0], 0]
             self.time_pad = self.padding[1]
             self.use_cache = False
-        self.initialized = 0
-
-    @torch.jit.unused
-    @torch.no_grad()
-    def init_cache(self, x):
-        b, c, h, _ = x.shape
-
-        self.register_buffer(
-            "cache",
-            torch.zeros(
-                MAX_BATCH_SIZE,
-                c,
-                h,
-                2 * self.time_pad,
-            ).to(x),
-            persistent=False,
-        )
-        self.initialized += 1
+        self.register_buffer("cache", torch.empty(0, 0, 0, 2 * self.time_pad), persistent=False)
 
     def forward(self, x):
         x = F.conv_transpose2d(
@@ -251,12 +225,14 @@ class CachedConvTranspose2d(nn.ConvTranspose2d):
             self.dilation,
         )
 
-        if not self.initialized:
-            self.init_cache(x)
-
         padding = 2 * self.time_pad
 
-        if self.use_cache:
+        if self.use_cache and padding > 0:
+            if self.cache.shape[0] == 0:
+                self.cache = x.new_zeros((x.shape[0], x.shape[1], x.shape[2], padding))
+            elif x.shape[0] > self.cache.shape[0]:
+                extra = x.new_zeros((x.shape[0] - self.cache.shape[0], x.shape[1], x.shape[2], padding))
+                self.cache = torch.cat((self.cache, extra), dim=0)
             x[..., :padding] += self.cache[:x.shape[0]]
             self.cache[:x.shape[0]].copy_(x[..., -padding:])
 

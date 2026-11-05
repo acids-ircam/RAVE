@@ -80,7 +80,7 @@ flags.DEFINE_float('regularization_weight', None,
 flags.DEFINE_integer('workers',
                      default=0,
                      help='Number of workers to spawn for dataset loading')
-flags.DEFINE_boolean('update_pca', default=False, help="Does the model updates its inner PCA (not recommanded for small transfer datasets)")
+flags.DEFINE_boolean('update_pca', default=True, help="Update latent PCA during validation; use --noupdate_pca to retain the source PCA")
 flags.DEFINE_multi_string('device', default="auto", help="training device (default: auto. Can be cuda, cuda:0, ..., mps, etc.)")
 flags.DEFINE_bool('derivative',
                   default=False,
@@ -150,6 +150,9 @@ def main(argv):
         model, run_path = rave.load_rave_checkpoint(FLAGS.run, ema=FLAGS.ema_weights, name=None, remove_keys=remove_keys, overrides=FLAGS.override, keep_config=True)
     if FLAGS.beta is not None and not isinstance(model.encoder, rave.blocks.VariationalEncoder):
         raise ValueError('--beta requires a variational encoder')
+    # The model was instantiated inside GinEnv, so its operative bindings are
+    # no longer recorded after that context exits. Save the parsed bindings.
+    model_config = gin.config_str()
     RUN_NAME = rave.get_run_name(run_path)
 
     if FLAGS.derivative:
@@ -202,13 +205,6 @@ def main(argv):
     if len(dataset) < model.latent_size:
         train, val = dataset, dataset
 
-    if FLAGS.update_pca is None:
-        FLAGS.update_pca = len(val) > rave.model.MAX_LATENT_FOR_VALIDATION
-    elif FLAGS.update_pca: 
-        if len(val) < rave.model.MAX_LATENT_FOR_VALIDATION:
-            logging.error(f'Cannot update PCA on {len(val)} examples. Set --update_pca empty, or explicitely pass --noupdate_pca')
-            exit()
-        logging.info("setting update_pca to %s"%FLAGS.update_pca)
     model.update_pca = FLAGS.update_pca
 
     num_workers = rave.core.get_workers(FLAGS.workers)
@@ -274,8 +270,11 @@ def main(argv):
     )
 
 
-    with open(os.path.join(FLAGS.out_path, FLAGS.name, "config.gin"), "w") as config_out:
-        config_out.write(gin.operative_config_str())
+    # Keep each version's configuration beside its checkpoints so later runs
+    # with the same name cannot change the configuration used for export.
+    os.makedirs(trainer.logger.log_dir, exist_ok=True)
+    with open(os.path.join(trainer.logger.log_dir, "config.gin"), "w") as config_out:
+        config_out.write(model_config)
 
     trainer.fit(model, train, val, ckpt_path=run)
 
