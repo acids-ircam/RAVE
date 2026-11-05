@@ -144,7 +144,7 @@ def main(argv):
     # check dataset channels
     n_channels = rave.dataset.get_training_channels(FLAGS.db_path, FLAGS.channels) if not FLAGS.channels else FLAGS.channels
     FLAGS.override.append('RAVE.n_channels=%d'%n_channels)
-    if FLAGS.beta: FLAGS.override.append("model.BetaWarmupCallback.target_value=%d"%FLAGS.beta)
+    if FLAGS.beta: FLAGS.override.append("model.BetaWarmupCallback.target_value=%r"%FLAGS.beta)
     
     # parse configuration
     if FLAGS.ckpt:
