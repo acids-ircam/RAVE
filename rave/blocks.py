@@ -1,13 +1,14 @@
 from functools import partial
 from typing import Callable, Optional, Sequence, Union, Any
 import torch
-
 import torch.nn as nn
+
 try:
     import torchbend as tb
+    mark_fn = tb.mark
 except ModuleNotFoundError:
     @torch.jit.ignore
-    def mark_fn(obj, *args, **kwargs):
+    def mark_fn(obj=None, *args, **kwargs):
         if obj is None: 
             return lambda x: x
         else:
@@ -592,7 +593,7 @@ class EncoderV2(nn.Module):
 
             # ADD DOWNSAMPLING UNIT
             net.append(
-                tb.mark(activation(num_channels), "encoder_act", "pre")
+                mark_fn(activation(num_channels), "encoder_act", "pre")
             )
 
             if keep_dim:
@@ -612,7 +613,7 @@ class EncoderV2(nn.Module):
             num_channels = out_channels
 
         net.append(
-            tb.mark(activation(num_channels), "encoder_act", "pre")
+            mark_fn(activation(num_channels), "encoder_act", "pre")
         )
         net.append(
             normalization(
@@ -884,7 +885,7 @@ class GeneratorV2(nn.Module):
                 out_channels = num_channels // r
             else:
                 out_channels = num_channels // 2
-            activation_layer = tb.mark(activation(num_channels), "decoder_act", "pre")
+            activation_layer = mark_fn(activation(num_channels), "decoder_act", "pre")
             net.append(activation_layer)
             net.append(
                 normalization(
@@ -909,7 +910,7 @@ class GeneratorV2(nn.Module):
                         )))
 
         net.append(
-            tb.mark(activation(num_channels), "decoder_act")
+            mark_fn(activation(num_channels), "decoder_act")
         )
 
         waveform_module = normalization(
@@ -938,13 +939,13 @@ class GeneratorV2(nn.Module):
 
         noise = 0.
         if self.noise_module is not None:
-            noise = tb.mark(self.noise_module(x), "noise")
+            noise = mark_fn(self.noise_module(x), "noise")
             x = self.waveform_module(x)
 
         if self.amplitude_modulation:
             x, amplitude = x.split(x.shape[1] // 2, 1)
-            x = tb.mark(x, "audio")
-            amplitude = tb.mark(torch.sigmoid(amplitude), "amplitude")
+            x = mark_fn(x, "audio")
+            amplitude = mark_fn(torch.sigmoid(amplitude), "amplitude")
             x = x * amplitude
 
         x = x + noise
@@ -1114,15 +1115,15 @@ class VariationalEncoder(nn.Module):
 
     def reparametrize(self, z, temperature: float = 1.):
         mean, scale = z.chunk(2, 1)
-        mean = tb.mark(mean, name="latent_mean")
+        mean = mark_fn(mean, name="latent_mean")
         std = nn.functional.softplus(scale) + 1e-4
-        std = tb.mark(std, name="latent_std")
+        std = mark_fn(std, name="latent_std")
         var = std * std
         logvar = torch.log(var)
 
         z = torch.randn_like(mean) * temperature * std + mean
         kl = (mean * mean + var - logvar - 1).sum(1).mean()
-        z = tb.mark(z, name="latent")
+        z = mark_fn(z, name="latent")
 
         return z, self.beta * kl
 
@@ -1131,7 +1132,7 @@ class VariationalEncoder(nn.Module):
         self.warmed_up = state
 
     def forward(self, x: torch.Tensor):
-        z = tb.mark(self.encoder(x), name="encoder_out")
+        z = mark_fn(self.encoder(x), name="encoder_out")
 
         if self.warmed_up and not self.no_freeze_when_warmed_up:
             z = z.detach()
@@ -1251,7 +1252,7 @@ class Snake(nn.Module):
         super().__init__()
         self.alpha = nn.Parameter(torch.ones(dim, 1))
 
-    @tb.mark(name="snake")
+    @mark_fn(name="snake")
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + (self.alpha + 1e-9).reciprocal() * (self.alpha *
                                                        x).sin().pow(2)
