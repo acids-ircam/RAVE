@@ -147,3 +147,39 @@ def test_new_head_full_streaming_export(tmp_path):
             y = scripted(torch.randn(1, 1, 2048) * 0.1)
             assert y.shape == (1, 1, 2048)
             assert torch.isfinite(y).all()
+
+
+@pytest.mark.parametrize('smoothing', [0, 7])
+def test_nonstreaming_decoder_can_train_on_consecutive_batches(smoothing):
+    model = small_decoder(output_kernel_size=3 if smoothing else 7,
+                          output_smoothing_kernel_size=smoothing)
+    assert not any(isinstance(module, (cc.CachedConv2d, cc.CachedConvTranspose2d))
+                   for module in model.modules())
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    for _ in range(3):
+        optimizer.zero_grad()
+        output = model(torch.randn(2, 8, 4))
+        loss = output.square().mean()
+        loss.backward()
+        optimizer.step()
+        assert torch.isfinite(loss)
+
+
+@pytest.mark.parametrize('smoothing', [0, 7])
+@pytest.mark.parametrize('adversarial', [False, True])
+def test_v4_training_loop_handles_consecutive_batches(smoothing, adversarial):
+    gin.parse_config_files_and_bindings(['v4.gin'], [
+        'CAPACITY=2', 'LATENT_SIZE=8',
+        'spectro_discriminator.SpectroDiscriminator.capacity=2',
+        f'blocks.Generator2D.output_kernel_size={3 if smoothing else 7}',
+        f'blocks.Generator2D.output_smoothing_kernel_size={smoothing}',
+    ])
+    model = rave.RAVE().train()
+    model.warmed_up = adversarial
+    model.log = lambda *args, **kwargs: None
+    model.log_dict = lambda *args, **kwargs: None
+    optimizers = [item['optimizer'] for item in model.configure_optimizers()]
+    model.optimizers = lambda: optimizers
+    for index in range(6):
+        model.training_step(torch.randn(1, 1, 16384) * 0.1, index)
+    assert all(torch.isfinite(parameter).all() for parameter in model.parameters())

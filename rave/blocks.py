@@ -639,11 +639,13 @@ def _wn(module: nn.Module):
     return layer
 
 def Conv2d(*args, **kwargs) -> nn.Module:
-    return CachedConv2d(*args, **kwargs, normalization=True)
+    # The factory disables stateful caches during training. Explicit CachedConv2d
+    # would retain an autograd graph from one training batch to the next.
+    return cc.Conv2d(*args, **kwargs, normalization=True)
 
 
 def ConvTranspose2d(*args, **kwargs) -> nn.Module:
-    return _wn(CachedConvTranspose2d(*args, **kwargs))
+    return _wn(cc.ConvTranspose2d(*args, **kwargs))
 
 
 def Conv1d(*args, **kwargs) -> nn.Module:
