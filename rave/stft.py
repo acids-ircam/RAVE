@@ -314,6 +314,22 @@ class CausalSTFT(torch.nn.Module):
         self.register_buffer("envelope_buffer",
                              torch.zeros(8, 1, nfft),
                              persistent=False)
+        # steady-state overlap-add envelope of the squared window over one hop. The analysis
+        # buffer starts with zeros, i.e. frames before the stream start are silent: dividing
+        # by the full envelope from the first frame on is exact, while dividing by the envelope
+        # of the frames seen so far amplifies the window edges (~1/w^2) at the stream start.
+        self.register_buffer("ola_envelope",
+                             self._ola_envelope(self.window, hop_size)[None, None],
+                             persistent=False)
+
+    @staticmethod
+    def _ola_envelope(window, hop_size: int):
+        window_sq = window.square()
+        envelope = torch.zeros(hop_size, dtype=window.dtype)
+        for start in range(0, window_sq.shape[0], hop_size):
+            segment = window_sq[start:start + hop_size]
+            envelope[:segment.shape[0]] += segment
+        return envelope
 
     @property
     def delay(self):
@@ -446,7 +462,7 @@ class CausalSTFT(torch.nn.Module):
             )
             envelope_buffer = torch.zeros_like(ola_buffer)
         window = self.window.to(spec.real)
-        window_sq = window.square()[None, None]
+        denom = self.ola_envelope.to(spec.real)
 
         output = []
         for frame_spec in spec.unbind(-1):
@@ -454,22 +470,17 @@ class CausalSTFT(torch.nn.Module):
             frame = frame[:, None] * window[None, None]
 
             ola_buffer += frame
-            envelope_buffer += window_sq
 
-            denom = envelope_buffer[:, :, :self.hop_size]
             y = torch.where(
                 denom > 1e-8,
                 ola_buffer[:, :, :self.hop_size] / denom.clamp_min(1e-8),
-                torch.zeros_like(denom),
+                torch.zeros_like(ola_buffer[:, :, :self.hop_size]),
             )
             output.append(y)
 
             ola_buffer[:, :, :-self.hop_size] = (
                 ola_buffer[:, :, self.hop_size:].clone())
             ola_buffer[:, :, -self.hop_size:] = 0
-            envelope_buffer[:, :, :-self.hop_size] = ( 
-                envelope_buffer[:, :, self.hop_size:].clone())
-            envelope_buffer[:, :, -self.hop_size:] = 0
 
         x = torch.cat(output, -1)
         return x.reshape(batch_size, n_channels, -1)

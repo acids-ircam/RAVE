@@ -25,10 +25,11 @@ flags.DEFINE_string('out_path', default='generations', help="output path")
 FLAGS = flags.FLAGS
 
 def process_stream(x, model, device, chunk_size=None):
+    n_samples = x.shape[-1]
     if chunk_size:
         x = list(x.split(chunk_size, dim=-1))
-        if x[-1].shape[0] < chunk_size:
-            x[-1] = torch.nn.functional.pad(x[-1], (0, FLAGS.chunk_size - x[-1].shape[-1]))
+        if x[-1].shape[-1] < chunk_size:
+            x[-1] = torch.nn.functional.pad(x[-1], (0, chunk_size - x[-1].shape[-1]))
         x = torch.stack(x, 0)
     else:
         x = x[None]
@@ -42,12 +43,13 @@ def process_stream(x, model, device, chunk_size=None):
             out.append(out_tmp.to('cpu'))
             del out_tmp, x_chunk_tmp
             torch.cuda.empty_cache()
-    out = torch.cat(out, -1)
+    out = torch.cat(out, -1)[..., :n_samples]
     return out
 
 def process_full(x, model, device):
     x = x.to(device)
-    out = model.forward(x[None])
+    with torch.no_grad():
+        out = model.forward(x[None])
     return out
 
 def process_audio(path, mode, loudness, model=None, out_path="caca/", device=torch.device('cpu'), model_path=None, **kwargs):

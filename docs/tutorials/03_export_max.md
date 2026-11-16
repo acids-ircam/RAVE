@@ -196,6 +196,98 @@ Then load it in Max as in [Tutorial 1](01_max_msp.md):
 [ezdac~]
 ```
 
+## 9. Beyond `encode` / `decode`: `encode_full`, `decode_full`, `encode_dist`
+
+Continuous models (variational and Wasserstein) are exported with extra `nn~` methods. They skip
+the projection and the cropping to `latent_size` described in steps 3 and 4. Use them when you need
+the model's raw latent space or its uncertainty, not just a handful of musical controls.
+
+| Method        | Models                   | Inlets → outlets | What flows through |
+| ------------- | ------------------------ | ---------------- | ------------------ |
+| `encode`      | all                      | audio → `latent_size` | Latent in the selected `projection`, cropped to `latent_size`. |
+| `decode`      | all                      | `latent_size` → audio | Inverse projection; missing dimensions filled with noise × `temperature`. |
+| `encode_full` | variational, Wasserstein | audio → `full_latent_size` | **Raw** latent space: no PCA, no projection, no cropping. |
+| `decode_full` | variational, Wasserstein | `full_latent_size` → audio | Decodes a raw latent, with no projection and no noise filling. |
+| `encode_dist` | variational              | audio → `2 × latent_size` | Posterior **mean** and **standard deviation**, in the default PCA space. |
+
+```text
+[nn~ strings_streaming encode_full]     ← 128 outlets for a v2 model
+[nn~ strings_streaming decode_full]     ← 128 inlets
+[nn~ strings_streaming encode_dist]     ← 2 × latent_size outlets: means, then stds
+```
+
+`full_latent_size` is large (128 for `v2`; 16 for `wasserstein`). For that many signals, the
+multichannel objects (`mc.nn~` / `mcs.nn~`) are easier to patch than one outlet per dimension.
+
+### `encode_full` / `decode_full`: the raw latent space
+
+`encode_full` returns the encoder's latent exactly as the decoder expects it:
+
+- **Variational models:** a sample of the posterior, `mean + temperature × std × noise`.
+  `set temperature 0` gives the posterior mean, so the output is deterministic.
+- **Wasserstein models:** the encoder output (16 dims by default). The decoder's extra noise
+  channels are not part of it: `decode_full` adds them internally.
+
+`decode_full` is the exact inverse path: whatever you send is fed to the decoder without rotation,
+mean offset or noise filling. Chaining the two, `encode_full → decode_full`, is the
+highest-fidelity reconstruction the model can do, and it is what `forward` does internally.
+
+Use them to:
+
+- **Get the best reconstruction while still processing the latent**, e.g. for smoothing, delaying or
+  freezing all dimensions between `encode_full` and `decode_full`. With `encode` / `decode`, the
+  dimensions above `latent_size` are replaced by noise.
+- **Use coordinates that do not depend on the export.** The PCA changes whenever you re-export
+  with another `--db_path`, but raw dimensions only change when you retrain. Data recorded from
+  `encode_full`, such as trajectories or presets, stays valid across re-exports of the same
+  checkpoint.
+- **Connect to tools that work in the raw space**, e.g. latent adapters or your own mappings
+  computed in Python on `model.encode_full(x)`.
+
+Keep in mind that raw dimensions are **not ordered by importance** and are correlated with each
+other: moving a single raw dimension usually has a weaker, less predictable effect than moving
+PCA dimension 1. For hand-played controls, prefer `encode` / `decode`.
+
+### `encode_dist`: mean and uncertainty
+
+For variational models, the encoder does not output a point but a Gaussian distribution
+(a mean and a standard deviation per dimension). `encode_dist` exposes both, as
+`2 × latent_size` signals:
+
+- outlets `1 … latent_size`: posterior **mean**, projected on the **default PCA** and cropped to
+  `latent_size`. This is the same as `encode` with `projection default` and `temperature 0`;
+- outlets `latent_size + 1 … 2 × latent_size`: the posterior **standard deviation**, carried into
+  the same PCA space (`std_i = sqrt(Σ_j P_ij² σ_j²)`, with `P` the PCA rotation).
+
+Notes:
+
+- The output does not depend on `temperature` (nothing is sampled) or on the `projection`
+  attribute (it always uses the default PCA, or the raw space for `_nopca` exports).
+- A low std means the model is confident about that dimension for the current input. A high std
+  (close to 1, the prior) means that dimension carries little information about the input, which
+  is typical of silence, or of material far from the training data.
+
+Use it as a **control signal**: e.g. gate or crossfade an effect on the model's confidence, detect
+when the input leaves the timbre space of the corpus, or record deterministic latent trajectories
+(the means) together with how reliable they are.
+
+`encode_dist` is not available for Wasserstein, discrete or spherical models: their encoders do not
+output a distribution.
+
+### In Python
+
+```python
+import torch
+
+model = torch.jit.load("strings_streaming.ts")
+x = torch.zeros(1, model.n_channels, 2048 * 8)
+with torch.no_grad():
+    z_full = model.encode_full(x)                     # (1, full_latent_size, T)
+    y = model.decode_full(z_full)                     # (1, n_channels, 2048 * 8)
+    dist = model.encode_dist(x)                       # (1, 2 * latent_size, T)
+    mean, std = dist.chunk(2, dim=1)
+```
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

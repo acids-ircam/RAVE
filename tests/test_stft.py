@@ -100,6 +100,28 @@ def test_causal_stft_exact_streaming_overlap_add():
     )
 
 
+def test_causal_stft_inverse_exact_from_stream_start():
+    # no amplification of the window edges on the first frames (silent frames before the start)
+    torch.manual_seed(0)
+    nfft, hop_size = 1024, 512
+    x = torch.randn(1, 1, hop_size * 16)
+    for stream in (False, True):
+        stft = CausalSTFT(nfft=nfft, hop_size=hop_size, skip_features=None, stream=stream)
+        if stream:
+            y = torch.cat([stft.inverse(stft(c)) for c in x.split(hop_size * 4, -1)], -1)
+        else:
+            y = stft.inverse(stft(x))
+        assert torch.allclose(y[..., stft.delay:], x[..., :-stft.delay], atol=1e-4, rtol=1e-4)
+        # a spectrum that is not the STFT of a signal (e.g. a decoder output): the first frames
+        # must not be divided by the (near-zero) edges of a single squared window
+        spec = torch.randn(1, 1, 2, nfft // 2 + 1, 16) * 0.1
+        stft = CausalSTFT(nfft=nfft, hop_size=hop_size, skip_features=None, stream=stream)
+        y = stft.inverse(spec) if not stream else torch.cat(
+            [stft.inverse(s) for s in spec.split(4, -1)], -1)
+        steady = y[..., nfft:].abs().max()
+        assert y[..., :nfft].abs().max() < 2 * steady
+
+
 def test_causal_stft_buffers_do_not_keep_previous_graph():
     torch.manual_seed(0)
     stft = CausalSTFT(nfft=256, hop_size=64, skip_features=-1, stream=False)

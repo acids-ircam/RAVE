@@ -10,6 +10,7 @@ site_url: !ENV [READTHEDOCS_CANONICAL_URL, ""]
 
 nav:
   - Home: index.md
+  - What's new in 2.4: whats_new.md
   - Tutorials:
       - 1. Use a model in Max/MSP: tutorials/01_max_msp.md
       - 2. Train a model: tutorials/02_train.md

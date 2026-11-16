@@ -632,6 +632,8 @@ class ContinuousScriptedRAVE(ScriptedRAVE):
             elif self.n_channels > 2:
                 raise RuntimeError("stereo mode is not available when n_channels > 2")
 
+        x = self.output_transform(x)
+
         if self.is_using_adain:
             self.update_adain()
 
@@ -659,11 +661,14 @@ class ContinuousScriptedRAVE(ScriptedRAVE):
     @torch.jit.export
     def decode_full(self, z, from_forward: bool = False):
 
-        z = self.pre_process_latent_full(z)
-
         n_batch = z.shape[0]
         if self.stereo_mode:
             n_batch = int(n_batch / 2)
+
+        if self.target_channels > self.n_channels:
+            z = z.repeat(math.ceil(self.target_channels / self.n_channels), 1, 1)[:self.target_channels]
+
+        z = self.pre_process_latent_full(z)
 
         y = self.decoder(z)
 
@@ -674,6 +679,8 @@ class ContinuousScriptedRAVE(ScriptedRAVE):
             y = y.reshape(batch_size+(self.n_channels, -1))
         elif self.output_mode == "complex_stft":
             y = self.spectrogram.inverse(y)
+
+        y = self.output_transform.invert(y)
 
         if self.resampler is not None:
             y = self.resampler.from_model_sampling_rate(y)
@@ -752,6 +759,8 @@ class VariationalScriptedRAVE(ContinuousScriptedRAVE):
             elif self.n_channels > 2:
                 raise RuntimeError("stereo mode is not available when n_channels > 2")
 
+        x = self.output_transform(x)
+
         if self.is_using_adain:
             self.update_adain()
 
@@ -775,7 +784,7 @@ class VariationalScriptedRAVE(ContinuousScriptedRAVE):
 
         # parse mean and scale
         z, scale = z.chunk(2, 1)
-        std = nn.functional.softplus(scale) + 1e-4
+        std = self.encoder.std_from_scale(scale)
         z = z - self.latent_mean.unsqueeze(-1)
         z = F.conv1d(z, self.latent_pca.unsqueeze(-1))
         z = z[:, :self.latent_size]

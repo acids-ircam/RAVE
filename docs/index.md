@@ -9,7 +9,7 @@ of that corpus, which you can then use to resynthesize, transform or generate au
 from the command line, or live in Max/MSP, Pure Data or the RAVE VST through
 [`nn~`](https://acids-ircam.github.io/nn_tilde/).
 
-This documentation covers version **2.4**.
+This documentation covers version **2.4**. Coming from 2.3? See [What's new in 2.4](whats_new.md).
 
 ## Where to start
 
@@ -22,6 +22,7 @@ This documentation covers version **2.4**.
 | Get more musical / meaningful latent controls  | [Tutorial 5 — Add custom representations](tutorials/05_custom_representations.md) |
 | Generate audio without any input               | [Tutorial 6 — Train a prior](tutorials/06_prior.md)                  |
 | Adapt an existing model to new sounds or inputs | [Tutorial 7 — Fine-tune a model](tutorials/07_finetune.md) |
+| Know what changed since 2.3                    | [What's new in 2.4](whats_new.md)                                    |
 | Copy-paste a command for a common case         | [Cookbook](cookbook.md)                                              |
 | Look up a flag, method or config               | [Reference](#reference)                                              |
 
