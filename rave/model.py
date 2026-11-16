@@ -1,4 +1,5 @@
 import math
+from contextlib import nullcontext
 import acids_dataset as ad
 from absl import logging
 import os
@@ -629,8 +630,10 @@ class RAVE(pl.LightningModule):
         else:
             gen_opt, dis_opt = self.optimizers()
             adversarial = self.warmed_up
+        discriminator_turn = (not finetune and adversarial and
+                              batch_idx % self.update_discriminator_every == 0)
         x_raw = batch
-        x_raw.requires_grad = not (finetune and self.finetune_discriminator_turn)
+        x_raw.requires_grad = finetune and not self.finetune_discriminator_turn
 
         batch_size = x_raw.shape[:-2]
         self.encoder.set_warmed_up(self.warmed_up)
@@ -638,54 +641,57 @@ class RAVE(pl.LightningModule):
 
         # ENCODE INPUT
         # get multiband in case
-        z, x_multiband = self.encode(x_raw, return_mb=True)
+        # Discriminator updates need generated audio, but no generator graph.
+        with torch.no_grad() if discriminator_turn else nullcontext():
+            z, x_multiband = self.encode(x_raw, return_mb=True)
 
-        z, reg = self.encoder.reparametrize(z)[:2]
-        p.tick('encode')
+            z, reg = self.encoder.reparametrize(z)[:2]
+            p.tick('encode')
 
-        # DECODE LATENT
-        y = self.decoder(z)
-        if self.output_mode == "pqmf":
-            y_multiband = y
-            y_raw = _pqmf_decode(self.pqmf, y, batch_size=batch_size, n_channels=self.n_channels)
-        elif self.output_mode== "complex_stft":
-            y_multiband = None
-            y_raw = self.spectrogram.inverse(y)
-        else:
-            y_raw = y 
-            y_multiband = _pqmf_encode(self.pqmf, y)
+            # DECODE LATENT
+            y = self.decoder(z)
+            if self.output_mode == "pqmf":
+                y_multiband = y
+                y_raw = _pqmf_decode(self.pqmf, y, batch_size=batch_size, n_channels=self.n_channels)
+            elif self.output_mode== "complex_stft":
+                y_multiband = None
+                y_raw = self.spectrogram.inverse(y)
+            else:
+                y_raw = y
+                y_multiband = _pqmf_encode(self.pqmf, y)
 
-        # TODO this has been added for training with num_samples = 65536 samples, output padding seems to mess with output dimensions. 
-        # this may probably conflict with cached_conv
-        
-        y_raw = y_raw[..., :x_raw.shape[-1]]
-        if y_multiband is not None:
-            y_multiband = y_multiband[..., :x_multiband.shape[-1]]
+            # TODO this has been added for training with num_samples = 65536 samples, output padding seems to mess with output dimensions.
+            # this may probably conflict with cached_conv
 
-        p.tick('decode')
+            y_raw = y_raw[..., :x_raw.shape[-1]]
+            if y_multiband is not None:
+                y_multiband = y_multiband[..., :x_multiband.shape[-1]]
 
-        if self.valid_signal_crop and self.receptive_field.sum():
-            x_multiband = rave.core.valid_signal_crop(
-                x_multiband,
-                *self.receptive_field,
-            )
-            y_multiband = rave.core.valid_signal_crop(
-                y_multiband,
-                *self.receptive_field,
-            )
-        p.tick('crop')
+            p.tick('decode')
+
+            if self.valid_signal_crop and self.receptive_field.sum():
+                x_multiband = rave.core.valid_signal_crop(
+                    x_multiband,
+                    *self.receptive_field,
+                )
+                y_multiband = rave.core.valid_signal_crop(
+                    y_multiband,
+                    *self.receptive_field,
+                )
+            p.tick('crop')
 
         # DISTANCE BETWEEN INPUT AND OUTPUT
         distances = {}
-        
-        if self.multiband_audio_distance is not None:
+
+        if not discriminator_turn and self.multiband_audio_distance is not None:
             multiband_distance =  self.multiband_audio_distance(
                 x_multiband, y_multiband)
             p.tick('mb distance')
             for k, v in multiband_distance.items():
                 distances[f'multiband_{k}'] = self.loss_weight('multiband_audio_distance', batch_idx) * v
 
-        fullband_distance = self.audio_distance(x_raw, y_raw)
+        fullband_distance = ({} if discriminator_turn else
+                             self.audio_distance(x_raw, y_raw))
         p.tick('fb distance')
 
         for k, v in fullband_distance.items():
@@ -694,7 +700,8 @@ class RAVE(pl.LightningModule):
         feature_matching_distance = 0.
 
         if adversarial:  # DISCRIMINATION
-            xy = torch.cat([x_raw, y_raw], 0)
+            if finetune or discriminator_turn:
+                xy = torch.cat([x_raw, y_raw], 0)
             if finetune and self.finetune_mode == 'alternating':
                 dis_optimizers = self.optimizers()
                 if isinstance(dis_optimizers, (list, tuple)) and len(dis_optimizers) > 1:
@@ -709,10 +716,24 @@ class RAVE(pl.LightningModule):
                     dis_loss = xy.new_zeros(())
                 for parameter in self.discriminator.parameters():
                     parameter.requires_grad_(False)
-            features = self.discriminator(
-                xy.detach() if finetune and self.finetune_discriminator_turn else xy)
-
-            feature_real, feature_fake = self.split_features(features)
+            if finetune or discriminator_turn:
+                features = self.discriminator(
+                    xy.detach() if discriminator_turn or self.finetune_discriminator_turn else xy)
+                feature_real, feature_fake = self.split_features(features)
+            else:
+                # Real features are fixed targets. Gradients through fake features
+                # must reach the generator, without computing discriminator grads.
+                parameters = list(self.discriminator.parameters())
+                requires_grad = [parameter.requires_grad for parameter in parameters]
+                try:
+                    for parameter in parameters:
+                        parameter.requires_grad_(False)
+                    with torch.no_grad():
+                        feature_real = self.discriminator(x_raw)
+                    feature_fake = self.discriminator(y_raw)
+                finally:
+                    for parameter, enabled in zip(parameters, requires_grad):
+                        parameter.requires_grad_(enabled)
 
             loss_dis = 0
             loss_adv = 0
@@ -721,7 +742,7 @@ class RAVE(pl.LightningModule):
             pred_fake = 0
 
             for scale_real, scale_fake in zip(feature_real, feature_fake):
-                current_feature_distance = sum(
+                current_feature_distance = 0. if discriminator_turn else sum(
                     map(
                         self.feature_matching_fun,
                         scale_real[self.num_skipped_features:-1],
@@ -757,7 +778,7 @@ class RAVE(pl.LightningModule):
         loss_gen.update(distances)
         p.tick('update loss gen dict')
 
-        if reg.item():
+        if not discriminator_turn and reg.item():
             regularization = self.beta_factor
             if finetune:
                 regularization = self.finetune_regularization
@@ -767,9 +788,9 @@ class RAVE(pl.LightningModule):
                     regularization = 0.
             loss_gen['regularization'] = reg * regularization
 
-        if adversarial:
-            loss_gen['feature_matching'] = feature_matching_distance #REMOVE DOUBLE WEIGHTING * self.loss_weight('feature_matching', batch_idx) * 
-            loss_gen['adversarial'] = loss_adv  #REMOVE DOUBLE WEIGHTING self.loss_weight('adversarial', batch_idx) * 
+        if adversarial and not discriminator_turn:
+            loss_gen['feature_matching'] = feature_matching_distance #REMOVE DOUBLE WEIGHTING * self.loss_weight('feature_matching', batch_idx) *
+            loss_gen['adversarial'] = loss_adv  #REMOVE DOUBLE WEIGHTING self.loss_weight('adversarial', batch_idx) *
 
         # OPTIMIZATION
         if finetune:

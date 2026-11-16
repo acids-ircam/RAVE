@@ -1,5 +1,6 @@
 """Exercise the fine-tuning path with small networks, without audio dependencies."""
 import ast
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,7 +18,7 @@ names = {'configure_optimizers', '_prepare_finetune_step', '_finetune_update',
 methods = [node for node in model.body if isinstance(node, ast.FunctionDef) and node.name in names]
 for method in methods:
     method.decorator_list = []
-namespace = {'torch': torch, 'Profiler': lambda: SimpleNamespace(tick=lambda *args: None),
+namespace = {'torch': torch, 'nullcontext': nullcontext, 'Profiler': lambda: SimpleNamespace(tick=lambda *args: None),
              '_pqmf_encode': lambda pqmf, x: x}
 exec(compile(ast.fix_missing_locations(ast.Module(body=methods, type_ignores=[])),
              'rave/model.py', 'exec'), namespace)
