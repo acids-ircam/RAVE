@@ -1,4 +1,5 @@
 import sys
+import math
 import types
 import importlib.util
 
@@ -40,8 +41,10 @@ def _run_v4_encoder2d_generator2d_forward(x, n_channels):
         z, kl = encoder.reparametrize(encoded)
         y = decoder(z)
 
-    assert encoded.shape == (2, 256, 2)
-    assert z.shape == (2, 128, 2)
+    latent_size = gin.query_parameter('%LATENT_SIZE')
+    frames = x.shape[-1] // math.prod(gin.query_parameter('%RATIOS_TIME'))
+    assert encoded.shape == (x.shape[0], 2 * latent_size, frames)
+    assert z.shape == (x.shape[0], latent_size, frames)
     assert kl.ndim == 0
     assert y.shape == x.shape
     assert torch.isfinite(y).all()

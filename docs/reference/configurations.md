@@ -29,12 +29,21 @@ Pick exactly one.
 | `v2_nopqmf_small` | *(experimental)* Smaller variant of `v2_nopqmf` (capacity 32), with random compression augmentation. | variational | — |
 | `v2_with_augs`    | *(experimental)* v2 with mel-spectrogram encoder input and random compression augmentation. | variational | — |
 | `v3`              | v2 + Snake activations + Descript discriminator + Adaptive Instance Normalization (real-time style transfer through `nn~` attributes). | variational | ~32 GB |
-| `v4`              | *(experimental)* Spectrogram-domain model: 2D encoder/decoder on a complex STFT, no PQMF. | variational | — |
+| `v4`              | *(experimental)* Spectrogram-domain model: 2D encoder/decoder on a complex STFT, no PQMF. Capacity 32; a 3×3 output projection followed by a trainable 7×7 convolution over the real/imaginary channels. | variational | — |
 | `discrete`        | Residual vector quantization (SoundStream / EnCodec-like): 16 quantizers × 1024 codes. Use for token-based priors (e.g. `msprior`). | discrete | ~18 GB |
 | `discrete_v3`     | `discrete` + Snake + Descript discriminator. | discrete | — |
 | `onnx`            | v1 with capacity 32 and no noise generator. | variational | ~6 GB |
 | `raspberry`       | `onnx` with capacity 16: lightweight enough for real-time inference on a Raspberry Pi 4. | variational | ~5 GB |
 | `hybrid`          | v2 with a mel-spectrogram encoder input and a GRU in the decoder. | variational | — |
+
+New v4 runs use the two-convolution output head. Both convolutions are trainable, with no
+activation between them; streaming uses cached past frames and keeps the output shape unchanged.
+Existing runs use their saved capacity and architecture. `Generator2D` keeps the legacy
+constructor defaults (`output_kernel_size=7`, `output_smoothing_kernel_size=0`), so saved
+configs without these options still load the original single-convolution head and its weights.
+To explicitly select that head in a new v4 run, pass
+`--override "blocks.Generator2D.output_kernel_size=7"`
+`--override "blocks.Generator2D.output_smoothing_kernel_size=0"`.
 
 ## Latent regularization
 

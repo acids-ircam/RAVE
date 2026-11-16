@@ -1004,6 +1004,8 @@ class Generator2D(nn.Module):
         recurrent_layer: Optional[Callable[[], nn.Module]] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.SiLU(),
         adain: Optional[Callable[[int], nn.Module]] = None,
+        output_kernel_size: int = 7,
+        output_smoothing_kernel_size: int = 0,
     )-> None:
         super().__init__()
 
@@ -1020,13 +1022,29 @@ class Generator2D(nn.Module):
         channels = [2 * capacity * m for m in ratios_channels]
         n = len(channels)
         
+        if output_kernel_size <= 0 or output_kernel_size % 2 == 0:
+            raise ValueError("output_kernel_size must be a positive odd integer")
+        if output_smoothing_kernel_size < 0 or (
+                output_smoothing_kernel_size and output_smoothing_kernel_size % 2 == 0):
+            raise ValueError("output_smoothing_kernel_size must be zero or a positive odd integer")
+
+        # Keep the legacy default and parameter names for saved configurations.
         self.outconv = Conv2d(channels[0],
                               data_size,
-                              kernel_size=7,
-                              padding_vert=(7 - 1) // 2,
-                              padding_time=cc.get_padding(kernel_size=7,
+                              kernel_size=output_kernel_size,
+                              padding_vert=output_kernel_size // 2,
+                              padding_time=cc.get_padding(kernel_size=output_kernel_size,
                                                           stride=1,
                                                           mode="causal"))
+        self.output_smoothing = nn.Identity()
+        if output_smoothing_kernel_size:
+            self.output_smoothing = Conv2d(
+                data_size,
+                data_size,
+                kernel_size=output_smoothing_kernel_size,
+                padding_vert=output_smoothing_kernel_size // 2,
+                padding_time=cc.get_padding(kernel_size=output_smoothing_kernel_size,
+                                           stride=1, mode="causal"))
         
         freq_total_ratio = math.prod(ratios_freq)
         self.freq_final_dim = (n_freqs//2) // freq_total_ratio
@@ -1084,6 +1102,7 @@ class Generator2D(nn.Module):
         for layer in self.up_layers:
             x = layer(x)
         x = self.outconv(x)
+        x = self.output_smoothing(x)
 
         x = self.unpack_input(x)
         return x

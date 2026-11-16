@@ -17,7 +17,7 @@ KERNEL_SIZE = 3
 RATIOS_TIME =     [1, 2, 2, 1, 1, 1, 1]
 RATIOS_FREQ =     [2, 2, 2, 2, 2, 2, 1]
 RATIOS_CHANNELS = [1, 1, 2, 2, 2, 2, 2, 4]
-CAPACITY = 64
+CAPACITY = 32
 NOISE_AUGMENTATION = 0
 LATENT_SIZE = 128
 
@@ -53,6 +53,8 @@ blocks.Generator2D:
     latent_size = %LATENT_SIZE
     kernel_size = %KERNEL_SIZE
     capacity = %CAPACITY
+    output_kernel_size = %KERNEL_SIZE
+    output_smoothing_kernel_size = 7
 
 
 # DISCRIMINATOR
