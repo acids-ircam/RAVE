@@ -1,3 +1,4 @@
+import torch
 from typing import Iterable, Tuple, List
 import math
 import numpy as np
@@ -58,7 +59,9 @@ def get_dataset(flags,
         sr=sr,
         channels=n_channels, 
         chunk_length = flags.n_signal, 
-        batch_by="files" if one_batch_per_file else "dataset"
+        batch_by="files" if one_batch_per_file else "dataset", 
+        float_dtype=torch.float32
+
     )
     
     assert flags.normalize in NORMALIZE_MODES

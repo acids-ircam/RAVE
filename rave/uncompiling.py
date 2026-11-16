@@ -40,6 +40,7 @@ from .projections import LINEAR_PROJECTION_PREFIXES
 #  "file" mode, or when given through the `config` argument.
 
 import datetime
+import gc
 import json
 import logging
 from pathlib import Path
@@ -56,17 +57,51 @@ _ARCH_PREFIXES = ("encoder", "decoder", "pqmf", "spectrogram")
 _IGNORED_SUBMODULES = (".cache", ".downsampling_delay", ".paddings", "rvq.")
 _ENCODER_ADDONS = {"WasserteinEncoder": "wasserstein", "SphericalEncoder": "spherical"}
 _MODEL_PREFIXES = ("encoder.", "decoder.", "pqmf.", "spectrogram.")
+_STATE_BUFFERS = ("warmed_up",)
 
 
 def _is_streaming_buffer(key: str) -> bool:
     return key.endswith(_SKIP_PATTERNS)
 
 
+_MISSING = object()
+
+# legacy exports (RAVE v1 `TraceModel`): attribute name -> legacy attribute name.
+# There, `latent_size` is the full latent size and `cropped_latent_size` the exported one.
+_LEGACY_ATTRS = {"sr": "sampling_rate", "full_latent_size": "latent_size", "latent_size": "cropped_latent_size"}
+
+
+def _is_legacy_export(ts) -> bool:
+    return isinstance(ts, torch.jit.ScriptModule) and hasattr(ts, "cropped_latent_size")
+
+
 def _ts_attr(ts, name, default=None):
+    if ts is None:
+        return default
+    if _is_legacy_export(ts):
+        if name == "n_channels" and not hasattr(ts, "n_channels") and hasattr(ts, "encode_params"):
+            return int(ts.encode_params[0])  # legacy exports: input channels of the encode method
+        name = _LEGACY_ATTRS.get(name, name)
     try:
-        return getattr(ts, name)
+        value = getattr(ts, name)
     except Exception:
         return default
+    if isinstance(value, torch.Tensor) and value.ndim == 0:  # legacy exports store scalars as buffers
+        value = value.item()
+    return value
+
+
+def unwrap_scripted(ts):
+    """returns the scripted RAVE inside wrappers (e.g. `Combined` RAVE + prior exports)."""
+    while _raw_class_name(ts) == "Combined" and _ts_attr(ts, "_rave") is not None:
+        _log.info("scripted model is a RAVE + prior wrapper: uncompiling its RAVE")
+        ts = ts._rave
+    if _ts_attr(ts, "encoder") is None or _ts_attr(ts, "decoder") is None:
+        children = [n for n, _ in ts.named_children()]
+        raise NotImplementedError(
+            f"unsupported scripted model {_raw_class_name(ts)} (no encoder / decoder sub-modules, "
+            f"children: {children}); graph-based exports (e.g. torchbend) cannot be uncompiled")
+    return ts
 
 
 def _raw_class_name(mod) -> str:
@@ -193,7 +228,8 @@ def architecture_signature(root: nn.Module) -> dict:
             continue
         own = {}
         for pname, p in list(mod.named_parameters(recurse=False)) + list(mod.named_buffers(recurse=False)):
-            if pname.endswith("_g") or pname in ("pad", "cache"):
+            # biases: older models only had some of them; handled in transfer_weights
+            if pname.endswith("_g") or pname in ("pad", "cache", "bias"):
                 continue
             own[pname[:-2] if pname.endswith("_v") else pname] = tuple(p.shape)
         is_leaf = len(list(mod.children())) == 0
@@ -205,6 +241,9 @@ def architecture_signature(root: nn.Module) -> dict:
 
 
 def _total_pad(mod):
+    if _module_class(mod) == "ConvTranspose1d":
+        # not stored consistently across cached_conv versions; set by kernel / stride in RAVE blocks
+        return None
     cache = _ts_attr(mod, "cache")
     if isinstance(cache, nn.Module):  # cached (streaming) conv: padding lives in the cache
         pad = dict(cache.named_buffers()).get("pad")
@@ -213,7 +252,40 @@ def _total_pad(mod):
     return int(sum(pad)) if pad is not None else None
 
 
+def _signature_groups(sig: dict) -> dict:
+    """{root ("encoder", "decoder"...): [(module name, description), ...]} in module order."""
+    groups = {}
+    for k, v in sig.items():
+        if v[1] and all(name in _STATE_BUFFERS for name, _ in v[1]):
+            continue  # containers holding only training state (absent from older exports)
+        groups.setdefault(k.split(".")[0], []).append((k, v))
+    return groups
+
+
+def module_name_map(sig_a: dict, sig_b: dict) -> dict:
+    """maps module names of `sig_a` to those of `sig_b` for every root (encoder, decoder...)
+    whose modules have the same descriptions in the same order, but different names
+    (e.g. legacy exports, where containers were nested differently)."""
+    mapping = {}
+    groups_a, groups_b = _signature_groups(sig_a), _signature_groups(sig_b)
+    for root, mods_a in groups_a.items():
+        mods_b = groups_b.get(root, [])
+        if [n for n, _ in mods_a] == [n for n, _ in mods_b]:
+            continue
+        if [v for _, v in mods_a] == [v for _, v in mods_b]:
+            mapping.update({na: nb for (na, _), (nb, _) in zip(mods_a, mods_b)})
+    return mapping
+
+
 def signature_distance(sig_a: dict, sig_b: dict):
+    """(number of differing modules, [(name, a, b), ...]). Modules are compared by name,
+    or by order for roots whose module names differ (see `module_name_map`)."""
+    mapping = module_name_map(sig_a, sig_b)
+    if mapping:
+        sig_a = {mapping.get(k, k): v for k, v in sig_a.items()}
+    is_state = lambda v: bool(v[1]) and all(name in _STATE_BUFFERS for name, _ in v[1])
+    sig_a = {k: v for k, v in sig_a.items() if not is_state(v)}
+    sig_b = {k: v for k, v in sig_b.items() if not is_state(v)}
     diffs = [(k, sig_a.get(k), sig_b.get(k)) for k in sorted(set(sig_a) | set(sig_b))
              if sig_a.get(k) != sig_b.get(k)]
     return len(diffs), diffs
@@ -245,6 +317,10 @@ def infer_hyperparameters(ts) -> dict:
     for name, mod, shape in enc_convs:
         stride, dil = int(mod.stride[0]), int(mod.dilation[0])
         if stride > 1:
+            # older cached_conv: strided convs padded with (stride - 1) samples less
+            pad, span = _total_pad(mod), (shape[-1] - 1) * dil
+            if pad is not None and pad != span and pad == max(span + 1 - stride, 0):
+                hp["legacy_stride_padding"] = True
             ratios.append(stride)
             dilations.append(stage)
             stage = []
@@ -252,10 +328,23 @@ def infer_hyperparameters(ts) -> dict:
             stage.append(dil)
             kernel = kernel or shape[-1]
     hp["RATIOS"] = ratios
-    hp["DEC_RATIOS"] = [int(m.stride[0]) for _, m, _ in _convs(ts, "decoder")
-                        if _module_class(m) == "ConvTranspose1d" or int(m.stride[0]) > 1][::-1]
+    # decoder upsampling stages (noise generators excluded), in config (encoder) order
+    dec_ratios, dec_dilations, dec_stage = [], [], None
+    for name, mod, shape in _convs(ts, "decoder.net."):
+        if _module_class(mod) == "ConvTranspose1d" or int(mod.stride[0]) > 1:
+            dec_ratios.append(int(mod.stride[0]))
+            dec_stage = []
+            dec_dilations.append(dec_stage)
+        elif dec_stage is not None and ".branches." in name and shape[-1] > 1:
+            dec_stage.append(int(mod.dilation[0]))
+    hp["DEC_RATIOS"] = dec_ratios[::-1]
     if any(dilations):
         hp["DILATIONS"] = dilations
+    if _ts_attr(ts, "input_mode") == "mel" and dec_ratios:
+        # spectrogram encoders: RATIOS / DILATIONS describe the decoder, ENCODER_RATIOS the encoder
+        hp["ENCODER_RATIOS"], hp["RATIOS"] = ratios, hp["DEC_RATIOS"]
+        if any(dec_dilations):
+            hp["DILATIONS"] = dec_dilations[::-1]
     if kernel:
         hp["KERNEL_SIZE"] = kernel
 
@@ -270,6 +359,46 @@ def infer_hyperparameters(ts) -> dict:
         embed = [v for k, v in sd.items() if "rvq.layers.0." in k and v.ndim == 2]
         if embed:
             hp["CODEBOOK_SIZE"] = int(embed[0].shape[0])
+
+    # v1 decoders: residual stacks (dilations of every residual layer of the first stack)
+    stacks = [n for n, m in ts.named_modules() if n.startswith("decoder") and _module_class(m) == "ResidualStack"]
+    if stacks:
+        layers, kernels = {}, {}  # residual layer -> dilations / kernel size
+        for name, mod, shape in _convs(ts, stacks[0] + "."):
+            if ".aligned." in name and shape[-1] > 1:
+                layer = name.rsplit(".aligned.", 1)[0]
+                layers.setdefault(layer, []).append(int(mod.dilation[0]))
+                kernels.setdefault(layer, shape[-1])
+        if layers:
+            # one branch of residual layers per kernel size (same dilations for every branch)
+            hp["RES_KERNEL_SIZES"] = list(dict.fromkeys(kernels.values()))
+            hp["RES_DILATIONS"] = [d for l, d in layers.items() if kernels[l] == hp["RES_KERNEL_SIZES"][0]]
+
+    # v1 encoders: (repeat_layers - 1) stride-1 convs after each strided conv
+    if _module_class(_ts_attr(ts.encoder, "encoder") or ts.encoder) == "Encoder" and len(ratios) > 1:
+        strided = [i for i, (_, m, _) in enumerate(enc_convs) if int(m.stride[0]) > 1]
+        hp["REPEAT_LAYERS"] = strided[1] - strided[0]
+
+    # v2 noise generator (decoder.noise_module)
+    noise_convs = _convs(ts, "decoder.noise_module.")
+    if noise_convs:
+        hp["NOISE_RATIOS"] = [int(m.stride[0]) for _, m, _ in noise_convs]
+        if len(noise_convs) > 1:
+            hp["NOISE_HIDDEN"] = noise_convs[0][2][0]
+        hp["NOISE_BANDS"] = noise_convs[-1][2][0] // (hp["N_BAND"] * n_channels)
+
+    # v2 decoders: amplitude modulation doubles the output channels of the waveform conv
+    if _module_class(ts.decoder) == "GeneratorV2":
+        wave = _convs(ts, "decoder.waveform_module") or [c for c in _convs(ts, "decoder.net.")]
+        if wave:
+            ratio = wave[-1][2][0] / (hp["N_BAND"] * n_channels)
+            if ratio in (1, 2):
+                hp["AMPLITUDE_MODULATION"] = ratio == 2
+
+    # biases (older configs, e.g. v1, disable them globally)
+    for cls in ("Conv1d", "ConvTranspose1d"):
+        convs = [m for _, m, _ in _convs(ts, "encoder") + _convs(ts, "decoder") if _module_class(m) == cls]
+        hp[f"{cls}_bias"] = any(_ts_attr(m, "bias") is not None for m in convs)
 
     hp["classes"] = {_module_class(m) for n, m in ts.named_modules() if n.startswith(("encoder", "decoder"))}
     hp["causal"] = is_causal(ts)
@@ -295,14 +424,31 @@ def _config_text(files) -> str:
 def _hp_bindings(hp, files) -> list:
     """gin bindings for inferred macros (only macros actually used by the config files)."""
     text = _config_text(files)
-    values = dict(hp, ENC_RATIOS=hp["RATIOS"])
+    values = dict(hp, ENC_RATIOS=hp.get("ENCODER_RATIOS", hp["RATIOS"]))
     b = [f"{k} = {values[k]}" for k in ("SAMPLING_RATE", "LATENT_SIZE", "CAPACITY", "N_BAND", "N_ENCODER_BAND",
                                          "KERNEL_SIZE", "DILATIONS", "NOISE_AUGMENTATION", "NUM_QUANTIZERS",
-                                         "CODEBOOK_SIZE", "RATIOS", "ENC_RATIOS", "DEC_RATIOS")
+                                         "CODEBOOK_SIZE", "RATIOS", "ENC_RATIOS", "ENCODER_RATIOS", "DEC_RATIOS")
          if k in values and f"%{k}" in text and not (k == "RATIOS" and "%ENC_RATIOS" in text)]
     b.append(f"RAVE.n_channels = {hp['n_channels']}")
     if hp.get("attenuation") is not None:
         b.append(f"pqmf.CachedPQMF.attenuation = {hp['attenuation']}")
+    if "AMPLITUDE_MODULATION" in hp and "blocks.GeneratorV2" in text:
+        b.append(f"blocks.GeneratorV2.amplitude_modulation = {hp['AMPLITUDE_MODULATION']}")
+    if "NOISE_BANDS" in hp and "blocks.NoiseGeneratorV2" in text:
+        b.append(f"blocks.NoiseGeneratorV2.ratios = {hp['NOISE_RATIOS']}")
+        b.append(f"blocks.NoiseGeneratorV2.noise_bands = {hp['NOISE_BANDS']}")
+        if "NOISE_HIDDEN" in hp:
+            b.append(f"blocks.NoiseGeneratorV2.hidden_size = {hp['NOISE_HIDDEN']}")
+    if "RES_DILATIONS" in hp and "blocks.ResidualStack" in text:
+        b.append(f"blocks.ResidualStack.dilations_list = {hp['RES_DILATIONS']}")
+        b.append(f"blocks.ResidualStack.kernel_sizes = {hp['RES_KERNEL_SIZES']}")
+    if "REPEAT_LAYERS" in hp and "blocks.Encoder" in text:
+        b.append(f"blocks.Encoder.repeat_layers = {hp['REPEAT_LAYERS']}")
+    for cls in ("Conv1d", "ConvTranspose1d"):
+        if hp.get(f"{cls}_bias") and re.search(rf"cc\.{cls}\.bias\s*=\s*False", text):
+            b.append(f"cc.{cls}.bias = True")
+    if hp.get("legacy_stride_padding"):
+        b.append("cc.get_padding.legacy_stride = True")
     return b
 
 
@@ -350,35 +496,47 @@ def _candidate_configs(ts, hp):
 def infer_config(ts, overrides=(), max_candidates=12):
     """builds the RAVE model whose architecture best matches the scripted model.
     Returns (model, config_str, info) where info holds the candidate files, bindings
-    and the architecture distance (0 = exact match)."""
+    and the architecture distance (0 = exact match).
+
+    PQMF filter sizes are not taken into account to rank candidates (the scripted
+    filters are loaded as is, whatever the attenuation of the config). Candidates are
+    built one at a time and released, the best one being rebuilt at the end, so that
+    only one candidate model is in memory at once."""
     hp = infer_hyperparameters(ts)
     _log.info("inferred hyper-parameters: " + ", ".join(f"{k}={v}" for k, v in hp.items() if k != "classes"))
     ts_sig = architecture_signature(ts)
-    best = None
+    best = None  # ((core distance, distance), diffs, files, bindings)
     for i, files in enumerate(_candidate_configs(ts, hp)):
         if i >= max_candidates:
             break
         bindings = _hp_bindings(hp, files) + list(overrides)
         try:
-            model, config_str = build_rave_from_config(files, bindings)
+            model, _ = build_rave_from_config(files, bindings)
+            dist, diffs = signature_distance(ts_sig, architecture_signature(model))
         except Exception as e:
             _log.debug(f"candidate {files} failed: {e}")
             continue
-        dist, diffs = signature_distance(ts_sig, architecture_signature(model))
-        _log.info(f"candidate {[Path(f).stem for f in files]}: {dist} structural differences")
-        if best is None or dist < best[2]:
-            best = (model, config_str, dist, diffs, files, bindings)
-        if dist == 0:
+        finally:
+            model = None
+            gc.collect()
+        core_dist = sum(1 for k, _, _ in diffs if not k.startswith("pqmf"))
+        _log.info(f"candidate {[Path(f).stem for f in files]}: {dist} structural differences"
+                  + (f" ({dist - core_dist} in pqmf filters)" if dist != core_dist else ""))
+        if best is None or (core_dist, dist) < best[0]:
+            best = ((core_dist, dist), diffs, files, bindings)
+        if core_dist == 0:
             break
     if best is None:
         raise RuntimeError("could not build any candidate configuration")
-    model, config_str, dist, diffs, files, bindings = best
-    if dist > 0:
+    (core_dist, dist), diffs, files, bindings = best
+    model, config_str = build_rave_from_config(files, bindings)
+    if core_dist > 0:
         _log.warning(f"no exact architecture match; best candidate {files} has {dist} differences, e.g.:")
-        for k, a, b in diffs[:8]:
+        for k, a, b in [d for d in diffs if not d[0].startswith("pqmf")][:8]:
             _log.warning(f"  {k}: scripted={a} / rebuilt={b}")
     else:
-        _log.info(f"exact architecture match with {[Path(f).stem for f in files]}")
+        _log.info(f"architecture match with {[Path(f).stem for f in files]}"
+                  + (" (pqmf filters loaded from the scripted model)" if dist else ""))
     header = (f"# config inferred from a scripted model\n"
               f"# candidate: {[Path(f).stem for f in files]} + bindings {bindings}\n"
               f"# architecture distance: {dist}\n\n")
@@ -388,10 +546,24 @@ def infer_config(ts, overrides=(), max_candidates=12):
 
 # ---- weight transfer -------------------------------------------------------- #
 
-def transfer_weights(ts: torch.jit.ScriptModule, model: RAVE) -> RAVE:
-    """copies weights / buffers of a scripted model into a (weight-normed) RAVE."""
+def transfer_weights(ts: torch.jit.ScriptModule, model: RAVE, report: Optional[dict] = None) -> RAVE:
+    """copies weights / buffers of a scripted model into a (weight-normed) RAVE.
+    If given, `report` is filled with the number of missing / unused / mismatched tensors."""
     ts_sd = {k: v.detach().clone() for k, v in ts.state_dict().items()}
     target_sd = model.state_dict()
+
+    # 0. legacy exports: modules nested differently -> rename scripted keys by module order
+    mapping = module_name_map(architecture_signature(ts), architecture_signature(model))
+    if mapping:
+        _log.info(f"scripted module names differ from the rebuilt model: matching {len(mapping)} modules by order")
+        renamed = {}
+        for k, v in ts_sd.items():
+            mod, _, attr = k.rpartition(".")
+            while mod and mod not in mapping and "." in mod:  # buffers of sub-modules (e.g. cache.pad)
+                mod, _, sub = mod.rpartition(".")
+                attr = f"{sub}.{attr}"
+            renamed[f"{mapping[mod]}.{attr}" if mod in mapping else k] = v
+        ts_sd = renamed
     loaded, mismatched, pqmf_resized = set(), [], []
 
     # 1. weight-normed modules: recompute g / v from merged weight
@@ -461,8 +633,21 @@ def transfer_weights(ts: torch.jit.ScriptModule, model: RAVE) -> RAVE:
             continue
         model.projections[name] = nn.Parameter(buf, requires_grad=False)
 
+    # biases of the rebuilt model absent from the scripted one (older models had fewer
+    # biases): zeroed, which is functionally identical
+    zeroed = [k for k in target_sd if k.endswith(".bias") and k not in loaded and k.startswith(_MODEL_PREFIXES)
+              and k[:-len("bias")] + "weight" in loaded | {kk[:-2] for kk in loaded if kk.endswith("_v")}]
+    with torch.no_grad():
+        params = dict(model.named_parameters())
+        for k in zeroed:
+            params[k].zero_()
+            loaded.add(k)
+    if zeroed:
+        _log.info(f"{len(zeroed)} biases absent from the scripted model set to zero")
+
     # report
-    missing = [k for k in target_sd if k.startswith(_MODEL_PREFIXES) and k not in loaded]
+    missing = [k for k in target_sd if k.startswith(_MODEL_PREFIXES) and k not in loaded
+               and k.rsplit(".", 1)[-1] not in _STATE_BUFFERS]
     unexpected = [k for k in ts_sd if k not in loaded and k.startswith(_MODEL_PREFIXES)
                   and not _is_streaming_buffer(k)]
     _log.info(f"transferred {len(loaded)} tensors")
@@ -472,6 +657,9 @@ def transfer_weights(ts: torch.jit.ScriptModule, model: RAVE) -> RAVE:
         _log.warning(f"{len(missing)} encoder/decoder tensors not found in scripted model: {missing[:10]}...")
     if unexpected:
         _log.warning(f"{len(unexpected)} scripted tensors unused: {unexpected[:10]}...")
+    if report is not None:
+        report.update(missing_tensors=len(missing), unused_tensors=len(unexpected),
+                      mismatched_tensors=len(mismatched), zeroed_biases=len(zeroed))
     return model
 
 
@@ -626,6 +814,7 @@ def uncompile(model, out_dir=None, config=None, overrides=(), mode="auto",
     else:
         model_path = Path(model).resolve()
         ts = torch.jit.load(str(model_path), map_location="cpu")
+    ts = unwrap_scripted(ts)
     ts.eval()
 
     from .version import __version__
@@ -678,7 +867,9 @@ def uncompile(model, out_dir=None, config=None, overrides=(), mode="auto",
                 _log.warning(f"causality differs: scripted={metadata['causal']}, rebuilt={rebuilt_causal}; "
                              "keeping the one of the rebuilt model")
                 metadata["causal"] = rebuilt_causal
-            rave_model = transfer_weights(ts, rave_model)
+            transfer_report = {}
+            rave_model = transfer_weights(ts, rave_model, report=transfer_report)
+            metadata.update(transfer_report)
             metadata["architecture_distance"] = signature_distance(
                 architecture_signature(ts), architecture_signature(rave_model))[0]
 

@@ -1,0 +1,76 @@
+site_name: RAVE documentation
+site_description: Realtime Audio Variational autoEncoder — training, export and real-time use
+repo_url: https://github.com/acids-ircam/RAVE
+repo_name: acids-ircam/RAVE
+edit_uri: edit/master/docs/
+docs_dir: docs
+site_dir: site
+# canonical URL given by Read the Docs at build time (empty for local builds)
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, ""]
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - 1. Use a model in Max/MSP: tutorials/01_max_msp.md
+      - 2. Train a model: tutorials/02_train.md
+      - 3. Export a model for Max/MSP: tutorials/03_export_max.md
+      - 4. Use a model from the command line: tutorials/04_command_line.md
+      - 5. Add custom representations: tutorials/05_custom_representations.md
+      - 6. Train a prior: tutorials/06_prior.md
+      - 7. Fine-tune a model: tutorials/07_finetune.md
+  - Cookbook: cookbook.md
+  - Reference:
+      - Command line: reference/cli.md
+      - Configurations: reference/configurations.md
+      - Exported models (.ts): reference/scripted_model.md
+      - Python API: reference/python_api.md
+      - Run folders and checkpoints: reference/runs.md
+      - Tensorboard guide: tensorboard_guide.md
+      - Training setup (legacy): training_setup.md
+
+theme:
+  name: material
+  font: false            # fonts are set in docs/stylesheets/theme.css
+  logo: assets/rave_logo_black.svg   # swapped per mode in stylesheets/theme.css
+  favicon: rave.png
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+plugins:
+  - search
+
+# all visual settings (colors, fonts, sizes) live in this file
+extra_css:
+  - stylesheets/theme.css

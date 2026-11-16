@@ -1,0 +1,158 @@
+/* =========================================================================
+   RAVE docs — single file driving the visuals.
+   Edit the variables in section 1 (and 2 for dark mode); everything else
+   reads from them. Colors must be plain values (#hex, rgb()...): a color
+   written as var(--rave-...) is frozen to its light-mode value. `mkdocs serve` reloads on save.
+   ========================================================================= */
+
+/* --- 0. Fonts ----------------------------------------------------------
+   Any Google Font works: change the URL and the two --rave-font-* below. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap");
+
+/* --- 1. Light mode (and defaults shared by both modes) ------------------ */
+:root,
+[data-md-color-scheme="default"] {
+  /* brand */
+  --rave-primary: #ffffff; /* header, nav highlights (was #111111) */
+  --rave-primary-light: #2b2b2b;
+  --rave-primary-dark: #ffffff;
+  --rave-on-primary: #111111; /* text on the header (was #ffffff) */
+
+  /* logo (header + home page); paths are relative to this css file */
+  --rave-logo: url("../assets/rave_logo_black.svg");
+  --rave-logo-height: 1.6rem;
+  --rave-accent: #ff5722; /* links hover, buttons, focus */
+
+  /* page */
+  --rave-bg: #ffffff;
+  --rave-text: #1d1d1f;
+  --rave-text-muted: #6e6e73;
+  --rave-link: #d84315;
+  --rave-heading-color: #1d1d1f; /* h1-h4; use plain colors here, not var(...) */
+
+  /* code */
+  --rave-code-bg: #f5f5f7;
+  --rave-code-text: #1d1d1f;
+
+  /* tables */
+  --rave-table-header-bg: #f0f0f2;
+  --rave-table-border: #e0e0e3;
+
+  /* typography */
+  --rave-font-text: "Inter";
+  --rave-font-code: "JetBrains Mono";
+  --rave-font-size: 0.8rem; /* body text (Material default: .8rem) */
+  --rave-line-height: 1.65;
+  --rave-h1-weight: 700;
+
+  /* layout */
+  --rave-content-width: 61rem; /* max page width (Material default: 61rem) */
+  --rave-radius: 6px; /* code blocks, tables, admonitions */
+}
+
+/* --- 2. Dark mode -------------------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  --rave-logo: url("../assets/rave_logo_white.svg");
+  --rave-primary: #0d0d0f;
+  --rave-primary-light: #ffffff;
+  --rave-primary-dark: #ffffff;
+  --rave-on-primary: #f5f5f7;
+  --rave-accent: #ff7043;
+
+  --rave-bg: #16161a;
+  --rave-text: #e6e6ea;
+  --rave-text-muted: #9a9aa3;
+  --rave-link: #ff8a65;
+  --rave-heading-color: #e6e6ea;
+
+  --rave-code-bg: #1f1f25;
+  --rave-code-text: #e6e6ea;
+
+  --rave-table-header-bg: #1f1f25;
+  --rave-table-border: #2c2c33;
+}
+
+/* =========================================================================
+   Below: wiring of the variables into Material. Normally no need to edit.
+   ========================================================================= */
+
+/* colors */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--rave-primary);
+  --md-primary-fg-color--light: var(--rave-primary-light);
+  --md-primary-fg-color--dark: var(--rave-primary-dark);
+  --md-primary-bg-color: var(--rave-on-primary);
+  --md-accent-fg-color: var(--rave-accent);
+
+  --md-default-bg-color: var(--rave-bg);
+  --md-default-fg-color: var(--rave-text);
+  --md-default-fg-color--light: var(--rave-text-muted);
+  --md-typeset-color: var(--rave-text);
+  --md-typeset-a-color: var(--rave-link);
+
+  --md-code-bg-color: var(--rave-code-bg);
+  --md-code-fg-color: var(--rave-code-text);
+
+  --md-text-font: var(--rave-font-text);
+  --md-code-font: var(--rave-font-code);
+}
+
+/* typography */
+.md-typeset {
+  font-size: var(--rave-font-size);
+  line-height: var(--rave-line-height);
+}
+.md-typeset h1 {
+  font-weight: var(--rave-h1-weight);
+  color: var(--rave-heading-color);
+}
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  color: var(--rave-heading-color);
+}
+
+/* layout */
+.md-grid {
+  max-width: var(--rave-content-width);
+}
+
+/* code blocks */
+.md-typeset pre > code,
+.md-typeset .highlight,
+.md-typeset .highlighttable {
+  border-radius: var(--rave-radius);
+}
+
+/* tables */
+.md-typeset table:not([class]) {
+  border-radius: var(--rave-radius);
+  border: 1px solid var(--rave-table-border);
+  font-size: calc(var(--rave-font-size) * 0.9);
+}
+.md-typeset table:not([class]) th {
+  background: var(--rave-table-header-bg);
+}
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--rave-table-border);
+}
+
+/* admonitions (the "> Note" style callouts) */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: var(--rave-radius);
+}
+.md-typeset blockquote {
+  border-left-color: var(--rave-accent);
+  color: var(--rave-text-muted);
+}
+
+/* logo: swapped per mode from --rave-logo */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  content: var(--rave-logo);
+  height: var(--rave-logo-height);
+  width: auto;
+}

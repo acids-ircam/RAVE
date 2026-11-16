@@ -121,7 +121,7 @@ def search_for_config(folder):
 
     
 
-def search_for_run(run_path, name="last.ckpt"):
+def search_for_run(run_path, name: str | None = "last.ckpt"):
     if run_path is None: return None
     run_path = Path(run_path)
     if run_path.suffix == ".ckpt": return run_path

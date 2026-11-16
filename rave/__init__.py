@@ -61,7 +61,32 @@ else:
     print('[Warning] Could not locate acids_dataset ; augmentations not available')
 
 
-__safe_configurable("get_padding")
+def __register_get_padding():
+    """registers cc.get_padding with an additional `legacy_stride` option: older cached_conv
+    versions removed (stride - 1) from the padding of strided convolutions (e.g. a total
+    padding of 4 instead of 7 for kernel 8 / stride 4). Needed to rebuild old models
+    (see rave.uncompiling); identical to cc.get_padding when stride == 1."""
+    try:
+        cc.get_padding = gin.get_configurable("cc.get_padding")
+        return
+    except ValueError:
+        pass
+    _cc_get_padding = cc.get_padding
+
+    def get_padding(kernel_size, stride=1, dilation=1, mode="centered", legacy_stride=False):
+        if legacy_stride and stride > 1 and kernel_size > 1:
+            # same split as cc.get_padding, for an effective span reduced by (stride - 1)
+            span = max((kernel_size - 1) * dilation + 2 - stride, 1)
+            return _cc_get_padding(span, 1, 1, mode)
+        return _cc_get_padding(kernel_size, stride, dilation, mode)
+
+    # replaces cc.get_padding: same import path, so that gin serializes it as cc.get_padding
+    get_padding.__doc__ = _cc_get_padding.__doc__
+    get_padding.__module__ = cc.__name__
+    get_padding.__qualname__ = "get_padding"
+    cc.get_padding = gin.external_configurable(get_padding, name="get_padding", module="cc")
+
+__register_get_padding()
 __safe_configurable("Conv1d")
 __safe_configurable("ConvTranspose1d")
 
@@ -89,7 +114,7 @@ def get_run_name(run_path):
         return None
     return ((version_path / "..").resolve()).stem
 
-def load_rave_checkpoint(model_path, ema=False, name="last.ckpt", remove_keys=None, configs=[], overrides=[], keep_config=False):
+def load_rave_checkpoint(model_path, ema=False, name: str | None = "last.ckpt", remove_keys=None, configs=[], overrides=[], keep_config=False):
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(str(model_path))

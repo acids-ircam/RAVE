@@ -15,3 +15,6 @@ PKG-INFO
 .junit-test-report.xml
 rave/.dimred_cache/
 tests/outs/
+
+# mkdocs build output
+site/

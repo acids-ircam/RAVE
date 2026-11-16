@@ -235,8 +235,8 @@ class WassersteinPrior(Prior):
         return z
 
     def pre_process_latent(self, z):
-        if self.encoder.noise_augmentation:
-            noise = torch.randn(z.shape[0], self.encoder.noise_augmentation,
+        if self.synth.encoder.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.synth.encoder.noise_augmentation,
                                 z.shape[-1]).type_as(z)
             z = torch.cat([z, noise], 1)
         return z

@@ -145,22 +145,44 @@ class EMA(pl.Callback):
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         self.weights.update(state_dict)
 
+def _config_n_channels(config_file):
+    """number of channels a run was trained with (RAVE.n_channels in its config.gin), or None."""
+    import re
+    with open(config_file) as f:
+        match = re.search(r"^\s*(?:model\.|rave\.)?RAVE\.n_channels\s*=\s*(\d+)", f.read(), flags=re.M)
+    return int(match.group(1)) if match else None
+
+
 def main(argv):
     torch.set_float32_matmul_precision('high')
     torch.manual_seed(FLAGS.seed)
     torch.backends.cudnn.benchmark = True
 
-    # check dataset channels
-    n_channels = rave.dataset.get_training_channels(FLAGS.db_path, FLAGS.channels, FLAGS.stereo, FLAGS.midside, FLAGS.ambisonics) 
-    FLAGS.override.append('RAVE.n_channels=%d'%n_channels)
-    if FLAGS.beta: FLAGS.override.append("model.BetaWarmupCallback.target_value=%r"%FLAGS.beta)
-    
-    # parse configuration
+    config_file = None
     if FLAGS.resume:
         config_file = rave.core.search_for_config(FLAGS.resume)
         if config_file is None:
-            logging.error('Config file not found in %s'%FLAGS.run)
+            logging.error('Config file not found in %s'%FLAGS.resume)
             exit()
+
+    # check dataset channels
+    channel_flags = FLAGS.channels != 0 or FLAGS.stereo or FLAGS.midside or FLAGS.ambisonics
+    run_channels = _config_n_channels(config_file) if config_file is not None else None
+    if run_channels is not None and not channel_flags:
+        # resuming: the model architecture depends on its number of channels -> keep the run's one
+        n_channels = rave.dataset.get_training_channels(FLAGS.db_path, run_channels)
+    else:
+        n_channels = rave.dataset.get_training_channels(FLAGS.db_path, FLAGS.channels, FLAGS.stereo, FLAGS.midside, FLAGS.ambisonics)
+    if run_channels is not None and n_channels != run_channels:
+        raise ValueError(f"cannot resume {FLAGS.resume}: it was trained with {run_channels} channel(s), "
+                         f"but {n_channels} were requested. Remove --channels / --stereo / --midside / --ambisonics "
+                         f"to resume with {run_channels} channel(s), or start a new training with --init_from to "
+                         f"transfer its weights.")
+    FLAGS.override.append('RAVE.n_channels=%d'%n_channels)
+    if FLAGS.beta: FLAGS.override.append("model.BetaWarmupCallback.target_value=%r"%FLAGS.beta)
+
+    # parse configuration
+    if FLAGS.resume:
         FLAGS.config = list(filter(lambda x: x in rave.RAVE_OVERRIDE_CONFIGS, map(rave.add_gin_extension, FLAGS.config)))
         gin.parse_config_files_and_bindings([config_file] + FLAGS.config, FLAGS.override)
     else:
@@ -218,7 +240,7 @@ def main(argv):
         shuffle=True, 
         drop_last=True, 
         num_workers = num_workers, 
-        persistent_workers=True
+        persistent_workers=num_workers > 0
 
     )
     val = val.get_loader(
@@ -226,7 +248,7 @@ def main(argv):
         shuffle=False, 
         drop_last=True, 
         num_workers = num_workers, 
-        persistent_workers=True
+        persistent_workers=num_workers > 0
 
     )
 

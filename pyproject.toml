@@ -10,7 +10,8 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
     { name = "Antoine Caillon" },
-    { name = "Axel Chemla--Romeu-Santos", email = "axel.chemla-romeu-santos@univ-paris8.fr" },
+    { name = "ACIDS", email = "acids.paris@gmail.com}
+    { name = "Axel Chemla--Romeu-Santos"}, 
     { name = "Nils Demerlé" },
 ]
 classifiers = [

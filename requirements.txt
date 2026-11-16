@@ -1,4 +1,4 @@
-acids_dataset
+acids_dataset>=0.2.1
 pytest>=7.2.2
 pytest-xdist
 PyYAML>=6.0

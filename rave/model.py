@@ -398,7 +398,9 @@ class RAVE(pl.LightningModule):
         projections_keys = filter(lambda x: x.startswith('projections.'), state_dict.keys())
         for p in projections_keys:
             proj_name = p.replace('projections.', '')
-            self.projections[proj_name] = state_dict[p].clone()
+            # MPS has no float64 support : projections (computed with numpy) are kept in float32
+            proj = state_dict[p].clone()
+            self.projections[proj_name] = proj.float() if proj.is_floating_point() else proj
         return super().load_state_dict(state_dict, strict, assign)
 
     def import_weights(self, weight_dict, strict=False):
@@ -884,11 +886,11 @@ class RAVE(pl.LightningModule):
         for i in range(min(n_pcas, len(latent_buffer))):
             current_buffer_mean = latent_buffer[i][:, :latent_buffer[i].shape[1] // 2]
             pca, mean, var = self._compute_pca(current_buffer_mean)
-            self.projections['pca_%d'%i] = torch.cat([mean[None], var[None], pca], 0).cpu()
+            self.projections['pca_%d'%i] = torch.cat([mean[None], var[None], pca], 0).float().cpu()
         latent_full = torch.cat(latent_buffer, 0)
         # record full pca from means
         pca, mean, var = self._compute_pca(latent_full[:, :latent_full.shape[1] // 2])
-        self.projections['pca_full_mean'] = torch.cat([mean[None], var[None], pca], 0).cpu()
+        self.projections['pca_full_mean'] = torch.cat([mean[None], var[None], pca], 0).float().cpu()
 
     def _log_latent_statistics(self, z_mean, active_threshold: float = .01, fidelity: float = .99):
         """logs latent health metrics from validation posterior means z_mean (b, c, t):

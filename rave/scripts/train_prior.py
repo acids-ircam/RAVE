@@ -31,7 +31,7 @@ flags.DEFINE_string('out_path', default="runs/", help="out directory path")
 flags.DEFINE_multi_string('device', default="auto", help="training device (default: auto. Can be cuda, cuda:0, ..., mps, etc.)")
 flags.DEFINE_integer('batch', 8, help="batch size")
 flags.DEFINE_integer('n_signal', 0, help="chunk size (default: given by prior config)")
-flags.DEFINE_string('ckpt', default=None, help="checkpoint to resume")
+flags.DEFINE_string('resume', default=None, help="path of checkpoint to resume")
 flags.DEFINE_float('fidelity', default=0.99, help="prior target fidelity (exclusive with fidelity)")
 flags.DEFINE_integer('latent_size', default=None, help="enforces learned latent size (exclusive with fidelity)")
 flags.DEFINE_integer('workers',
@@ -72,7 +72,10 @@ def add_gin_extension(config_name: str) -> str:
 def main(argv):
     torch.manual_seed(FLAGS.seed)
     # load pretrained RAVE
-    pretrained, run_path = rave.load_rave_checkpoint(FLAGS.model)
+    try:
+        pretrained, run_path = rave.load_rave_checkpoint(FLAGS.model)
+    except FileNotFoundError:
+        pretrained, run_path = rave.load_rave_checkpoint(FLAGS.model, name=None)
     n_channels = getattr(pretrained, "n_channels", 1)
     gin.clear_config()
     
