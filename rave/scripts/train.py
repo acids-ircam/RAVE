@@ -258,12 +258,10 @@ def main(argv):
     last_filename = "last" if FLAGS.save_every is None else "epoch-{epoch:04d}"                                                        
     last_checkpoint = rave.core.ModelCheckpoint(filename=last_filename, step_period=FLAGS.save_every)
 
-    val_check = {}
-    if len(train) >= FLAGS.val_every:
-        val_check["val_check_interval"] = 1 if FLAGS.smoke_test else FLAGS.val_every
-    else:
-        nepoch = FLAGS.val_every // len(train)
-        val_check["check_val_every_n_epoch"] = nepoch
+    val_check = {
+        "val_check_interval": 1 if FLAGS.smoke_test else FLAGS.val_every,
+        "check_val_every_n_epoch": None,
+    }
 
     if FLAGS.smoke_test:
         val_check['limit_train_batches'] = 1
