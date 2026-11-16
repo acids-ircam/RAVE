@@ -223,7 +223,7 @@ def main(argv):
     )
     val = val.get_loader(
         batch_size=FLAGS.batch,
-        shuffle=True, 
+        shuffle=False, 
         drop_last=True, 
         num_workers = num_workers, 
         persistent_workers=True

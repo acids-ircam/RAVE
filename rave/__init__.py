@@ -57,6 +57,7 @@ if ad.__file__:
     AUGMENTATION_CONFIG_PATH = Path(ad.__file__).parent.resolve() / "configs" / "transforms"
     gin.add_config_file_search_path(AUGMENTATION_CONFIG_PATH)
 else:
+    AUGMENTATION_CONFIG_PATH = None
     print('[Warning] Could not locate acids_dataset ; augmentations not available')
 
 
@@ -88,13 +89,13 @@ def get_run_name(run_path):
         return None
     return ((version_path / "..").resolve()).stem
 
-def load_rave_checkpoint(model_path, n_channels=1, ema=False, name="last.ckpt", remove_keys=None, configs=[], overrides=[], keep_config=False):
+def load_rave_checkpoint(model_path, ema=False, name="last.ckpt", remove_keys=None, configs=[], overrides=[], keep_config=False):
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(str(model_path))
     if model_path.suffix == ".ts":
         return torch.jit.load(model_path)
-    with core.GinEnv():
+    with ad.GinEnv():
         config_file = core.search_for_config(model_path) 
         if config_file is None:
             print('no configuration file found at address :'%model_path)
@@ -133,10 +134,13 @@ def add_gin_extension(config_name: str) -> str:
     return config_name
 
 def parse_augmentations(augmentations, sr):
+    """builds the acids_dataset transforms described by the given augmentation configs
+    (searched in acids_dataset/configs/transforms), at sampling rate sr."""
+    parsed = []
     for a in augmentations:
-        sr = gin.query_parameter('%SAMPLING_RATE')
-        with ad.GinEnv(paths=[Path(ad.__file__).parent / "configs" / "augmentations"], bindings="SAMPLE_RATE=%d"%sr, configs=[a]):
-            ad.utils.parse_transform()
-    return get_augmentations()
+        paths = [AUGMENTATION_CONFIG_PATH] if AUGMENTATION_CONFIG_PATH is not None else []
+        with ad.GinEnv(paths=paths, bindings="SAMPLE_RATE=%d" % sr, configs=[a]):
+            parsed.append(ad.utils.parse_transform())
+    return parsed
 
 

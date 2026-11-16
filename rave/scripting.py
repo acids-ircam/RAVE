@@ -9,7 +9,7 @@ from types import MethodType
 import torch.fx
 import torch.nn as nn
 from .model import RAVE
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from .prior import Prior
 from .resampler import Resampler
 import nn_tilde
@@ -177,6 +177,11 @@ def latent_size_from_fidelity(cum_var, fidelity: float | None, full_latent_size:
     return min(2**math.ceil(math.log2(latent_size)), full_latent_size)
 
 
+# separator of the projection names in the "projection_names" attribute (no spaces / commas,
+# which split Max messages)
+PROJECTION_NAMES_SEPARATOR = "|"
+
+
 class ScriptedRAVE(nn_tilde.Module):
 
     _attributes_for_tb_scripting = ['projections_names', 'projection_idx']
@@ -271,6 +276,9 @@ class ScriptedRAVE(nn_tilde.Module):
             projections.append(projection.eval())
 
         self.register_attribute("projection", "default")
+        # read-only: names of the available projections, joined by PROJECTION_NAMES_SEPARATOR
+        # (a single string: Max only displays the first value of multi-valued attributes)
+        self.register_attribute("projection_names", PROJECTION_NAMES_SEPARATOR.join(self.projections_names))
         self.projections = ProjectionRouter(projections)
 
         receptive_field = getattr(pretrained, "receptive_field", None)
@@ -383,6 +391,7 @@ class ScriptedRAVE(nn_tilde.Module):
     def load_projection(self, projection_name, projection_file):
         self.projections_names.append(projection_name)
         self.projections.append(MapperProjection.from_file(projection_file, name=projection_name))
+        self.projection_names = (PROJECTION_NAMES_SEPARATOR.join(self.projections_names),)
 
     def init_cache(self, x):
         self.forward(x)
@@ -424,6 +433,15 @@ class ScriptedRAVE(nn_tilde.Module):
                 return 0
         return -1
         
+    @torch.jit.export
+    def get_projection_names(self) -> str:
+        return self.projection_names[0]
+
+    @torch.jit.export
+    def set_projection_names(self, projection_names: str) -> int:
+        # read-only attribute
+        return -1
+
     @torch.jit.export
     def get_projection(self) -> str:
         for i, n in enumerate(self.projections_names):
