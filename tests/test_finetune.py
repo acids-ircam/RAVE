@@ -1,5 +1,6 @@
 """Exercise the fine-tuning path with small networks, without audio dependencies."""
 import ast
+import re
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,8 +48,17 @@ class Discriminator(nn.Linear):
         return [[output.tanh(), output]]
 
 
+core_source = ast.parse((Path(__file__).parents[1] / 'rave/core.py').read_text())
+key_functions = [node for node in core_source.body if isinstance(node, ast.FunctionDef)
+                 and node.name in {'get_finetune_keys', 'parse_weight_shortcut',
+                                   'parse_dict_with_regexps'}]
+key_namespace = {'re': re}
+exec(compile(ast.fix_missing_locations(ast.Module(body=key_functions, type_ignores=[])),
+             'rave/core.py', 'exec'), key_namespace)
+
+
 class Toy(nn.Module):
-    def __init__(self, mode, delay=0):
+    def __init__(self, mode, delay=0, freeze=()):
         super().__init__()
         self.encoder = Encoder(3, 3)
         self.decoder = Decoder(3, 3)
@@ -69,8 +79,7 @@ class Toy(nn.Module):
         self.weights = {}
         self.gradient_clip_gen = self.gradient_clip_dis = None
         self.losses = {}
-        selected = [name for name, _ in self.named_parameters()
-                    if mode != 'encoder' or name.startswith('encoder.')]
+        selected = key_namespace['get_finetune_keys'](self, mode, ['all'], freeze)
         self.opts = self.configure_optimizers(selected)
 
     def encode(self, x, return_mb=False):
@@ -147,6 +156,25 @@ def test_full_encoder_stays_frozen_during_delay():
     assert step(model) == {'decoder'}
     assert step(model) == {'decoder'}
     assert step(model) == {'encoder', 'decoder'}
+
+
+def test_decoder_trains_discriminator_on_configured_cadence():
+    model = Toy('decoder')
+    assert len(model.opts) == 2
+    assert step(model) == {'discriminator'}
+    for _ in range(3):
+        assert step(model) == {'decoder'}
+        assert 'adversarial' in model.losses
+        assert 'feature_matching' in model.losses
+    assert step(model) == {'discriminator'}
+
+
+def test_decoder_can_explicitly_freeze_discriminator():
+    model = Toy('decoder', freeze=['discriminator'])
+    assert len(model.opts) == 1
+    for _ in range(5):
+        assert step(model) == {'decoder'}
+    assert all(not p.requires_grad for p in model.discriminator.parameters())
 
 
 def test_alternating_and_resume():

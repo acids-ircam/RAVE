@@ -60,7 +60,7 @@ flags.DEFINE_string('resume',
                     help='Path to previous checkpoint of the run')
 flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
 flags.DEFINE_enum('mode', 'encoder', ['encoder', 'decoder', 'full', 'alternating'],
-                  help='Fine-tuning objective and update schedule')
+                  help='Fine-tuning objective and update schedule; decoder trains the decoder and discriminator')
 flags.DEFINE_multi_string('train',
                            default = ["all"],
                            help = 'specify weights to train (possible values : all, encoder, decoder, discriminator, weight regexp)')

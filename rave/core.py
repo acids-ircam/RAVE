@@ -807,7 +807,8 @@ def get_finetune_keys(model, mode, train=[], freeze=[]):
     if mode == 'encoder':
         training_keys = [k for k in training_keys if k.startswith('encoder.')]
     elif mode == 'decoder': 
-        training_keys = [k for k in training_keys if k.startswith('decoder.')]
+        training_keys = [k for k in training_keys
+                         if k.startswith(('decoder.', 'discriminator.'))]
     return training_keys
 
 

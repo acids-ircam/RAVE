@@ -574,7 +574,7 @@ class RAVE(pl.LightningModule):
         # try with adversarial loss in encoder mode
         # adversarial = (not encoder_turn) or self.finetune_mode == "encoder"
         self.finetune_discriminator_turn = (
-            self.finetune_mode == 'full' and
+            self.finetune_mode in ('full', 'decoder') and
             self.finetune_steps % self.update_discriminator_every == 0 and
             any(id(p) in self.finetune_parameter_ids for p in self.discriminator.parameters()))
         for prefix, module in [('encoder', self.encoder), ('decoder', self.decoder),
@@ -582,7 +582,7 @@ class RAVE(pl.LightningModule):
             active = ((prefix == 'encoder' and encoder_active and (
                 encoder_turn or self.finetune_mode == 'full')) or
                 (prefix != 'encoder' and adversarial))
-            if self.finetune_mode == 'full':
+            if self.finetune_mode in ('full', 'decoder'):
                 active = active and (self.finetune_discriminator_turn if prefix == 'discriminator'
                                      else not self.finetune_discriminator_turn)
             module.train(active)
