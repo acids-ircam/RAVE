@@ -57,7 +57,6 @@ class Toy(nn.Module):
         self.finetune_steps = 0
         self.encoder_start_step = delay
         self.finetune_lrs = (1e-3, 1e-2, 1e-2)
-        self.finetune_regularization = None
         self.update_discriminator_every = 4
         self.warmed_up = True
         self.output_mode = 'raw'
@@ -124,9 +123,9 @@ def test_encoder_reconstruction_and_regularization():
     assert step(model) == {'encoder'}
     assert 'adversarial' not in model.losses
     assert model.losses['regularization'].item() > 0
-    model.finetune_regularization = 0.
+    model.encoder.beta = 0.
     assert step(model) == {'encoder'}
-    assert model.losses['regularization'].item() == 0
+    assert 'regularization' not in model.losses
 
 
 def test_full_delay_and_learning_rates():

@@ -548,7 +548,6 @@ class RAVE(pl.LightningModule):
                 'mode': self.finetune_mode,
                 'encoder_start_step': self.encoder_start_step,
                 'lrs': self.finetune_lrs,
-                'regularization': self.finetune_regularization,
                 'beta': getattr(self.encoder, 'beta', None),
             }
 
@@ -558,11 +557,11 @@ class RAVE(pl.LightningModule):
             if state is None:
                 raise ValueError('Resume requires a fine-tuning checkpoint; use --run for source weights')
             expected = (self.finetune_mode, self.encoder_start_step,
-                        tuple(self.finetune_lrs), self.finetune_regularization)
+                        tuple(self.finetune_lrs))
             restored = (state['mode'], state['encoder_start_step'],
-                        tuple(state['lrs']), state['regularization'])
+                        tuple(state['lrs']))
             if expected != restored:
-                raise ValueError('Resume with the same fine-tuning mode, delay, learning rates and regularization')
+                raise ValueError('Resume with the same fine-tuning mode, delay and learning rates')
             if 'beta' in state and state['beta'] != getattr(self.encoder, 'beta', None):
                 raise ValueError('Resume with the same encoder beta')
             self.finetune_steps = state['steps']
@@ -781,9 +780,7 @@ class RAVE(pl.LightningModule):
         if not discriminator_turn and reg.item():
             regularization = self.beta_factor
             if finetune:
-                regularization = self.finetune_regularization
-                if regularization is None:
-                    regularization = 1.
+                regularization = 1.
                 if self.finetune_mode == 'alternating' and not encoder_turn:
                     regularization = 0.
             loss_gen['regularization'] = reg * regularization

@@ -169,8 +169,7 @@ rave finetune --name voice_ft --run runs/flute_abc123 --db_path /data/voice --mo
 | `--lr_discriminator`      | `1e-4`     | Discriminator learning rate. |
 | `--encoder_start_step`    | `0`        | Number of fine-tuning batches during which the encoder stays fixed. |
 | `--max_steps`             | `6000000`  | Total number of fine-tuning batches (including those already done when resuming). |
-| `--beta`                  | source     | Override the KL weight of a variational encoder (`0` disables KL). |
-| `--regularization_weight` | `1`        | Extra multiplier on the latent regularization (`0` disables it). |
+| `--beta`                  | source / 4 | KL weight of a variational encoder; an explicit value overrides the default (`0` disables KL). |
 | `--update_pca`            | on         | Recompute the latent PCA at validation (`--noupdate_pca` keeps the source PCA, so the exported latent axes stay comparable with the source model). |
 | `--reset_discriminator`   | off        | Re-initialize the discriminator (and train it). |
 | `--ema_weights`           | off        | Start from the EMA weights of the source run, if available. |

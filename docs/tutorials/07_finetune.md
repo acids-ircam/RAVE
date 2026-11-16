@@ -184,13 +184,10 @@ If the output degrades quickly (noise, artifacts), lower the decoder and discrim
 ### Latent regularization
 
 The regularization keeps the latent space well-behaved (for variational models, close to a
-gaussian). It comes from the source configuration, and two flags adjust it:
-
-- `--regularization_weight` — extra multiplier (default 1). `0` disables the regularization: the
-  encoder is free to use the latent space however it wants, at the cost of a less regular space for
-  generation and control.
-- `--beta` — for variational models, replaces the KL weight (beta) of the source run, e.g.
-  `--beta 0.01`. `0` disables the KL term.
+Gaussian). Fine-tuning uses the source encoder's beta divided by 4 unless you provide an
+explicit value, for example `--beta 0.01`. Beta must be finite and nonnegative;
+`--beta 0` disables the KL term. There is no additional regularization multiplier.
+For non-variational encoders, the source regularization is preserved.
 
 ## 5. The latent axes (PCA)
 
@@ -210,7 +207,8 @@ plus `finetune_steps`. Listen to the `audio_val` examples: they are reconstructi
 dataset.
 
 To resume an interrupted fine-tuning, give the same settings (mode, learning rates,
-`--encoder_start_step`, regularization) plus `--resume`:
+`--encoder_start_step`, beta) plus `--resume`. Keep the same source `--run` and
+`--beta` setting so the effective beta is unchanged:
 
 ```bash
 rave finetune --name violin_voice --run ~/runs/violin_<hash> --db_path ~/datasets/voice \
@@ -243,7 +241,7 @@ starting point. Use `rave finetune` to adapt an existing model with its own conf
 | Problem | Solution |
 | ------- | -------- |
 | `No training keys found` | `--train` / `--freeze` / `--mode` select no weight: check the names, and that the mode matches (`--mode encoder` keeps only `encoder.*`). |
-| `--beta requires a variational encoder` | `--beta` only exists for variational models; use `--regularization_weight` otherwise. |
+| `--beta requires a variational encoder` | `--beta` only exists for variational models; omit it for other encoders. |
 | `max_steps must exceed the resumed fine-tuning step` | When resuming, `--max_steps` counts the steps already done: increase it. |
 | Output quality degrades quickly | Lower `--lr_decoder` / `--lr_discriminator`, or switch to `encoder` or `alternating` mode. |
 | The model no longer produces silence | Add `--augment mute`. |

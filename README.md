@@ -244,13 +244,12 @@ Use `--mode` to choose the objective:
   encoder using reconstruction and latent regularization. Feature matching is
   excluded in this mode.
 
-The source configuration defines reconstruction losses, latent regularization
-(including the encoder's beta), and loss weights. `--regularization_weight`
-sets an additional regularization multiplier (default 1 in all modes). For variational models, `--beta 0.01` overrides the encoder beta
-imported from the source run; omitting it preserves the source value. Beta must
-be finite and nonnegative, and `--beta 0` disables KL regularization. Use `--regularization_weight 0` to explicitly disable latent regularization.
-The effective KL coefficient is encoder beta times the regularization multiplier
-and any configured regularization loss weight. Resume with the same beta.
+The source configuration defines reconstruction losses, latent regularization,
+and loss weights. For variational models, `--beta 0.01` overrides the encoder
+beta imported from the source run; omitting it uses the source beta divided by 4. Beta
+must be finite and nonnegative, and `--beta 0` disables KL regularization. The
+effective KL coefficient also includes any configured regularization loss weight.
+Resume with the same beta.
 `--train` and `--freeze` further restrict parameter selection.
 Frozen modules run in evaluation mode; gradients can still pass through the
 fixed decoder to the encoder.

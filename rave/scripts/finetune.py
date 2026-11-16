@@ -71,9 +71,8 @@ flags.DEFINE_float('lr_encoder', 1.e-5, help='Encoder learning rate')
 flags.DEFINE_float('lr_decoder', 1.e-4, help='Decoder learning rate')
 flags.DEFINE_float('lr_discriminator', 1.e-4, help='Discriminator learning rate')
 flags.DEFINE_integer('encoder_start_step', 0, help='Fine-tuning batches before encoder updates')
-flags.DEFINE_float('beta', None, help='Override variational encoder beta (default: source value)')
-flags.DEFINE_float('regularization_weight', None,
-                   help='Override latent regularization weight (default: 1)')
+flags.DEFINE_float('beta', None, help='Variational encoder beta (default: source beta / 4)')
+
 flags.DEFINE_integer('workers',
                      default=-1,
                      help='Number of workers to spawn for dataset loading')
@@ -107,6 +106,20 @@ def add_gin_extension(config_name: str) -> str:
     return config_name
 
 
+def _configure_finetune_beta(model, beta=None):
+    """Use an explicit beta, or a quarter of the source variational encoder beta."""
+    if not isinstance(model.encoder, rave.blocks.VariationalEncoder):
+        if beta is not None:
+            raise ValueError('--beta requires a variational encoder')
+        return
+    beta = model.encoder.beta / 4 if beta is None else beta
+    if not math.isfinite(beta) or beta < 0:
+        raise ValueError('beta must be finite and nonnegative')
+    model.encoder.beta = beta
+    with gin.unlock_config():
+        gin.bind_parameter('blocks.VariationalEncoder.beta', beta)
+
+
 class FinetuneCallback(pl.Callback):
 
     def on_train_start(self, trainer, pl_module):
@@ -138,8 +151,7 @@ def main(argv):
         model, run_path = rave.load_rave_checkpoint(FLAGS.run, ema=FLAGS.ema_weights, remove_keys=remove_keys, overrides=FLAGS.override, keep_config=True)
     except FileNotFoundError:
         model, run_path = rave.load_rave_checkpoint(FLAGS.run, ema=FLAGS.ema_weights, name=None, remove_keys=remove_keys, overrides=FLAGS.override, keep_config=True)
-    if FLAGS.beta is not None and not isinstance(model.encoder, rave.blocks.VariationalEncoder):
-        raise ValueError('--beta requires a variational encoder')
+    _configure_finetune_beta(model, FLAGS.beta)
     # The model was instantiated inside GinEnv, so its operative bindings are
     # no longer recorded after that context exits. Save the parsed bindings.
     model_config = gin.config_str()
@@ -163,7 +175,8 @@ def main(argv):
     model.finetune_steps = 0
     model.encoder_start_step = FLAGS.encoder_start_step
     model.finetune_lrs = (FLAGS.lr_encoder, FLAGS.lr_decoder, FLAGS.lr_discriminator)
-    model.finetune_regularization = FLAGS.regularization_weight
+    # The encoder already applies beta to reg; this value is for logging.
+    model.beta_factor = getattr(model.encoder, 'beta', 1.)
     model.no_freeze_when_warmed_up = True
     model.encoder.no_freeze_when_warmed_up = True
     model.warmed_up = True
