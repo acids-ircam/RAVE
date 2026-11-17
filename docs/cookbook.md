@@ -389,14 +389,14 @@ rave finetune --augment mute --name strings_voice --run ~/runs/strings_<hash> --
 rave finetune --augment mute --name strings_v2data --run ~/runs/strings_<hash> --db_path ~/datasets/strings_new \
     --mode full --max_steps 300000 --out_path ~/runs
 
-# alternating, with a delayed encoder
+# decoder then encoder, 25,000 batches each
 rave finetune --augment mute --name adaptation --run ~/runs/strings_<hash> --db_path ~/datasets/new \
-    --mode alternating --lr_encoder 1e-5 --lr_decoder 1e-4 --lr_discriminator 1e-4 \
-    --encoder_start_step 10000 --max_steps 50000
+    --mode full --lr_encoder 1e-5 --lr_decoder 1e-4 --lr_discriminator 1e-4 \
+    --max_steps 50000
 
 # only the first decoder layers
 rave finetune --augment mute --name partial --run ~/runs/strings_<hash> --db_path ~/datasets/new \
-    --mode full --train "decoder.net.[0-3].*"
+    --mode decoder --train "decoder.net.[0-3].*"
 
 # keep the source PCA so that exported latent axes keep their meaning
 rave finetune --augment mute ... --noupdate_pca

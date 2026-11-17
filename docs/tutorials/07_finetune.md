@@ -39,14 +39,14 @@ What happens:
   rave export --run ~/runs/violin_voice --streaming
   ```
 
-> `--max_steps` defaults to 6M, i.e. practically forever. Set it: fine-tuning typically needs from
-> 50k to 500k steps. You can also stop at any time and export the latest checkpoint.
+> `--max_steps` defaults to 50,000 fine-tuning batches. In `full`, each phase receives
+> half of that total. You can also stop and export the latest checkpoint.
 
 As for any training, add `--augment mute` so the model keeps producing silence when the input stops,
 plus any augmentation useful for your material (see
 [Tutorial 2](02_train.md#data-augmentations)).
 
-## 2. The four modes
+## 2. The three modes
 
 A RAVE model has three parts: the **encoder** (audio → latent), the **decoder** (latent → audio) and
 the **discriminator** (judges whether audio sounds real; only used for training).
@@ -54,9 +54,8 @@ the **discriminator** (judges whether audio sounds real; only used for training)
 | `--mode` | Updated | Losses | Fixed |
 | -------- | ------- | ------ | ----- |
 | `encoder` *(default)* | encoder | reconstruction + latent regularization | decoder, discriminator |
-| `decoder` | decoder | reconstruction + adversarial + feature matching | encoder, discriminator |
-| `full` | encoder, decoder, and discriminator every few steps | reconstruction + adversarial + feature matching + regularization | — |
-| `alternating` | even steps: decoder + discriminator; odd steps: encoder | even: reconstruction + adversarial; odd: reconstruction + regularization | — |
+| `decoder` | decoder and discriminator on separate batches | reconstruction + adversarial + feature matching | encoder |
+| `full` | decoder phase, then encoder phase (equal lengths) | losses of the active mode | inactive modules |
 
 ### `encoder` — a new input, the same sound
 
@@ -78,8 +77,8 @@ safest: it cannot degrade the output quality of the model.
 
 ### `decoder` — the same latent space, a new output
 
-Only the decoder learns, with the adversarial losses against the source discriminator, which stays
-fixed. The encoder — hence the latent space and its axes — does not change.
+The decoder learns with reconstruction, adversarial and feature-matching losses. The discriminator
+is updated on separate batches at the configured cadence. The encoder stays fixed.
 
 Use it to **refine or shift the output** while keeping the controls: improve the audio quality of a
 model on a cleaner dataset, or move it towards a related sound, while patches built on the original
@@ -91,45 +90,24 @@ rave finetune --name violin_clean --run ~/runs/violin_<hash> --db_path ~/dataset
     --mode decoder --augment mute --noupdate_pca --max_steps 300000
 ```
 
-> The discriminator is **not** trained in this mode. Do not combine `decoder` with
-> `--reset_discriminator`: the decoder would then be trained against a random, frozen discriminator.
+> Decoder mode trains the discriminator at its configured cadence.
+> `--reset_discriminator` optionally initializes it afresh.
 
-### `full` — adapt everything
+### `full` — decoder first, then encoder
 
-Encoder, decoder and discriminator are all trained, with all the losses of a regular RAVE training.
-Every `update_discriminator_every` steps (from the source configuration, 4 for `v2`), the step only
-updates the discriminator; the other steps update the encoder and decoder.
-
-This is **transfer learning**: start from a model trained on a large or related dataset and adapt it
-to a new sound world. It converges much faster than a training from scratch and works with less data:
+`full` runs decoder mode for half of the requested batches, followed by encoder mode
+for the other half. The default is 25,000 batches per phase. Choose the total with
+`--max_steps` (a positive even integer); do not use `--encoder_start_step` with `full`.
 
 ```bash
 rave finetune --name winds --run ~/runs/strings_<hash> --db_path ~/datasets/winds \
-    --mode full --augment mute --augment gain --max_steps 500000
+    --mode full --augment mute --max_steps 50000
 ```
 
-The closer the source and target sounds, the better. If the target is very different, consider
-re-initializing the discriminator (`--reset_discriminator`), which otherwise starts with a strong
-opinion about what the *source* sounds like.
-
-### `alternating` — adapt both sides, one at a time
-
-Steps alternate between the two halves of the model:
-
-- **even steps** (starting at 0): decoder and discriminator, with reconstruction and adversarial
-  losses (no feature matching);
-- **odd steps**: encoder only, with reconstruction and latent regularization.
-
-The encoder and the decoder never move at the same step, which makes the adaptation more gradual and
-stable than `full`. Combine it with `--encoder_start_step` to let the decoder adapt first, with the
-encoder fixed, before the encoder starts following:
-
-```bash
-rave finetune --name adaptation --run ~/runs/strings_<hash> --db_path ~/datasets/new \
-    --mode alternating --augment mute \
-    --lr_encoder 1e-5 --lr_decoder 1e-4 --lr_discriminator 1e-4 \
-    --encoder_start_step 10000 --max_steps 50000
-```
+The decoder phase retains decoder mode's discriminator cadence and losses. In the
+encoder phase, decoder and discriminator are fixed and the encoder learns from
+reconstruction and latent regularization. Checkpoints retain the phase boundary;
+resume with the same `--max_steps`.
 
 ### Which mode?
 
@@ -138,18 +116,18 @@ rave finetune --name adaptation --run ~/runs/strings_<hash> --db_path ~/datasets
 | Play a new kind of input into an existing model (timbre transfer) | `encoder`, on the input material |
 | Improve / change the output, keep the latent controls | `decoder` (+ `--noupdate_pca`) |
 | Get a model for a new sound world quickly, or with little data | `full` |
-| Same, more gradually / more stably | `alternating` (+ `--encoder_start_step`) |
 
 ## 3. Choosing exactly which weights are trained
 
 `--train` and `--freeze` refine the selection made by `--mode`. They accept the shortcuts `all`,
 `encoder`, `decoder`, `discriminator`, or regular expressions on weight names, and can be repeated.
 The weights actually trained are: `--train` selection, minus `--freeze` selection, restricted to the
-encoder (in `encoder` mode) or the decoder (in `decoder` mode).
+encoder (in `encoder` mode) or decoder/discriminator (in `decoder` mode).
+`full` requires trainable weights in both encoder and decoder.
 
 ```bash
 # only the first layers of the decoder
-rave finetune ... --mode full --train "decoder.net.[0-3].*"
+rave finetune ... --mode decoder --train "decoder.net.[0-3].*"
 
 # everything but the discriminator
 rave finetune ... --mode full --freeze discriminator
@@ -175,8 +153,8 @@ The log prints the number of fine-tuned weights tensors at start; an empty selec
 | `--lr_encoder` | `1e-5` | Low on purpose: the latent space should move slowly. |
 | `--lr_decoder` | `1e-4` | |
 | `--lr_discriminator` | `1e-4` | |
-| `--encoder_start_step` | `0` | Fine-tuning steps during which the encoder stays fixed (all modes). |
-| `--max_steps` | `6000000` | Total fine-tuning steps, including those done before a resume. |
+| `--encoder_start_step` | `0` | Encoder-mode delay; omit for `full`. |
+| `--max_steps` | `50000` | Total fine-tuning batches; full splits them equally. Keep the same total when resuming full. |
 
 If the output degrades quickly (noise, artifacts), lower the decoder and discriminator learning rates
 (e.g. `3e-5`). If nothing seems to change, raise them or train longer.
@@ -192,7 +170,7 @@ For non-variational encoders, the source regularization is preserved.
 ## 5. The latent axes (PCA)
 
 By default the latent PCA — the axes exposed in `nn~` — is recomputed at each validation
-(`--update_pca`). If the encoder changes (`encoder`, `full`, `alternating` modes), that is usually
+(`--update_pca`). If the encoder changes (`encoder` and `full` modes), that is usually
 what you want. To **keep the axes of the source model** — so that patches and automation keep the same
 meaning — use `--noupdate_pca`, and export *without* `--db_path` (which would recompute them).
 
@@ -219,12 +197,12 @@ rave finetune --name violin_voice --run ~/runs/violin_<hash> --db_path ~/dataset
 
 Exported models (for instance downloaded pretrained models) can be turned back into a checkpoint with
 `rave uncompile`. The discriminator is not part of an export: it comes back **randomly initialized**,
-so it must be trained — use `full` or `alternating`, never `decoder`:
+so train it with `decoder` or `full`:
 
 ```bash
 rave uncompile --model darbouka_streaming.ts --out ~/runs/darbouka_uncompiled --check
 rave finetune --name darbouka_tabla --run ~/runs/darbouka_uncompiled --db_path ~/datasets/tabla \
-    --mode alternating --augment mute --encoder_start_step 20000 --max_steps 300000
+    --mode full --augment mute --max_steps 300000
 ```
 
 `encoder` mode works too, since it does not use the discriminator at all.
@@ -243,6 +221,6 @@ starting point. Use `rave finetune` to adapt an existing model with its own conf
 | `No training keys found` | `--train` / `--freeze` / `--mode` select no weight: check the names, and that the mode matches (`--mode encoder` keeps only `encoder.*`). |
 | `--beta requires a variational encoder` | `--beta` only exists for variational models; omit it for other encoders. |
 | `max_steps must exceed the resumed fine-tuning step` | When resuming, `--max_steps` counts the steps already done: increase it. |
-| Output quality degrades quickly | Lower `--lr_decoder` / `--lr_discriminator`, or switch to `encoder` or `alternating` mode. |
+| Output quality degrades quickly | Lower `--lr_decoder` / `--lr_discriminator`, or switch to `encoder` mode. |
 | The model no longer produces silence | Add `--augment mute`. |
 | Latent controls changed meaning | Use `--noupdate_pca`, and export without `--db_path`. |

@@ -183,3 +183,29 @@ def test_v4_training_loop_handles_consecutive_batches(smoothing, adversarial):
     for index in range(6):
         model.training_step(torch.randn(1, 1, 16384) * 0.1, index)
     assert all(torch.isfinite(parameter).all() for parameter in model.parameters())
+
+
+def test_full_v4_runs_decoder_then_encoder_steps():
+    gin.parse_config_files_and_bindings(['v4.gin'], [
+        'CAPACITY=2', 'LATENT_SIZE=8',
+        'spectro_discriminator.SpectroDiscriminator.capacity=2',
+    ])
+    model = rave.RAVE().train()
+    model.finetune_mode = 'full'
+    model.finetune_steps = 0
+    model.finetune_total_steps = 4
+    model.encoder_start_step = 0
+    model.finetune_lrs = (1e-4, 1e-4, 1e-4)
+    model.warmed_up = True
+    model.no_freeze_when_warmed_up = True
+    model.encoder.no_freeze_when_warmed_up = True
+    model.log = lambda *args, **kwargs: None
+    model.log_dict = lambda *args, **kwargs: None
+    model.manual_backward = lambda loss: loss.backward()
+    keys = rave.core.get_finetune_keys(model, 'full', ['all'], [])
+    optimizers = model.configure_optimizers(keys)
+    model.optimizers = lambda: optimizers
+    for index in range(3):
+        model.training_step(torch.randn(1, 1, 16384) * 0.1, index)
+    assert model.finetune_steps == 3
+    assert all(torch.isfinite(p).all() for p in model.parameters())

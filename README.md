@@ -314,9 +314,8 @@ rave finetune --name run_name --run /path/to/original/run --db_path /path/to/db 
 `--mode` chooses the objective:
 
 - `encoder` (default): update only the encoder with reconstruction and latent regularization losses; the decoder is fixed.
-- `decoder`: update only the decoder with reconstruction, adversarial and feature-matching losses against the source discriminator, which stays fixed.
-- `full`: update encoder and decoder with all losses; the discriminator is updated every `update_discriminator_every` batches.
-- `alternating`: even batches update decoder and discriminator, odd batches update the encoder.
+- `decoder`: update the decoder with reconstruction, adversarial and feature-matching losses; update the discriminator on separate batches at the configured cadence. The encoder is fixed.
+- `full`: run decoder mode for the first half of `--max_steps`, then encoder mode for the second half. Default: 25,000 batches per phase. Set a positive even total with `--max_steps`.
 
 `--train` and `--freeze` further restrict the trained weights, using either specific words (`all`, `encoder`, `decoder`, `discriminator`) or regular expressions on weight names. For example :
 
@@ -333,7 +332,14 @@ model, path = rave.load_rave_checkpoint("path/to/run")
 print(model.state_dict().keys())
 ```
 
-Learning rates are set per module (`--lr_encoder`, `--lr_decoder`, `--lr_discriminator`), `--encoder_start_step` keeps the encoder fixed for a number of batches, and `--beta` sets the KL weight of variational encoders (default: source beta divided by 4). Use `--resume` to continue an interrupted fine-tuning with the same settings. See the [fine-tuning tutorial](https://acids-rave.readthedocs.io/en/latest/tutorials/07_finetune/) for details.
+
+Learning rates are set per module (`--lr_encoder`, `--lr_decoder`, `--lr_discriminator`).
+`--encoder_start_step` delays updates in encoder mode; omit it for `full`.
+`--beta` sets the variational encoder's KL weight (default: source beta divided by 4).
+PCA updates are enabled by default; `--noupdate_pca` retains the source axes.
+Use `--resume` with the same settings to restore optimizers, batch count and phase.
+For `full`, retain `--max_steps` so the phase boundary stays unchanged.
+See the [fine-tuning tutorial](https://acids-rave.readthedocs.io/en/latest/tutorials/07_finetune/) for details.
 
 ## Prior
 
