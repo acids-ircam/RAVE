@@ -252,12 +252,11 @@ def main(argv):
 
     run = None
     if FLAGS.resume:
-        run = rave.core.search_for_run(FLAGS.resume)
-        if run is None: 
-            run = rave.core.search_for_run(FLAGS.resume, None)
-            if run is None:
-                logging.error('could not find model with ckpt=%s. Maybe provide a more detailed path: %s'%FLAGS.resume)
-                exit()
+        # most advanced readable checkpoint, across all version folders (see search_for_resume_checkpoint)
+        run = rave.core.search_for_resume_checkpoint(FLAGS.resume)
+        if run is None:
+            logging.error('could not find a readable checkpoint in %s. Maybe provide a more detailed path'%FLAGS.resume)
+            exit()
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(

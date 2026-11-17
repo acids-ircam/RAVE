@@ -200,6 +200,14 @@ def main(argv):
     gin_hash = hashlib.md5(
         gin.operative_config_str().encode()).hexdigest()[:10]
     RUN_NAME = f'{FLAGS.name}_{gin_hash}'
+    if FLAGS.resume:
+        # continue in the resumed run folder (as a new version_N): the hash of the re-parsed configuration can
+        # differ from the original one, which would otherwise start a new run folder (and a new train / val split)
+        run_folder = Path(config_file).resolve().parent
+        RUN_NAME = run_folder.name
+        if Path(FLAGS.out_path).resolve() != run_folder.parent:
+            logging.info(f"resuming in {run_folder} (--out_path {FLAGS.out_path} ignored)")
+        FLAGS.out_path = str(run_folder.parent)
 
     # parse datasset
     dataset = rave.dataset.get_dataset(
@@ -285,12 +293,11 @@ def main(argv):
 
     run = None
     if FLAGS.resume:
-        run = rave.core.search_for_run(FLAGS.resume)
-        if run is None: 
-            run = rave.core.search_for_run(FLAGS.resume, None)
-            if run is None:
-                logging.error('could not find model with ckpt=%s. Maybe provide a more detailed path'%FLAGS.resume)
-                exit()
+        # most advanced readable checkpoint, across all version folders (see search_for_resume_checkpoint)
+        run = rave.core.search_for_resume_checkpoint(FLAGS.resume)
+        if run is None:
+            logging.error('could not find a readable checkpoint in %s. Maybe provide a more detailed path'%FLAGS.resume)
+            exit()
 
     trainer = pl.Trainer(
         logger=pl.loggers.TensorBoardLogger(

@@ -54,8 +54,12 @@ pip install "acids-rave[after]"
 
 ## Colab
 
-A colab to train RAVEv2 is available thanks to [hexorcismos](https://github.com/moiseshorta) ! It was written for an earlier version of RAVE.
-[![colab_badge](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ih-gv1iHEZNuGhHPvCHrleLNXvooQMvI?usp=sharing)
+Two notebooks let you train and fine-tune RAVE on Google Colab, including with a free account. Everything (runs, checkpoints, preprocessed datasets) is kept on your Google Drive. If Colab disconnects, run the notebook again and the training resumes from the latest checkpoint.
+
+- Train a model: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/acids-ircam/RAVE/blob/v2.4/notebooks/train_rave_colab.ipynb)
+- Fine-tune a model: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/acids-ircam/RAVE/blob/v2.4/notebooks/finetune_rave_colab.ipynb)
+
+A community colab to train RAVEv2, written for an earlier version of RAVE, is also available thanks to [hexorcismos](https://github.com/moiseshorta): [![colab_badge](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ih-gv1iHEZNuGhHPvCHrleLNXvooQMvI?usp=sharing)
 
 ## Usage
 

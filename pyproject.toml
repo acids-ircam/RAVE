@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
     { name = "Antoine Caillon" },
-    { name = "ACIDS", email = "acids.paris@gmail.com}
+    { name = "ACIDS", email = "acids.paris@gmail.com" },
     { name = "Axel Chemla--Romeu-Santos"}, 
     { name = "Nils Demerlé" },
 ]

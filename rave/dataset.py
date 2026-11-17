@@ -1,4 +1,5 @@
 import torch
+from absl import logging
 from typing import Iterable, Tuple, List
 import math
 import numpy as np
@@ -19,16 +20,23 @@ def split_dataset(dataset,
                   balance_cardinality: bool = False, 
                   max_residual: int | None = None,
                   training_name: str | None = None) -> Tuple[ad.datasets.AudioDataset, ad.datasets.AudioDataset]:
-    if partition is not None:
+    force = os.environ.get('RAVE_FORCE_PARTITION', '') not in ('', '0')
+    if partition is not None and not force:
         assert percent is None, "either percent or partition keyword must be given."
         partdict = dataset.load_partition(partition)
-    elif (training_name is not None) and (dataset.has_partition(training_name)): 
+    elif (training_name is not None) and (dataset.has_partition(training_name)) and (not force): 
         partdict = dataset.load_partition(training_name)
     else: 
+        if force: 
+            logging.info('forcing new partitions in dataset')
         partdict = dataset.split(partitions={'train': percent / 100, 'test': 1 - percent / 100},
                                  features=features, 
                                  balance_cardinality=balance_cardinality,
-                                 write=training_name)
+                                 write=training_name, 
+                                 max_items={'test': 1000},
+                                 by="auto") 
+    # persistant random shuffling for validation dataset
+    partdict['test'].shuffle_idx = 1010
     return partdict['train'], partdict['test']
 
 

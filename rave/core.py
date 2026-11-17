@@ -1,4 +1,5 @@
 import json
+import logging
 from types import ModuleType
 import copy
 import gin.config 
@@ -107,17 +108,15 @@ def search_for_config(folder):
         raise FileNotFoundError(folder)
     if os.path.isfile(folder):
         folder = os.path.dirname(folder)
-    configs = list(map(str, Path(folder).rglob("config.gin")))
+    # in the folder or its subfolders: shallowest first, then most recent (e.g. version_N/config.gin of fine-tunings)
+    configs = sorted(Path(folder).rglob("config.gin"), key=lambda p: (len(p.parts), -os.path.getmtime(p)))
     if configs != []:
-        return os.path.abspath(os.path.join(folder, "config.gin"))
-    configs = list(map(str, Path(folder).rglob("../config.gin")))
-    if configs != []:
-        return os.path.abspath(os.path.join(folder, "../config.gin"))
-    configs = list(map(str, Path(folder).rglob("../../config.gin")))
-    if configs != []:
-        return os.path.abspath(os.path.join(folder, "../../config.gin"))
-    else:
-        return None
+        return os.path.abspath(configs[0])
+    for parent in ("..", os.path.join("..", "..")):
+        config = os.path.join(folder, parent, "config.gin")
+        if os.path.exists(config):
+            return os.path.abspath(config)
+    return None
 
     
 
@@ -136,12 +135,50 @@ def search_for_run(run_path, name: str | None = "last.ckpt"):
             if len(ckpts) == 0: 
                 print('No checkpoint found with name %s'%name)
                 return
-            return ckpts[0]
+            # each resumed training writes its own version_N/checkpoints/<name>: take the most recent one
+            return ckpts[-1]
         return ckpts[-1]
     else:
         print('No checkpoint found')
     return None
 
+
+
+def _checkpoint_progress(ckpt_path):
+    """(step, global_step) stored in a Lightning checkpoint (step = fine-tuning batches for fine-tuning runs),
+    or None if the file cannot be read (e.g. truncated by an interrupted write)."""
+    try:
+        # mmap: tensors are not read from disk, only the pickled structure
+        ckpt = torch.load(ckpt_path, map_location="cpu", mmap=True, weights_only=False)
+    except Exception as e:
+        logging.warning(f"skipping unreadable checkpoint {ckpt_path} ({type(e).__name__}: {e})")
+        return None
+    global_step = int(ckpt.get("global_step", 0))
+    finetune = ckpt.get("finetune")
+    step = int(finetune["steps"]) if isinstance(finetune, dict) and "steps" in finetune else global_step
+    return step, global_step
+
+
+def search_for_resume_checkpoint(run_path):
+    """Checkpoint to resume a training from. A .ckpt is returned as is; for a run or version folder, returns the
+    readable checkpoint with the highest training step (ties: most recently written).
+
+    Steps are read from the checkpoints rather than inferred from file names or dates, as every resumed training
+    writes its own version_N/checkpoints folder (with its own last.ckpt), and a checkpoint can be truncated if
+    the training was killed while writing it (e.g. on Colab)."""
+    if run_path is None: return None
+    run_path = Path(run_path)
+    if not run_path.exists():
+        raise FileNotFoundError(str(run_path))
+    if run_path.suffix == ".ckpt": return run_path
+    candidates = []
+    for ckpt in Path(run_path).rglob("*.ckpt"):
+        progress = _checkpoint_progress(ckpt)
+        if progress is not None:
+            candidates.append((progress, os.path.getmtime(ckpt), ckpt))
+    if len(candidates) == 0:
+        return None
+    return max(candidates, key=lambda x: (x[0], x[1]))[2]
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):
