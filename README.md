@@ -6,7 +6,7 @@ Official implementation of _RAVE: A variational autoencoder for fast and high-qu
 
 If you use RAVE as a part of a music performance or installation, be sure to cite either this repository or the article !
 
-If you want to share / discuss / ask things about RAVE you can do so in our [discord server](https://discord.gg/dhX73sPTBb) !
+If you want to share / discuss / ask things about RAVE you can do so in our [discord server](https://discord.gg/abKp6t9jWY)!
 
 Please check the FAQ before posting an issue!
 
@@ -63,13 +63,13 @@ By default, audio files are splitted in chunks of 262144 samples, with a 50% ove
 
 ### Training
 
-After the dataset pre-processing, you can start training your RAVE model. 
+After the dataset pre-processing, you can start training your RAVE model.
 
 ```bash
 rave train --db_path /processed/path --out_path /model/out --name give_a_name --channels X
 ```
 
-Several configurations are available, that you can give using the `--config` keyword (default is `v2`). For example, you can train a _discrete_ configuration, similar to SoundStream or EnCodec, by providing 
+Several configurations are available, that you can give using the `--config` keyword (default is `v2`). For example, you can train a _discrete_ configuration, similar to SoundStream or EnCodec, by providing
 
 ```bash
 rave train --config discrete ...
@@ -205,17 +205,19 @@ Setting the `--streaming` flag will enable cached convolutions, making the model
 
 ### Fine-tune
 
-Since v2.4, a specific function allow you to fine-tune a model from an existing checkpoint. The difference between fine-tuning and training is that generally you fine-tune on another dataset that the original training, and freeze / train only some parameters of the model. For example, training only the encoder (for example, a model trained on flute) with another dataset (for example, a model trained on voice) allows to increase the timbre transfer between flute and voice. For example : 
+Since v2.4, a specific function allow you to fine-tune a model from an existing checkpoint. The difference between fine-tuning and training is that generally you fine-tune on another dataset that the original training, and freeze / train only some parameters of the model. For example, training only the encoder (for example, a model trained on flute) with another dataset (for example, a model trained on voice) allows to increase the timbre transfer between flute and voice. For example :
 
 ```bash
 rave finetune --name run_name --run /path/to/original/run --db_path /path/to/db --out_path /path/to/finetuned/model --train encoder
-``` 
+```
 
-For the `train` keyword, you can either use specific words (`all`, `encoder`, `decoder`, `discriminator`), or a list of weights. For example : 
+For the `train` keyword, you can either use specific words (`all`, `encoder`, `decoder`, `discriminator`), or a list of weights. For example :
+
 ```bash
 rave finetune --name run_name --run /path/to/original/run --db_path /path/to/db --out_path /path/to/finetuned/model --train "decoder.net.[0-3].*"
 ```
-will only fine-tune the three first layers of the decoder. To access all the keys, you can use Python : 
+
+will only fine-tune the three first layers of the decoder. To access all the keys, you can use Python :
 
 ```python
 import rave
@@ -223,7 +225,6 @@ import rave
 model, path = rave.load_rave_checkpoint("path/to/run")
 print(model.state_dict().keys())
 ```
-
 
 #### Fine-tuning modes
 
