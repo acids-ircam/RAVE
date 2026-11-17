@@ -1,5 +1,4 @@
-> [!WARNING]
-> **This is a beta version of RAVE.** Features and APIs may change before the stable release. See [what's new](https://acids-rave.readthedocs.io/en/latest/whats_new) for details on the changes in this version.
+> [!WARNING] > **This is a beta version of RAVE.** Features and APIs may change before the stable release. See [what's new](https://acids-rave.readthedocs.io/en/latest/whats_new) for details on the changes in this version.
 
 ![rave_logo](docs/rave.png)
 
@@ -31,15 +30,12 @@ git checkout v1
 
 ## Installation
 
-**Warning** It is strongly advised to install `torch` and `torchaudio` before `acids-rave`, so you can choose the appropriate version of torch on the [library website](http://www.pytorch.org). You may also need **ffmpeg** and **sox** on your computer. You can install it locally inside your virtual environment using
-
-```bash
-conda install -c conda-forge torch==2.5.1 torchaudio==2.5.1 ffmpeg sox
-```
+**Warning** It is strongly advised to install `torch` and `torchaudio` before `acids-rave`, so you can choose the appropriate version of torch on the [library website](http://www.pytorch.org).
 
 To install RAVE, just use
 
 ```bash
+pip install "torch<2.15" torchvision torchaudio torchcodec # check exact needed version in pytorch website
 pip install acids-rave
 ```
 

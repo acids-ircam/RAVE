@@ -21,6 +21,6 @@ torch_ema
 einops>=0.5.0
 einops_exts>=0.0.4
 
-nn-tilde>=1.5.2
+nn-tilde==1.5.2
 acids-cc>=3.1
 Flask>=2.2.3
