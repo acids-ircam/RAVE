@@ -117,7 +117,7 @@ have been preprocessed with at least as many channels.
 | --------------- | --------- | ----------- |
 | `--max_steps`   | `6000000` | Total number of training steps. |
 | `--val_every`   | `10000`   | Run validation every N steps (also logs audio examples and updates the latent PCA). |
-| `--save_every`  | `500000`  | Write a numbered checkpoint (and refresh `last.ckpt`) every N steps. |
+| `--save_every`  | `200000`  | Write a numbered checkpoint every N training batches. `last.ckpt` is refreshed every 25,000 batches. |
 | `--seed`        | `0`       | Random seed. |
 | `--ema`         | —         | Keep an exponential moving average of the weights with this factor (e.g. `0.999`). Export them with `rave export --ema_weights`. |
 | `--device`      | `auto`    | (multi) Training device: `auto`, `cpu`, `cuda`, `cuda:0`, `mps`... Several `--device cuda:0 --device cuda:1` enable multi-GPU training. |
@@ -161,14 +161,14 @@ rave finetune --name voice_ft --run runs/flute_abc123 --db_path /data/voice --mo
 | `--run`                   | required   | Source run (folder or `.ckpt`). Its configuration is reused. |
 | `--db_path`               | required   | Preprocessed dataset. |
 | `--out_path`              | `runs/`    | Output folder. |
-| `--mode`                  | `encoder`  | Objective, see below: `encoder`, `decoder`, `full`, `alternating`. |
+| `--mode`                  | `encoder`  | Objective, see below: `encoder`, `decoder`, `full`. |
 | `--train`                 | `all`      | (multi) Weights to train: `all`, `encoder`, `decoder`, `discriminator`, or a regular expression on weight names. Intersected with `--mode`. |
 | `--freeze`                | —          | (multi) Weights to freeze (same syntax), removed from the `--train` selection. |
 | `--lr_encoder`            | `1e-5`     | Encoder learning rate. |
 | `--lr_decoder`            | `1e-4`     | Decoder learning rate. |
 | `--lr_discriminator`      | `1e-4`     | Discriminator learning rate. |
-| `--encoder_start_step`    | `0`        | Number of fine-tuning batches during which the encoder stays fixed. |
-| `--max_steps`             | `6000000`  | Total number of fine-tuning batches (including those already done when resuming). |
+| `--encoder_start_step`    | `0`        | Encoder-only delay; omit for `full`, which switches at half of `--max_steps`. |
+| `--max_steps`             | `50000`  | Total fine-tuning batches, including those completed before resume. For `full`, must be even: first half decoder, second half encoder. |
 | `--beta`                  | source / 4 | KL weight of a variational encoder; an explicit value overrides the default (`0` disables KL). |
 | `--update_pca`            | on         | Recompute the latent PCA at validation (`--noupdate_pca` keeps the source PCA, so the exported latent axes stay comparable with the source model). |
 | `--reset_discriminator`   | off        | Re-initialize the discriminator (and train it). |
@@ -182,14 +182,12 @@ Modes:
 - **`encoder`** — only encoder weights are updated, with reconstruction and latent regularization
   losses; the decoder is fixed. Use it to make a model "understand" a new kind of input (e.g. timbre
   transfer from voice to a flute model).
-- **`decoder`** — only decoder weights are updated, with reconstruction, adversarial and feature-matching
-  losses against the source discriminator, which stays fixed (do not combine with `--reset_discriminator`).
-- **`full`** — encoder and decoder are trained with reconstruction, adversarial, feature-matching and
-  regularization losses; the discriminator is updated every `update_discriminator_every` batches.
-- **`alternating`** — even batches update decoder + discriminator (reconstruction + adversarial), odd
-  batches update the encoder (reconstruction + regularization).
+- **`decoder`** — decoder reconstruction, adversarial and feature-matching updates,
+  interleaved with discriminator updates at the configured cadence; encoder fixed.
+- **`full`** — decoder mode for the first half of `--max_steps`, then encoder mode
+  for the second half. Default: 25,000 + 25,000 batches. Resume with the same total
+  duration to preserve the boundary.
 
----
 
 ## `rave export`
 

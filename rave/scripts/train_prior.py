@@ -39,8 +39,8 @@ flags.DEFINE_integer('workers',
                      help='Number of workers to spawn for dataset loading')
 flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('save_every',
-                     None,
-                     help='save every n steps (default: just last)')
+                     200000,
+                     help='Save a numbered checkpoint every n training batches (default: 200000)')
 flags.DEFINE_integer('max_steps', default=1000000, help="max training steps")
 flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
 flags.DEFINE_integer('seed',
@@ -121,8 +121,7 @@ def main(argv):
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
                                                          filename="best")
-    last_filename = "last" if FLAGS.save_every is None else "epoch-{epoch:04d}"                                                        
-    last_checkpoint = rave.core.ModelCheckpoint(filename=last_filename, step_period=FLAGS.save_every)
+    last_checkpoint = rave.core.ModelCheckpoint(step_period=FLAGS.save_every)
 
     val_check = {}
     if len(train) >= FLAGS.val_every:

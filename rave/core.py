@@ -688,28 +688,47 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
     def __init__(
         self,
         step_period: int = None,
+        last_period: int = 25000,
         last_filename: str = "last.ckpt",
         **kwargs,
     ):
+        # This callback saves explicitly on batch intervals; the separate best
+        # checkpoint callback handles validation-based saves.
+        kwargs.setdefault("save_top_k", 0)
         super().__init__(**kwargs)
-        self.step_period = step_period 
+        self.step_period = step_period
+        self.last_period = last_period
         self.last_filename = last_filename
-        self.__counter = 0
+        self._batches_seen = 0
+
+    def state_dict(self):
+        state = super().state_dict()
+        state['batches_seen'] = self._batches_seen
+        return state
+
+    def load_state_dict(self, state_dict):
+        state = state_dict.copy()
+        self._batches_seen = state.pop('batches_seen', 0)
+        super().load_state_dict(state)
 
     def _save_last_checkpoint(self, trainer, monitor_candidates=None):
         filename = os.path.join(self.dirpath, self.last_filename)
         self._save_checkpoint(trainer, filename)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        self.__counter += 1
-        if self.step_period:
-            if self.__counter % self.step_period == 0:
-                filename = os.path.join(self.dirpath, f"epoch_{self.__counter}{self.FILE_EXTENSION}")
-                self._save_checkpoint(trainer, filename)
-                self._save_last_checkpoint(trainer)
+        self._batches_seen += 1
+        if self.step_period and self._batches_seen % self.step_period == 0:
+            filename = os.path.join(self.dirpath, f"step_{self._batches_seen}{self.FILE_EXTENSION}")
+            self._save_checkpoint(trainer, filename)
+        if self.last_period and self._batches_seen % self.last_period == 0:
+            self._save_last_checkpoint(trainer)
 
     def on_train_end(self, trainer, pl_module):
         self._save_last_checkpoint(trainer)
+
+    def on_exception(self, trainer, pl_module, exception):
+        if isinstance(exception, KeyboardInterrupt):
+            self._save_checkpoint(trainer, os.path.join(self.dirpath, "interrupt.ckpt"))
 
 
 def get_valid_extensions():

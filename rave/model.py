@@ -549,6 +549,7 @@ class RAVE(pl.LightningModule):
                 'encoder_start_step': self.encoder_start_step,
                 'lrs': self.finetune_lrs,
                 'beta': getattr(self.encoder, 'beta', None),
+                'total_steps': getattr(self, 'finetune_total_steps', None),
             }
 
     def on_load_checkpoint(self, checkpoint):
@@ -564,27 +565,32 @@ class RAVE(pl.LightningModule):
                 raise ValueError('Resume with the same fine-tuning mode, delay and learning rates')
             if 'beta' in state and state['beta'] != getattr(self.encoder, 'beta', None):
                 raise ValueError('Resume with the same encoder beta')
+            if (self.finetune_mode == 'full' and state.get('total_steps') is not None
+                    and state['total_steps'] != self.finetune_total_steps):
+                raise ValueError('Resume full with the same max_steps')
             self.finetune_steps = state['steps']
 
     def _prepare_finetune_step(self):
+        if self.finetune_mode not in ('encoder', 'decoder', 'full'):
+            raise ValueError('Fine-tuning mode must be encoder, decoder or full')
         encoder_turn = self.finetune_mode == 'encoder' or (
-            self.finetune_mode == 'alternating' and self.finetune_steps % 2 == 1)
-        encoder_active = self.finetune_steps >= self.encoder_start_step
-        adversarial = self.finetune_mode != 'encoder' and not encoder_turn
-        # try with adversarial loss in encoder mode
-        # adversarial = (not encoder_turn) or self.finetune_mode == "encoder"
+            self.finetune_mode == 'full' and
+            self.finetune_steps >= self.finetune_total_steps // 2)
+        encoder_active = (self.finetune_mode == 'full' or
+                          self.finetune_steps >= self.encoder_start_step)
+        adversarial = not encoder_turn
         self.finetune_discriminator_turn = (
-            self.finetune_mode in ('full', 'decoder') and
+            adversarial and
             self.finetune_steps % self.update_discriminator_every == 0 and
             any(id(p) in self.finetune_parameter_ids for p in self.discriminator.parameters()))
         for prefix, module in [('encoder', self.encoder), ('decoder', self.decoder),
                                ('discriminator', self.discriminator)]:
-            active = ((prefix == 'encoder' and encoder_active and (
-                encoder_turn or self.finetune_mode == 'full')) or
-                (prefix != 'encoder' and adversarial))
-            if self.finetune_mode in ('full', 'decoder'):
-                active = active and (self.finetune_discriminator_turn if prefix == 'discriminator'
-                                     else not self.finetune_discriminator_turn)
+            if prefix == 'encoder':
+                active = encoder_turn and encoder_active
+            elif prefix == 'decoder':
+                active = adversarial and not self.finetune_discriminator_turn
+            else:
+                active = self.finetune_discriminator_turn
             module.train(active)
             for parameter in module.parameters():
                 parameter.requires_grad_(active and id(parameter) in self.finetune_parameter_ids)
@@ -615,8 +621,6 @@ class RAVE(pl.LightningModule):
                     torch.nn.utils.clip_grad_norm_(
                         list(self.encoder.parameters()) + list(self.decoder.parameters()), self.gradient_clip_gen)
                 gen_opt.step()
-            if adversarial and self.finetune_mode == 'alternating' and len(optimizers) > 1:
-                optimizers[1].step()
         self.log('finetune_steps', float(self.finetune_steps + 1))
         self.finetune_steps += 1
 
@@ -701,20 +705,6 @@ class RAVE(pl.LightningModule):
         if adversarial:  # DISCRIMINATION
             if finetune or discriminator_turn:
                 xy = torch.cat([x_raw, y_raw], 0)
-            if finetune and self.finetune_mode == 'alternating':
-                dis_optimizers = self.optimizers()
-                if isinstance(dis_optimizers, (list, tuple)) and len(dis_optimizers) > 1:
-                    dis_features = self.discriminator(xy.detach())
-                    dis_real, dis_fake = self.split_features(dis_features)
-                    dis_loss = 2. * sum(self.gan_loss(real[-1], fake[-1])[0]
-                                       for real, fake in zip(dis_real, dis_fake)) / len(dis_real)
-                    self._finetune_discriminator_backward(dis_loss)
-                    dis_loss = dis_loss.detach()
-                    del dis_features, dis_real, dis_fake
-                else:
-                    dis_loss = xy.new_zeros(())
-                for parameter in self.discriminator.parameters():
-                    parameter.requires_grad_(False)
             if finetune or discriminator_turn:
                 features = self.discriminator(
                     xy.detach() if discriminator_turn or self.finetune_discriminator_turn else xy)
@@ -762,8 +752,6 @@ class RAVE(pl.LightningModule):
                 feature_real)
             loss_adv = loss_adv / len(feature_real)
             loss_dis = 2. * loss_dis / len(feature_real)
-            if finetune and self.finetune_mode == 'alternating':
-                loss_dis = dis_loss
 
         else:
             pred_real = torch.tensor(0.).to(x_raw)
@@ -781,8 +769,6 @@ class RAVE(pl.LightningModule):
             regularization = self.beta_factor
             if finetune:
                 regularization = 1.
-                if self.finetune_mode == 'alternating' and not encoder_turn:
-                    regularization = 0.
             loss_gen['regularization'] = reg * regularization
 
         if adversarial and not discriminator_turn:
@@ -791,9 +777,6 @@ class RAVE(pl.LightningModule):
 
         # OPTIMIZATION
         if finetune:
-            # Alternating decoder steps use reconstruction + adversarial only.
-            if self.finetune_mode == 'alternating':
-                loss_gen.pop('feature_matching', None)
             self._finetune_update(loss_gen, loss_dis, adversarial)
         elif not (batch_idx %
                 self.update_discriminator_every) and self.warmed_up:

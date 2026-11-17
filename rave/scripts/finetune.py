@@ -39,12 +39,12 @@ flags.DEFINE_multi_string('augment',
                             help = 'augmentation configurations to use')
                          
 flags.DEFINE_integer('max_steps',
-                     6000000,
-                     help='Maximum number of training steps')
+                     50000,
+                     help='Total fine-tuning batches; full splits these equally into decoder then encoder phases')
 flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
 flags.DEFINE_integer('save_every',
-                     500000,
-                     help='save every n steps (default: just last)')
+                     200000,
+                     help='Save a numbered checkpoint every n training batches (default: 200000)')
 flags.DEFINE_integer('seed',
                       default = 0,
                       help = 'augmentation configurations to use')                    
@@ -59,7 +59,7 @@ flags.DEFINE_string('resume',
                     None,
                     help='Path to previous checkpoint of the run')
 flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
-flags.DEFINE_enum('mode', 'encoder', ['encoder', 'decoder', 'full', 'alternating'],
+flags.DEFINE_enum('mode', 'encoder', ['encoder', 'decoder', 'full'],
                   help='Fine-tuning objective and update schedule; decoder trains the decoder and discriminator')
 flags.DEFINE_multi_string('train',
                            default = ["all"],
@@ -167,12 +167,20 @@ def main(argv):
     with gin.unlock_config():
         gin.bind_parameter('dataset.get_dataset.augmentations', augmentations)
 
+    if FLAGS.max_steps <= 0:
+        raise ValueError('max_steps must be positive')
+    if FLAGS.mode == 'full':
+        if FLAGS.max_steps % 2:
+            raise ValueError('full requires an even max_steps for equal decoder/encoder phases')
+        if FLAGS.encoder_start_step:
+            raise ValueError('full schedules the encoder at max_steps / 2; omit encoder_start_step')
     if FLAGS.encoder_start_step < 0:
         raise ValueError('encoder_start_step must be nonnegative')
     if min(FLAGS.lr_encoder, FLAGS.lr_decoder, FLAGS.lr_discriminator) <= 0:
         raise ValueError('Fine-tuning learning rates must be positive')
     model.finetune_mode = FLAGS.mode
     model.finetune_steps = 0
+    model.finetune_total_steps = FLAGS.max_steps
     model.encoder_start_step = FLAGS.encoder_start_step
     model.finetune_lrs = (FLAGS.lr_encoder, FLAGS.lr_decoder, FLAGS.lr_discriminator)
     # The encoder already applies beta to reg; this value is for logging.
@@ -188,6 +196,10 @@ def main(argv):
     
     if len(training_keys) == 0:
         raise ValueError('No training keys found with train=%s, freeze=%s'%(FLAGS.train, FLAGS.freeze))
+    if FLAGS.mode == 'full':
+        for prefix in ('encoder.', 'decoder.'):
+            if not any(key.startswith(prefix) for key in training_keys):
+                raise ValueError('full requires trainable encoder and decoder weights for both phases')
     logging.info("Number of parameters fine-tuned : %d"%len(training_keys))
     with gin.unlock_config():
         gin.bind_parameter("rave.configure_optimizers.weight_list", training_keys)
@@ -225,8 +237,7 @@ def main(argv):
     # CHECKPOINT CALLBACKS
     validation_checkpoint = pl.callbacks.ModelCheckpoint(monitor="validation",
                                                          filename="best")
-    last_filename = "last" if FLAGS.save_every is None else "epoch-{epoch:04d}"                                                        
-    last_checkpoint = rave.core.ModelCheckpoint(filename=last_filename, step_period=FLAGS.save_every)
+    last_checkpoint = rave.core.ModelCheckpoint(step_period=FLAGS.save_every)
 
     val_check = {}
     if len(train) >= FLAGS.val_every:
