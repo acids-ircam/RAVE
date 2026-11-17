@@ -18,14 +18,15 @@ except:
     sys.path.append(os.path.abspath('.'))
     import rave
 
-try: 
+try:
     from after.diffusion import RectifiedFlow, EDM
     from after.diffusion.utils import collate_fn
-except: 
-    logging.error("Could not find AFTER dependency. Exiting...")
-    exit()
+except ImportError as e:
+    logging.error(f"Could not import AFTER ({e}). Install it with: pip install \"acids-rave[after]\"")
+    sys.exit(1)
 
 import rave.dataset
+import rave.scripting
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -56,7 +57,9 @@ def find_after_model(ckpt_path):
 def parse_flags():
 
     flags.DEFINE_string('name', None, help='Name of the run')
-    flags.DEFINE_string('model', default=None, required=True, help="pretrained RAVE path")
+    flags.DEFINE_string('model', default=None, required=True, help="pretrained RAVE model: exported .ts, run folder, version folder or .ckpt")
+    flags.DEFINE_string('ckpt_name', default="last.ckpt", help="RAVE checkpoint name when --model is a run folder (falls back to the most recent one)")
+    flags.DEFINE_bool('ema_weights', default=False, help="use the EMA weights of the RAVE run, if available")
     flags.DEFINE_string('config', default="base", help="AFTER model config (rectified or edm)")
     flags.DEFINE_string('arch', default="rectified", help="AFTER model config (rectified or edm)")
     flags.DEFINE_string('out_path', default="runs/", help="out directory path")
@@ -80,7 +83,7 @@ def parse_flags():
     # Data-related key words
     flags.DEFINE_multi_string('db_path', default=None, required=True, help="Preprocessed dataset paths")
     flags.DEFINE_multi_float('db_weights', default=None, required=False, help="Weights for dataset balancing")
-    flags.DEFINE_multi_float('db_partition', default=None, help="Fetches given partition in dataset(s)")
+    flags.DEFINE_string('db_partition', default=None, help="Fetches given partition in dataset(s)")
     flags.DEFINE_integer('db_max_size', default=None, help="Fetches given partition in dataset(s)")
     flags.DEFINE_boolean('use_cache_for_multi', default=True, required=False, help="Use cache for multi-dataset random sampling (only for multi dataset training)")
 
@@ -88,8 +91,10 @@ def parse_flags():
     flags.DEFINE_string('device', default="cpu", help='device to use (default : cpu, can be set to cuda:0, cuda:1, mps...)')
     flags.DEFINE_integer('batch', 32, help="batch size")
     flags.DEFINE_integer('n_signal', None, help="chunk size (default: chunk_size // 2)")
-    flags.DEFINE_string('ckpt', default=None, help="checkpoint to resume")
-    flags.DEFINE_float('fidelity', default=0.99, help="prior target fidelity")
+    flags.DEFINE_string('resume', default=None, help="AFTER run folder or checkpoint to resume")
+    flags.DEFINE_string('ckpt', default=None, help="(deprecated, use --resume) AFTER checkpoint to resume")
+    flags.DEFINE_float('fidelity', default=0.99, help="fidelity defining the latent size when --model is a RAVE run (ignored for .ts)")
+    flags.DEFINE_integer('latent_size', default=None, help="explicit latent size when --model is a RAVE run (overrides --fidelity)")
     flags.DEFINE_float('adv_weight', default=0.05, help="adversarial weight for disentanglement (default=0.05)")
     flags.DEFINE_integer('workers',
                         default=8,
@@ -123,33 +128,53 @@ def main(argv):
         FLAGS.structure = "midi"
 
 
-    # [First step] initialize model model (either scripted or checkpoint)
+    # AFTER run folder (resolved first: RAVE checkpoints are exported into it)
+    resume = FLAGS.resume or FLAGS.ckpt
+    if FLAGS.ckpt is not None and FLAGS.resume is None:
+        logging.warning("--ckpt is deprecated, use --resume")
+    if resume is not None:
+        after_ckpt_name, model_dir, restart_step = find_after_model(resume)
+    else:
+        if FLAGS.name is None:
+            raise ValueError("--name is required when starting a new AFTER training")
+        model_dir = os.path.join(FLAGS.out_path, FLAGS.name)
+        restart_step = None
+    os.makedirs(model_dir, exist_ok=True)
+
+    # [First step] initialize RAVE model. AFTER calls the encode / decode methods of the embedding
+    # model directly, so RAVE runs / checkpoints are first exported to a (non-streaming) .ts.
     logging.info("Initializing model %s"%FLAGS.model)
-    assert os.path.exists(FLAGS.model), f"{FLAGS.model} not found"
+    if not os.path.exists(FLAGS.model):
+        raise FileNotFoundError(FLAGS.model)
     if os.path.splitext(FLAGS.model)[1] == ".ts":
-        rave_model = torch.jit.load(FLAGS.model)
-        rave_sr = rave_model.sr
+        rave_path = FLAGS.model
         embedding_name = FLAGS.embedding_name or os.path.splitext(os.path.basename(FLAGS.model))[0]
-        z_downsample = int(rave_model.encode_params[3])
-        z_shape = int(rave_model.encode_params[2])
-        n_channels = rave_model.n_channels
-        encode_method = "encode"
-        method_kwargs = {}
-        logging.info(f"Model found at {FLAGS.model}, dim={z_shape}, ratio={z_downsample}")
-    else: 
-        #TODO the decode function is called directly in AFTER, such that we cannot make a custom callback
-        raise RuntimeError("Please export the model as a .ts before training an AFTER model.")
-        # rave_model, run_path = rave.load_rave_checkpoint(FLAGS.model)
-        # embedding_name = FLAGS.embedding_name or rave.get_run_name(run_path)
-        # logging.info('model found : %s'%run_path)
-        # encode_method = "encode_compressed"
-        # rave_sr = rave_model.sr
-        # z_shape = rave_model.latent_size_from_fidelity(FLAGS.fidelity)
-        # # compute z downsampling
-        # z = rave_model.encode(torch.randn(1, 1, 4096))
-        # z_downsample = 4096 // z.shape[-1]
-        # method_kwargs = {'fidelity': FLAGS.fidelity}
-        # logging.info(f"Model found at {run_path}, dim={z_shape}, ratio={z_downsample}")
+        if FLAGS.latent_size is not None or flags.FLAGS['fidelity'].present:
+            logging.warning("--fidelity / --latent_size are ignored for .ts models: the exported latent size is used")
+    else:
+        # run folder, version folder or .ckpt (see docs/reference/runs.md)
+        embedding_name = FLAGS.embedding_name or rave.get_run_name(rave.core.search_for_run(FLAGS.model, name=FLAGS.ckpt_name) or FLAGS.model) \
+                         or Path(FLAGS.model).resolve().stem
+        rave_dir = os.path.join(model_dir, "rave")
+        existing = sorted(Path(rave_dir).glob(f"{embedding_name}*.ts")) if os.path.isdir(rave_dir) else []
+        if resume is not None and len(existing) > 0 and not FLAGS.force:
+            # keep the embedding model used at the beginning of the training
+            rave_path = str(existing[0])
+            logging.info(f"Reusing exported RAVE model {rave_path}")
+        else:
+            logging.info(f"Exporting RAVE run {FLAGS.model} to {rave_dir}...")
+            rave_path = rave.scripting.export(FLAGS.model, out_path=rave_dir, name=embedding_name, streaming=False,
+                                              fidelity=FLAGS.fidelity, latent_size=FLAGS.latent_size,
+                                              ckpt_name=FLAGS.ckpt_name, ema_weights=FLAGS.ema_weights)
+    rave_model = torch.jit.load(rave_path, map_location="cpu")
+    rave_model.eval()
+    rave_sr = rave_model.sr
+    z_downsample = int(rave_model.encode_params[3])
+    z_shape = int(rave_model.encode_params[2])
+    n_channels = rave_model.n_channels
+    encode_method = "encode"
+    method_kwargs = {}
+    logging.info(f"Model found at {rave_path}, dim={z_shape}, ratio={z_downsample}")
     ad.set_gin_constant('CHANNELS', n_channels)
     ad.set_gin_constant('SAMPLE_RATE', rave_sr)
 
@@ -166,14 +191,14 @@ def main(argv):
         for i in range(FLAGS.n_augmentations): 
             pitch_transform = [adt.PitchShift(min_semitones=float(FLAGS.shift_range[0]), max_semitones=float(FLAGS.shift_range[1]), p=1.0, sr=rave_sr),
                                                  adt.TimeMask(min_band_part=0.07, max_band_part=0.15, fade=True, p=1.0, sr=rave_sr)]
-            stretch_transform = rave_transforms + [adt.TimeStretch(min_rate=float(FLAGS.stretch_range[0]), max_rate=float(FLAGS.stretch_range[1]), sr=rave_sr),
+            stretch_transform = [adt.TimeStretch(min_rate=float(FLAGS.stretch_range[0]), max_rate=float(FLAGS.stretch_range[1]), sr=rave_sr),
                                                    adt.TimeMask(min_band_part=0.07, max_band_part=0.15, fade=True, p=1.0, sr=rave_sr)]
             if (FLAGS.stretch and FLAGS.shift): 
                 augment_transforms.append([*rave_transforms, *stretch_transform, *pitch_transform])
             elif (FLAGS.stretch):
                 augment_transforms.append([*rave_transforms, *stretch_transform])
             elif (FLAGS.shift):
-                augment_transforms.append([*rave_transforms, *stretch_transform])
+                augment_transforms.append([*rave_transforms, *pitch_transform])
     embedding_feature = ModuleEmbedding(module=rave_model, module_sr=rave_model.sr, 
                                         method=encode_method, method_kwargs=method_kwargs, 
                                         name=embedding_name, transforms=augment_transforms, device=device) 
@@ -209,8 +234,9 @@ def main(argv):
             # check if existing transform matches the current training
             saved_embedding = ad.get_features_from_path(data_path)[embedding_name]
             assert saved_embedding.n_augmentations == FLAGS.n_augmentations, \
-                "embedding %s exists in data path {data_path}, but has %d augmentations (asked: %d.)\n" \
-                "you can force recomputation of the augmentations with the --force_augmentation feature"
+                f"embedding {embedding_name} exists in data path {data_path}, but has {saved_embedding.n_augmentations} " \
+                f"augmentations (asked: {FLAGS.n_augmentations}).\n" \
+                "you can force recomputation of the augmentations with the --force_augmentation flag"
             for i, t in enumerate(saved_embedding.transforms): 
                 if type(t) != type(augment_transforms[i]): 
                     logging.warning(f"transform #{i} ({augment_transforms[i]}) does not match with loaded embedding ({t})")
@@ -248,7 +274,7 @@ def main(argv):
     if len(dataset) == 1: 
         dataset = dataset[0]
     else:
-        dataset = ad.datasets.CombinedAudioDataset(dataset, FLAGS.weights, max_samples=FLAGS.max_samples, use_cache=FLAGS.use_cache)
+        dataset = ad.datasets.CombinedAudioDataset(dataset, FLAGS.db_weights, max_samples=FLAGS.db_max_size, use_cache=FLAGS.use_cache_for_multi)
     logging.info(f"Parsed dataset total length : {len(dataset)}...")
     partitions = dataset.split({'train': 0.98, 'val': 0.02}, load_if_available=FLAGS.db_partition, use_meta_if_available=True)
     train_dataset = partitions['train']; val_dataset = partitions['val']
@@ -273,22 +299,16 @@ def main(argv):
     logging.info("learned latent steps : %s"%(n_after_latents))
 
 
-    if FLAGS.ckpt is not None: 
-        model_name, model_dir, restart_step = find_after_model(FLAGS.ckpt)
+    if resume is not None:
         config_path = os.path.join(model_dir, "config.gin")
-        logging.info('Taking checkpoint at : %s'%os.path.join(model_dir, model_name))
+        logging.info('Taking checkpoint at : %s'%os.path.join(model_dir, after_ckpt_name))
         gin.parse_config_files_and_bindings([config_path], FLAGS.override)
         logging.info('Loaded config : %s'%gin.config_str())
     else:
-        # gin.bind_parameter("%IN_SIZE", z_shape)
-        # gin.bind_parameter("%STRUCTURE_TYPE", structure_type)
-        # gin.bind_parameter("%N_SIGNAL", n_after_latents)
-        model_dir = os.path.join(FLAGS.out_path, FLAGS.name)
         gin.parse_config_files_and_bindings(
             [add_gin_extension(FLAGS.config)],
             FLAGS.override + [f'IN_SIZE={z_shape}', f'STRUCTURE_TYPE="{structure_type}\"', f"N_SIGNAL={n_after_latents}"],
         )
-        restart_step = None
 
     with gin.unlock_config():
         gin.bind_parameter("diffusion.utils.collate_fn.ae_ratio", z_downsample)
@@ -348,7 +368,7 @@ def main(argv):
         print("Number of parameters - classifier : ", num_el / 1e6, "M")
 
     if time_transform is not None: 
-        print("With time transform : "%time_transform)
+        print("With time transform : %s"%time_transform)
 
     ######### TRAINING #########
     d = {

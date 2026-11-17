@@ -358,12 +358,18 @@ space. Requires `pip install "acids-rave[after]"`.
 rave train_after --name my_after --model runs/my_model_abc123 --db_path /data/my_dataset --device cuda:0
 ```
 
-Main flags: `--model` (RAVE run), `--db_path` (multi; several datasets can be mixed with
+`--model` accepts an exported `.ts`, or a run folder, version folder or `.ckpt`. A run or checkpoint is
+first exported (non-streaming) to `<out_path>/<name>/rave/`, with its latent size chosen by
+`--fidelity` (0.99) or `--latent_size`; `--ckpt_name` and `--ema_weights` select the weights as in
+`rave export`. When resuming, that exported model is reused (`--force` re-exports it). For `.ts`
+models, the exported latent size is used.
+
+Main flags: `--name`, `--db_path` (multi; several datasets can be mixed with
 `--db_weights`), `--arch` (`rectified` or `edm`), `--config`, `--out_path`, `--device`, `--batch`
-(32), `--n_signal`, `--fidelity` (0.99), `--adv_weight` (0.05), data augmentation (`--stretch`,
+(32), `--n_signal`, `--adv_weight` (0.05), data augmentation (`--stretch`,
 `--stretch_range 0.7,1.6`, `--shift`, `--shift_range -6,6`, `--n_augmentations 4`), structure
-conditioning (`--structure`, `--midi`, `--beat`), and `--ckpt` to resume. Use `--helpfull` for the
-full list.
+conditioning (`--structure`, `--midi`, `--beat`), and `--resume` (AFTER run folder or checkpoint;
+`--ckpt` is kept as a deprecated alias). Use `--helpfull` for the full list.
 
 ---
 
