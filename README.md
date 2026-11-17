@@ -1,3 +1,6 @@
+> [!WARNING]
+> **This is a beta version of RAVE.** Features and APIs may change before the stable release. See [what's new](https://acids-rave.readthedocs.io/en/latest/whats_new) for details on the changes in this version.
+
 ![rave_logo](docs/rave.png)
 
 # RAVE: Realtime Audio Variational autoEncoder
