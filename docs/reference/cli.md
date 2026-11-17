@@ -117,7 +117,7 @@ have been preprocessed with at least as many channels.
 | --------------- | --------- | ----------- |
 | `--max_steps`   | `6000000` | Total number of training steps. |
 | `--val_every`   | `10000`   | Run validation every N steps (also logs audio examples and updates the latent PCA). |
-| `--save_every`  | `500000`  | Write a numbered checkpoint (and refresh `last.ckpt`) every N steps. |
+| `--save_every`  | `200000`  | Write a numbered checkpoint every N training batches. `last.ckpt` is refreshed every 25,000 batches. |
 | `--seed`        | `0`       | Random seed. |
 | `--ema`         | —         | Keep an exponential moving average of the weights with this factor (e.g. `0.999`). Export them with `rave export --ema_weights`. |
 | `--device`      | `auto`    | (multi) Training device: `auto`, `cpu`, `cuda`, `cuda:0`, `mps`... Several `--device cuda:0 --device cuda:1` enable multi-GPU training. |

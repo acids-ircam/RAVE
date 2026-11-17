@@ -26,7 +26,7 @@ This writes `~/models/my_corpus_<hash>_streaming.ts`. The two flags that matter 
 - **`--db_path`** — recomputes the latent PCA on your data (see [step 3](#3-recompute-the-latent-axes-with-db_path)).
 
 `--run` accepts the run folder, a version folder or a `.ckpt` file. By default the `last.ckpt`
-checkpoint is used; since it only appears after `--save_every` steps, the most recent checkpoint is
+checkpoint is used; if it is unavailable, the most recent checkpoint is
 taken otherwise. To choose another one:
 
 ```bash

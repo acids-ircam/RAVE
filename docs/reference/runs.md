@@ -11,9 +11,9 @@
         ├── hparams.yaml
         └── checkpoints/
             ├── best.ckpt          ← best validation loss so far
-            ├── epoch-XXXX.ckpt    ← latest checkpoint at validation time
-            ├── epoch_500000.ckpt  ← numbered checkpoint every --save_every steps
-            └── last.ckpt          ← refreshed every --save_every steps and at the end of training
+            ├── step_200000.ckpt   ← numbered checkpoint every --save_every batches
+            ├── last.ckpt          ← refreshed every 25,000 batches and at normal training end
+            └── interrupt.ckpt     ← saved on a handled Ctrl+C
 ```
 
 `<hash>` is derived from the configuration, so two trainings with the same name but different
@@ -37,7 +37,7 @@ The configuration is searched as `config.gin` in the given folder and its subfol
 parent and grand-parent folders. Keep `config.gin` next to (or above) your checkpoints when moving
 runs around.
 
-> `last.ckpt` only appears after `--save_every` steps (500k by default). To export a model
+> `last.ckpt` is refreshed every 25,000 batches and when training finishes. To export a model
 > earlier, export the run folder anyway (the most recent checkpoint is used) or pass
 > `--ckpt_name best.ckpt`.
 
