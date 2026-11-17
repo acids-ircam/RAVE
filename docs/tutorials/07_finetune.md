@@ -55,7 +55,7 @@ the **discriminator** (judges whether audio sounds real; only used for training)
 | -------- | ------- | ------ | ----- |
 | `encoder` *(default)* | encoder | reconstruction + latent regularization | decoder, discriminator |
 | `decoder` | decoder and discriminator on separate batches | reconstruction + adversarial + feature matching | encoder |
-| `full` | decoder phase, then encoder phase (equal lengths) | losses of the active mode | inactive modules |
+| `full` | decoder phase, then encoder phase (equal lengths) | losses of the active mode | - |
 
 ### `encoder` — a new input, the same sound
 
@@ -93,11 +93,11 @@ rave finetune --name violin_clean --run ~/runs/violin_<hash> --db_path ~/dataset
 > Decoder mode trains the discriminator at its configured cadence.
 > `--reset_discriminator` optionally initializes it afresh.
 
-### `full` — decoder first, then encoder
+### `full` — A new model
 
 `full` runs decoder mode for half of the requested batches, followed by encoder mode
 for the other half. The default is 25,000 batches per phase. Choose the total with
-`--max_steps` (a positive even integer); do not use `--encoder_start_step` with `full`.
+`--max_steps` (a positive even integer); do not use `--encoder_start_step` with `full`. Combining both steps enables to learn to generate samples in the new domain while shaping the latent space for the new features. 
 
 ```bash
 rave finetune --name winds --run ~/runs/strings_<hash> --db_path ~/datasets/winds \
@@ -140,6 +140,7 @@ To see the weight names of a model:
 
 ```python
 import rave
+
 model, _ = rave.load_rave_checkpoint("/full/path/to/runs/violin_<hash>")
 print("\n".join(model.state_dict().keys()))
 ```

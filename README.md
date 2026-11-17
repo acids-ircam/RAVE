@@ -313,9 +313,9 @@ rave finetune --name run_name --run /path/to/original/run --db_path /path/to/db 
 
 `--mode` chooses the objective:
 
-- `encoder` (default): update only the encoder with reconstruction and latent regularization losses; the decoder is fixed.
-- `decoder`: update the decoder with reconstruction, adversarial and feature-matching losses; update the discriminator on separate batches at the configured cadence. The encoder is fixed.
-- `full`: run decoder mode for the first half of `--max_steps`, then encoder mode for the second half. Default: 25,000 batches per phase. Set a positive even total with `--max_steps`.
+- `encoder` (default): update only the encoder with reconstruction and latent regularization losses; the decoder is fixed. 
+- `decoder`: update the decoder with reconstruction, adversarial and feature-matching losses; update the discriminator on separate batches at the configured cadence. The encoder is fixed. This enables to learn to generate samples in a new domain, while retaining the latent organisation of the original training. 
+- `full`: run decoder mode for the first half of `--max_steps`, then encoder mode for the second half. Default: 25,000 batches per phase. Set a positive total with `--max_steps`. This enables to create a rave model on the target domain, while benefitting from the pre-training. 
 
 `--train` and `--freeze` further restrict the trained weights, using either specific words (`all`, `encoder`, `decoder`, `discriminator`) or regular expressions on weight names. For example :
 
