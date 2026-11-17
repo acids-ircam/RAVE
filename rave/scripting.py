@@ -88,8 +88,32 @@ def _parse_code_loop_placeholder(v: str, length: int, **values):
         val += _replace_placeholders(v, iteration=i, **values)
     return val
 
-def _import_defs_from_tmpfile(code, gl=None, lo=None, tmpdir="/tmp/torchbend/jit"):
-    gl = gl or globals() 
+_JIT_TMPDIR = None
+
+
+def _jit_tmpdir() -> str:
+    """per-user writable folder for generated TorchScript sources (TorchScript needs the
+    source file of exec'd functions on disk). A shared fixed folder (e.g. /tmp/torchbend/jit)
+    breaks when created by another user; falls back to a fresh private temporary folder."""
+    global _JIT_TMPDIR
+    if _JIT_TMPDIR is not None and os.access(_JIT_TMPDIR, os.W_OK):
+        return _JIT_TMPDIR
+    import tempfile
+    user = getattr(os, "getuid", lambda: os.environ.get("USERNAME", "user"))()
+    candidate = os.path.join(tempfile.gettempdir(), f"rave_jit_{user}")
+    try:
+        os.makedirs(candidate, mode=0o700, exist_ok=True)
+        if not os.access(candidate, os.W_OK):
+            raise PermissionError(candidate)
+        _JIT_TMPDIR = candidate
+    except OSError:
+        _JIT_TMPDIR = tempfile.mkdtemp(prefix="rave_jit_")
+    return _JIT_TMPDIR
+
+
+def _import_defs_from_tmpfile(code, gl=None, lo=None, tmpdir=None):
+    gl = gl or globals()
+    tmpdir = tmpdir or _jit_tmpdir()
     os.makedirs(tmpdir, exist_ok=True)
     file = os.path.join(tmpdir, get_random_hash(n=32)+".py")
     with open(file, 'w+') as f:
@@ -1003,6 +1027,41 @@ def _clear_streaming_caches(module, stft: bool = True):
 DB_PARTITIONS = ("all", "train", "val")
 
 
+def _check_writable(out_path: Path):
+    """raises early if the export destination (folder, or .ts file) cannot be written."""
+    folder = out_path.parent if out_path.suffix == ".ts" else out_path
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise PermissionError(f"cannot create export folder {folder}: {e}") from e
+    if not os.access(folder, os.W_OK) or (out_path.suffix == ".ts" and out_path.exists()
+                                          and not os.access(out_path, os.W_OK)):
+        raise PermissionError(f"export destination {out_path} is not writable")
+
+
+def _safe_export_to_ts(scripted_rave, ts_path: Path) -> Path:
+    """writes the .ts through a temporary file in the same folder (no truncated model if
+    interrupted); if the destination cannot be written, saves to a temporary file instead
+    of losing the export."""
+    import tempfile
+    try:
+        ts_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = ts_path.with_name(f".{ts_path.name}.{os.getpid()}.tmp")
+        try:
+            scripted_rave.export_to_ts(str(tmp_path))
+            os.replace(tmp_path, ts_path)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        return ts_path
+    except OSError as e:
+        fd, fallback = tempfile.mkstemp(prefix=ts_path.stem + "_", suffix=".ts")
+        os.close(fd)
+        scripted_rave.export_to_ts(fallback)
+        _log.error(f"could not write {ts_path} ({e}): model saved to {fallback} instead")
+        return Path(fallback)
+
+
 def _export_dataset(db_path, model, partition="all", run_name=None, chunk_length=2**17):
     """dataset used to recompute latent statistics at export: the full dataset (train + val)
     or one partition of the training split (stored under the run name)."""
@@ -1025,7 +1084,7 @@ def compute_dataset_projections(run, db_path, partition="all", ica=False, mapper
                                 ckpt_name="last.ckpt", max_chunks=None, batch_size=8,
                                 chunk_length=2**17, device="cpu", mapper_steps=5000,
                                 sfa=False, pls=False, cca=False, descriptors=None,
-                                pitch_mode="pyin") -> dict:
+                                pitch_mode="pyin", cache=True, cache_root=None) -> dict:
     """encodes a dataset with a (non-streaming) RAVE and computes, from its latents:
       * the default PCA (latent_mean, latent_pca, fidelity), on posterior means (variational
         models only);
@@ -1036,6 +1095,9 @@ def compute_dataset_projections(run, db_path, partition="all", ica=False, mapper
         with pitch_mode), with latent_size components (at most the number of descriptors
         for cca; default: number of descriptors).
     ica / mapper / sfa use latent_size, defaulting to the latent size reached by fidelity.
+    If cache, the encoded latents (and descriptors) are stored in the dimred latent cache
+    ({cache_root}/{model_name}_{path_hash}/{version}/export_{partition}/{id_hash}, cache_root
+    default: rave/.dimred_cache, purged by `rave dimred purge_cache`) and reloaded when valid.
     Returns {"buffers": {name: tensor}, "projections": {name: buffer},
              "extra_projections": {name: RAVEProjection}}."""
     from . import load_rave_checkpoint, get_run_name
@@ -1051,10 +1113,29 @@ def compute_dataset_projections(run, db_path, partition="all", ica=False, mapper
     finally:
         cc.use_cached_conv(cached_state)
     model.eval()
-    dataset = _export_dataset(db_path, model, partition, get_run_name(model_path), chunk_length)
-    data = encode_dataset(model, dataset, batch_size, max_chunks, device, raw=True, extras=use_descriptors,
-                          descriptors=use_descriptors, pitch_mode=pitch_mode if "f0" in desc_names else None)
-    z = data["latents"] if use_descriptors else data
+    needed = desc_names if use_descriptors else []
+    f0_mode = pitch_mode if "f0" in needed else None
+    cache_dir, data = None, None
+    if cache:
+        params = dict(chunk_length=chunk_length, max_chunks=max_chunks, sr=model.sr, n_channels=model.n_channels,
+                      partition=partition, ema_weights=bool(ema_weights), raw=True)
+        try:
+            cache_dir = latents_cache_dir(model_path, f"export_{partition}", str(db_path), root=cache_root,
+                                          **params)
+            data = _load_latents_cache(cache_dir, model, needed, pitch_mode)
+        except Exception as e:
+            _log.warning(f"latent cache unavailable ({e}): encoding the dataset")
+            cache_dir, data = None, None
+    if data is None:
+        dataset = _export_dataset(db_path, model, partition, get_run_name(model_path), chunk_length)
+        data = encode_dataset(model, dataset, batch_size, max_chunks, device, raw=True, extras=True,
+                              descriptors=use_descriptors, pitch_mode=f0_mode)
+        if cache_dir is not None:
+            try:
+                _save_latents_cache(cache_dir, data, model, str(db_path), params)
+            except Exception as e:
+                _log.warning(f"could not write latent cache {cache_dir}: {e}")
+    z = data["latents"]
     out = {"buffers": {}, "projections": {}, "extra_projections": {}}
 
     var = None
@@ -1098,7 +1179,7 @@ def export(run, out_path=None, name=None, streaming=False, fidelity=.95, latent_
            no_pca=False, ema_weights=False, sr=None, prior=None, use_causal_stft=True,
            ckpt_name="last.ckpt", db_path=None, db_partition="all", ica=False, mapper=False,
            max_chunks=None, device="cpu", mapper_steps=5000, sfa=False, pls=False, cca=False,
-           descriptors=None, pitch_mode="pyin") -> str:
+           descriptors=None, pitch_mode="pyin", cache=True) -> str:
     """Scripts a RAVE run / checkpoint into a .ts file usable with nn~ and the RAVE VST.
 
     Args:
@@ -1130,6 +1211,8 @@ def export(run, out_path=None, name=None, streaming=False, fidelity=.95, latent_
         descriptors: descriptors used by pls / cca (default: all, see projections.DESCRIPTORS).
         pitch_mode: acids_dataset F0 tracker of the f0 descriptor (only run if f0 is used).
         max_chunks, device: dataset encoding parameters; mapper_steps: mapper training steps.
+        cache: cache the db_path latents in the dimred latent cache (rave/.dimred_cache, purged
+            by `rave dimred purge_cache`), and reload them when valid.
 
     Returns:
         path of the exported .ts.
@@ -1137,13 +1220,15 @@ def export(run, out_path=None, name=None, streaming=False, fidelity=.95, latent_
     from . import load_rave_checkpoint, get_run_name
     if (ica or mapper or sfa or pls or cca) and db_path is None:
         raise ValueError("ica / mapper / sfa / pls / cca projections require a dataset (db_path)")
+    # check the destination before any (long) dataset encoding
+    _check_writable(Path(out_path or os.path.dirname(os.path.abspath(run))).resolve())
     dataset_projections = None
     if db_path is not None:
         dataset_projections = compute_dataset_projections(
             run, db_path, db_partition, ica=ica, mapper=mapper, fidelity=fidelity, latent_size=latent_size,
             no_pca=no_pca, ema_weights=ema_weights, ckpt_name=ckpt_name, max_chunks=max_chunks,
             device=device, mapper_steps=mapper_steps, sfa=sfa, pls=pls, cca=cca, descriptors=descriptors,
-            pitch_mode=pitch_mode)
+            pitch_mode=pitch_mode, cache=cache)
     from . import core
     cached_state = cc.use_cached_conv.__globals__["USE_CACHED_CONV"]
     cc.use_cached_conv(streaming)
@@ -1215,11 +1300,10 @@ def export(run, out_path=None, name=None, streaming=False, fidelity=.95, latent_
             ts_path = out_path
         else:
             ts_path = out_path / (model_name + ".ts")
-        ts_path.parent.mkdir(parents=True, exist_ok=True)
         # always clear convolution caches (some 2D convolutions cache even in non-streaming
         # mode); streaming STFT buffers only for streaming exports
         _clear_streaming_caches(scripted_rave, stft=streaming)
-        scripted_rave.export_to_ts(str(ts_path))
+        ts_path = _safe_export_to_ts(scripted_rave, ts_path)
 
         try:
             if pretrained.n_channels <= 2:

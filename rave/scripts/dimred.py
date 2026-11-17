@@ -11,7 +11,8 @@ modes:
   add          fits projections on the latents of the given audio folders / files
   remove       removes the projections N (of the given --type, default: all types)
   show         prints the name, type and dimensionality of the projections of a model
-  purge_cache  removes the latent caches (of --model only, if given)
+  purge_cache  removes the latent caches (of --model only, if given), including those
+               written by `rave export --db_path` (--cache, default)
 
 audio inputs (--audio): folders / files, or parts of partitions of pre-processed acids
 datasets, as /path/to/dataset->part (e.g. ->train, ->val) or /path/to/dataset->file:part

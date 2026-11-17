@@ -81,6 +81,8 @@ flags.DEFINE_string('pitch_mode', default='pyin', help='--pls / --cca: acids_dat
 flags.DEFINE_integer('max_chunks', default=None, help='maximum number of dataset chunks encoded (random subset)')
 flags.DEFINE_string('device', default='cpu', help='device used to encode the dataset / train the mapper')
 flags.DEFINE_integer('mapper_steps', default=5000, help='mapper training steps')
+flags.DEFINE_bool('cache', default=True, help='cache the --db_path latents in rave/.dimred_cache and reload them '
+                  'when valid (purged with `rave dimred purge_cache`)')
 flags.DEFINE_string('prior', 
                     default=None,
                     help = "path to prior (optional)")
@@ -111,7 +113,8 @@ def main(argv):
            pls=FLAGS.pls,
            cca=FLAGS.cca,
            descriptors=FLAGS.descriptors,
-           pitch_mode=FLAGS.pitch_mode)
+           pitch_mode=FLAGS.pitch_mode,
+           cache=FLAGS.cache)
 
 
 if __name__ == "__main__":
