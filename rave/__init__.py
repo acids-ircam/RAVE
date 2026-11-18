@@ -165,7 +165,11 @@ def parse_augmentations(augmentations, sr):
     for a in augmentations:
         paths = [AUGMENTATION_CONFIG_PATH] if AUGMENTATION_CONFIG_PATH is not None else []
         with ad.GinEnv(paths=paths, bindings="SAMPLE_RATE=%d" % sr, configs=[a]):
-            parsed.append(ad.utils.parse_transform())
+            augments = ad.utils.parse_transform()
+            if isinstance(augments, list):
+                parsed.extend(augments)
+            else:
+                parsed.append(augments)
     return parsed
 
 
