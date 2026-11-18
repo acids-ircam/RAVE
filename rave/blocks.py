@@ -1015,7 +1015,7 @@ class Generator2D(nn.Module):
             raise NotImplementedError("AdaIN not implemented for 2D generator yet")
         
         if recurrent_layer is not None:
-            self.reccurent_layer = recurrent_layer(latent_size)
+            self.recurrent_layer = recurrent_layer(latent_size)
         self.recurrent_layer = recurrent_layer
         
         self.n_channels = n_channels
