@@ -356,7 +356,8 @@ space. Requires `pip install "acids-rave[after]"`.
 rave train_after --name my_after --model runs/my_model_abc123 --db_path /data/my_dataset --device cuda:0
 ```
 
-`--model` accepts an exported `.ts`, or a run folder, version folder or `.ckpt`. A run or checkpoint is
+`--model` accepts a `.ts` exported by `rave export`, or a RAVE run folder, version folder or `.ckpt`;
+other models are refused (to train AFTER on another codec, use AFTER directly). A run or checkpoint is
 first exported (non-streaming) to `<out_path>/<name>/rave/`, with its latent size chosen by
 `--fidelity` (0.99) or `--latent_size`; `--ckpt_name` and `--ema_weights` select the weights as in
 `rave export`. When resuming, that exported model is reused (`--force` re-exports it). For `.ts`
@@ -366,8 +367,12 @@ Main flags: `--name`, `--db_path` (multi; several datasets can be mixed with
 `--db_weights`), `--arch` (`rectified` or `edm`), `--config`, `--out_path`, `--device`, `--batch`
 (32), `--n_signal`, `--adv_weight` (0.05), data augmentation (`--stretch`,
 `--stretch_range 0.7,1.6`, `--shift`, `--shift_range -6,6`, `--n_augmentations 4`), structure
-conditioning (`--structure`, `--midi`, `--beat`), and `--resume` (AFTER run folder or checkpoint;
-`--ckpt` is kept as a deprecated alias). Use `--helpfull` for the full list.
+conditioning (`--structure`, `--midi`, `--beat`), `--val_every` / `--save_every` (validation and
+checkpoint intervals, default from the AFTER config: 10k / 100k), and `--resume` (AFTER run folder or
+checkpoint; `--ckpt` is kept as a deprecated alias). Use `--helpfull` for the full list.
+
+The AFTER sample rate is set to the one of the RAVE model. To use the trained model in nn~, export it
+with a streaming RAVE of the same latent size: see [Tutorial 6](../tutorials/06_prior.md#part-2-go-after).
 
 ---
 

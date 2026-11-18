@@ -17,7 +17,7 @@ nav:
       - 3. Export a model for Max/MSP: tutorials/03_export_max.md
       - 4. Use a model from the command line: tutorials/04_command_line.md
       - 5. Add custom representations: tutorials/05_custom_representations.md
-      - 6. Train a prior: tutorials/06_prior.md
+      - "6. Train a prior / Go AFTER!": tutorials/06_prior.md
       - 7. Fine-tune a model: tutorials/07_finetune.md
   - Cookbook: cookbook.md
   - Reference:

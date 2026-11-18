@@ -1,6 +1,21 @@
-# Tutorial 6 — Train a prior
+# Tutorial 6 — Train a prior / Go AFTER!
 
-A RAVE model transforms sound: it needs an input. A **prior** is a second, smaller model trained to
+A RAVE model transforms sound: it needs an input. This tutorial shows two ways of training a second
+model **on top of the latent space** of a trained RAVE, to give it new abilities:
+
+| | [Prior](#part-1-train-a-prior) | [AFTER](#part-2-go-after) |
+| --- | --- | --- |
+| What it does | generates audio **on its own**, continuously | **timbre transfer**: plays the *structure* (rhythm, melody, dynamics) of one sound with the *timbre* of another |
+| Inputs at runtime | a temperature control | a structure audio stream (or MIDI) + a timbre audio stream, or latent controls |
+| Model | causal WaveNet-like, autoregressive | diffusion transformer ([AFTER](https://github.com/acids-ircam/AFTER)) |
+| Command | `rave train_prior` | `rave train_after` (optional dependency) |
+| Export | embedded in the RAVE `.ts` (`rave export --prior`) | separate `.ts`, embedding a streaming RAVE |
+
+---
+
+## Part 1: train a prior
+
+A **prior** is a second, smaller model trained to
 *predict* the latent trajectories of your dataset, one step after another. Once embedded in the
 exported model, it lets RAVE **generate audio on its own**, continuously, in real time — with a
 single "temperature" control for how adventurous it is.
@@ -13,7 +28,7 @@ it was trained on (already preprocessed). A GPU.
 > For discrete models (`--config discrete`), use [msprior](https://github.com/caillonantoine/msprior)
 > instead. Wasserstein models are not supported by the built-in prior yet (see the end of this page).
 
-## How it works
+### How it works
 
 1. The RAVE encoder turns each training chunk into latent trajectories; only the first PCA
    dimensions are kept (chosen by `--fidelity`, rounded up to a power of two).
@@ -23,7 +38,7 @@ it was trained on (already preprocessed). A GPU.
 4. At generation time, it samples from its own predictions, step by step; the RAVE decoder turns the
    result into audio. The remaining latent dimensions are filled with noise.
 
-## 1. Train
+### 1. Train
 
 ```bash
 rave train_prior \
@@ -49,7 +64,7 @@ a good range for most models.
 Other options are the same as for `rave train`: `--device`, `--batch`, `--max_steps` (1M by default),
 `--val_every`, `--resume`, `--smoke_test`...
 
-## 2. Monitor
+### 2. Monitor
 
 ```bash
 tensorboard --logdir ~/runs/darbouka_prior_<hash>
@@ -62,7 +77,7 @@ tensorboard --logdir ~/runs/darbouka_prior_<hash>
 
 A few hundred thousand steps are usually enough to get musical results.
 
-## 3. Export RAVE with its prior
+### 3. Export RAVE with its prior
 
 ```bash
 rave export --run ~/runs/darbouka_abc123 --prior ~/runs/darbouka_prior_<hash> --streaming --fidelity 0.95
@@ -75,9 +90,9 @@ rave export --run ~/runs/darbouka_abc123 --prior ~/runs/darbouka_prior_<hash> --
 
 The exported model has an extra `prior` method.
 
-## 4. Play it
+### 4. Play it
 
-### In Max/MSP
+#### In Max/MSP
 
 ```text
 [sig~ 0.]                         ← temperature control
@@ -100,7 +115,7 @@ Because the output of `prior` is an ordinary latent signal, everything from
 [Tutorial 1](01_max_msp.md#5-play-with-the-latent-space) applies: you can bias, scale or crossfade it
 with the output of an `encode` to mix generation and transformation.
 
-### In Python
+#### In Python
 
 ```python
 import torch, torchaudio
@@ -114,7 +129,7 @@ with torch.no_grad():
 torchaudio.save("prior.wav", y[0], model.sr)
 ```
 
-## Troubleshooting
+### Troubleshooting
 
 | Problem | Solution |
 | ------- | -------- |
@@ -123,10 +138,211 @@ torchaudio.save("prior.wav", y[0], model.sr)
 | Generations are noise / silence | Train longer; reduce the number of modeled dimensions; check that the RAVE model itself reconstructs well. |
 | Generations are monotonous | Raise the temperature; model more dimensions. |
 
-## Note on Wasserstein models
+### Note on Wasserstein models
 
 `rave train_prior` builds a `WassersteinPrior` for Wasserstein models, but the default prior
 configuration only defines hyper-parameters for `VariationalPrior`, and `rave export --prior` only
 knows how to load variational priors. Training a prior for a Wasserstein model therefore requires
 overriding the prior's hyper-parameters (`--override "WassersteinPrior.resolution=32"` etc.), and
 exporting it is not supported yet.
+
+---
+
+## Part 2: go AFTER!
+
+[AFTER](https://github.com/acids-ircam/AFTER) (*Audio Features Transfer and Exploration in
+Real-time*, [Demerlé et al.](https://arxiv.org/abs/2408.00196)) is a latent diffusion model that
+splits sound into two parts:
+
+- a **structure**: what changes over time (rhythm, melody, articulations, dynamics), extracted from
+  an audio stream (or from MIDI);
+- a **timbre**: what stays constant (the "sound" of an instrument or a voice), extracted from
+  another audio stream.
+
+It then generates RAVE latents that combine the structure of the first with the timbre of the
+second, in real time. Trained on top of your RAVE model, it lets you play your drum loop with the
+timbre of your dataset, sing a melody with it, and so on. Unlike a plain `encode` → `decode`, the
+input does not need to sound like the training data.
+
+**You need:**
+
+- a trained **mono** RAVE model: a run folder, a `.ckpt`, or a `.ts` exported by `rave export`. The
+  real-time AFTER export only supports mono models. Prefer a `causal` model for real-time use (lower
+  latency);
+- its dataset, preprocessed with `rave preprocess`. Several datasets can be combined;
+- a GPU;
+- the AFTER dependency:
+
+```bash
+pip install "acids-rave[after]"
+```
+
+> `rave train_after` only trains AFTER **on top of RAVE models**: other `.ts` models or checkpoints
+> (e.g. AFTER's own autoencoders) are refused. To use AFTER with another codec, use
+> [AFTER](https://github.com/acids-ircam/AFTER) directly.
+
+> The export scripts of AFTER are not part of its pip package: to export, clone the `rave` branch of
+> AFTER (see [step 3](#3-export-for-nn)).
+
+### How it works
+
+1. `rave train_after` exports the RAVE model (non-streaming) into the AFTER run folder, then
+   encodes the dataset with it. Each chunk is also encoded `--n_augmentations` times with random
+   time-stretching and pitch-shifting: these augmented versions teach AFTER that timbre does not
+   depend on tempo or pitch. Latents are **stored in the dataset** (as a feature named after the RAVE
+   model), and reused by later trainings.
+2. Two encoders are trained: a **structure encoder** (time-varying, `ZS_CHANNELS` = 12 dimensions)
+   and a **timbre encoder** (one vector per chunk, `ZT_CHANNELS` = 6 dimensions). An adversarial
+   classifier (`--adv_weight`) prevents the structure from carrying timbre information.
+3. A diffusion transformer learns to generate RAVE latents from the structure and timbre codes.
+4. At runtime, the generated latents are decoded by a **streaming** RAVE embedded in the AFTER
+   `.ts`.
+
+### 1. Train
+
+```bash
+rave train_after \
+    --name darbouka_after \
+    --model ~/runs/darbouka_abc123 \
+    --db_path ~/datasets/darbouka \
+    --out_path ~/after_runs \
+    --device cuda:0
+```
+
+The run is written to `~/after_runs/darbouka_after/` (no hash is appended):
+
+```text
+darbouka_after/
+├── config.gin                       AFTER configuration
+├── rave/darbouka_abc123.ts          RAVE model used for training (non-streaming)
+├── logs/                            tensorboard logs
+└── checkpoint<step>_EMA.pt          checkpoints (every 100k steps by default)
+```
+
+Choosing the RAVE latent space: when `--model` is a run or a `.ckpt`, the latent size is chosen like
+for `rave export`, with `--fidelity` (default **0.99**) or `--latent_size`. Write down this latent
+size: the streaming RAVE used at export must have the same one. When `--model` is a `.ts`, its
+latent size is used.
+
+Main options:
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `--arch` | `rectified` | diffusion type: `rectified` (rectified flow, used by the real-time export) or `edm` |
+| `--config` | `base` | AFTER configuration: `base`, `tiny` (smaller and faster; add `--override "MAX_STEPS=800000"`), `midi` |
+| `--db_path` | | dataset (repeat for several datasets; balance them with `--db_weights`) |
+| `--batch` | 32 | batch size |
+| `--n_signal` | half the dataset chunk | training length (samples) |
+| `--structure` | audio | structure conditioning: audio (default), `midi` (MIDI transcribed from the audio; switches to the `midi` config) or `beat` (beat tracking) |
+| `--adv_weight` | 0.05 | weight of the timbre / structure disentanglement |
+| `--n_augmentations` | 4 | augmented copies of each chunk (`--stretch`, `--stretch_range 0.7,1.6`, `--shift`, `--shift_range -6,6`) |
+| `--val_every` / `--save_every` | 10k / 100k | validation and checkpoint intervals |
+| `--resume` | | AFTER run folder (latest checkpoint) or `checkpoint<step>_EMA.pt` to resume |
+| `--force_augmentation` | | re-encode the dataset (e.g. after re-training RAVE) |
+| `--override` | | gin bindings of the AFTER configuration (e.g. `--override "ZT_CHANNELS=8"`) |
+
+Training runs for 800k steps by default (`MAX_STEPS`). Use `--smoke_test` to check that everything
+is set up without training.
+
+> The first launch can be long: the whole dataset is encoded `1 + n_augmentations` times. It also
+> makes the dataset folder grow. If you re-train or fine-tune the RAVE model, use
+> `--force_augmentation` (or another `--embedding_name`) so that the latents are recomputed.
+
+### 2. Monitor
+
+```bash
+tensorboard --logdir ~/after_runs/darbouka_after/logs
+```
+
+- `Loss/...`: diffusion loss (should decrease), adversarial / classifier losses (should stay
+  balanced: if the classifier wins, the structure leaks timbre);
+- *Audio* tab, at each validation: `true/` examples and `generated/` reconstructions, generated
+  from the structure and timbre of the same example. They should get close to the originals.
+
+Timbre transfer usually gets interesting after 200–300k steps.
+
+### 3. Export for nn~
+
+The AFTER `.ts` embeds a **streaming** RAVE with the **same latent space** as the one used for
+training. Export it with the latent size of the training (logged by `train_after` as `dim=...`, also
+`IN_SIZE` in `config.gin`):
+
+```bash
+rave export --run ~/runs/darbouka_abc123 --streaming --latent_size 8 --out_path ~/after_runs/darbouka_after/rave
+```
+
+> Do not use `--db_path` here: it recomputes the PCA, and the latent axes would no longer match the
+> ones AFTER was trained on. If `--model` was an exported `.ts`, use a streaming export of the same
+> model, with the same latent size.
+
+Then export AFTER with the script from its repository (`rave` branch), with the step of the
+checkpoint to export:
+
+```bash
+git clone -b rave https://github.com/acids-ircam/AFTER ~/AFTER
+python ~/AFTER/after_scripts/export.py \
+    --model_path ~/after_runs/darbouka_after \
+    --emb_model_path ~/after_runs/darbouka_after/rave/darbouka_abc123_streaming.ts \
+    --step 800000
+```
+
+This writes `~/after_runs/darbouka_after/darbouka_after.ts`. `--chunk_size` (default 8 latent
+frames) sets the processing block size of the model. For a MIDI model (`--structure midi`), use
+`after_scripts/export_midi.py` (`--n_poly 4` voices).
+
+### 4. Play it in Max/MSP
+
+The exported model has the following methods:
+
+| Method | Inputs | Outputs | Use |
+| ------ | ------ | ------- | --- |
+| `forward` | structure audio, timbre audio | audio | timbre transfer, all in one |
+| `structure` | audio | `ZS_CHANNELS` latents | structure codes of a stream |
+| `timbre` | audio | `ZT_CHANNELS` latents | timbre codes of a stream (averaged over the training length) |
+| `diffuse` | `ZS_CHANNELS + ZT_CHANNELS` latents | RAVE latents | generation, without decoding |
+| `generate` | `ZS_CHANNELS + ZT_CHANNELS` latents | audio | `diffuse` + `decode` |
+| `decode` | RAVE latents | audio | streaming RAVE decoder |
+
+The simplest patch, playing `adc~` with the timbre of a sound file:
+
+```text
+[adc~]          [sfplay~ timbre.wav]
+ |                |
+[nn~ darbouka_after forward]
+ |
+[ezdac~]
+```
+
+To control timbre and structure separately, split the model: the outputs of `structure` and
+`timbre` (or any signal: sliders, LFOs, a frozen timbre...) go to `generate`:
+
+```text
+[adc~]                       [sfplay~ timbre.wav]
+ |                             |
+[nn~ darbouka_after structure] [nn~ darbouka_after timbre]
+ |  |  ...                       |  |  ...
+[nn~ darbouka_after generate]     ← ZS structure inlets, then ZT timbre inlets
+ |
+[ezdac~]
+```
+
+Attributes (`[set nb_steps 4(` message to `nn~`):
+
+- `nb_steps` (6): number of diffusion steps. More steps = better quality, more CPU;
+- `guidance_structure` (1.0): how strictly the structure input is followed;
+- `guidance_timbre` (1.0): how strictly the timbre input is followed.
+
+Use an `nn~` buffer size of at least `chunk_size` × the RAVE compression ratio (e.g. 8 × 2048 =
+16384 samples for a `v2` model), and larger if the audio drops out.
+
+### Troubleshooting
+
+| Problem | Solution |
+| ------- | -------- |
+| `Could not import AFTER` | `pip install "acids-rave[after]"`. |
+| `embedding ... has N augmentations (asked: M)` | The dataset already holds latents with another number of augmentations: use the same `--n_augmentations`, or `--force_augmentation`. |
+| `no module named after_scripts` / `after export` not found | The export scripts are not installed by pip: run them from a clone of the `rave` branch (step 3). |
+| Export fails on shapes / garbled output | The streaming RAVE does not have the latent size used for training: check `IN_SIZE` in `config.gin`. |
+| Export fails on a stereo model | The AFTER real-time export only supports mono RAVE models. |
+| The output ignores the structure input | Raise `guidance_structure`; train longer. |
+| The output keeps the timbre of the structure input | Raise `--adv_weight` (e.g. 0.1–0.3) and re-train, or raise `guidance_timbre`. |

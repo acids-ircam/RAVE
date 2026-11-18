@@ -20,7 +20,7 @@ This documentation covers version **2.4**. Coming from 2.3? See [What's new in 2
 | Export my model for Max/MSP, Pd or the VST     | [Tutorial 3 — Export a model for Max/MSP](tutorials/03_export_max.md) |
 | Process audio files without Max                | [Tutorial 4 — Use a model from the command line](tutorials/04_command_line.md) |
 | Get more musical / meaningful latent controls  | [Tutorial 5 — Add custom representations](tutorials/05_custom_representations.md) |
-| Generate audio without any input               | [Tutorial 6 — Train a prior](tutorials/06_prior.md)                  |
+| Generate audio without any input, or transfer timbre (AFTER) | [Tutorial 6 — Train a prior / Go AFTER!](tutorials/06_prior.md) |
 | Adapt an existing model to new sounds or inputs | [Tutorial 7 — Fine-tune a model](tutorials/07_finetune.md) |
 | Know what changed since 2.3                    | [What's new in 2.4](whats_new.md)                                    |
 | Copy-paste a command for a common case         | [Cookbook](cookbook.md)                                              |

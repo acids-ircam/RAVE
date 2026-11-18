@@ -91,6 +91,18 @@ def _ts_attr(ts, name, default=None):
     return value
 
 
+def is_scripted_rave(ts) -> bool:
+    """True if ts is a model exported by RAVE (`rave export`: *ScriptedRAVE classes, RAVE + prior
+    `Combined` wrappers, legacy v1 TraceModel), not any other scripted model."""
+    if not isinstance(ts, torch.jit.ScriptModule):
+        return False
+    if _raw_class_name(ts) == "Combined" and _ts_attr(ts, "_rave") is not None:
+        return is_scripted_rave(ts._rave)
+    if _is_legacy_export(ts):
+        return _raw_class_name(ts) == "TraceModel"
+    return _raw_class_name(ts).endswith("ScriptedRAVE")
+
+
 def unwrap_scripted(ts):
     """returns the scripted RAVE inside wrappers (e.g. `Combined` RAVE + prior exports)."""
     while _raw_class_name(ts) == "Combined" and _ts_attr(ts, "_rave") is not None:

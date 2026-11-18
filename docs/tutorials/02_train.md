@@ -233,7 +233,7 @@ model before a concert — is in [Tutorial 3 — Export a model for Max/MSP](03_
   ```
 
 - Add **custom latent controls** ([Tutorial 5](05_custom_representations.md)).
-- Train a **prior** to generate without input ([Tutorial 6](06_prior.md)).
+- Train a **prior** to generate without input, or an **AFTER** model for timbre transfer ([Tutorial 6](06_prior.md)).
 - More recipes in the [Cookbook](../cookbook.md).
 
 ## Common problems

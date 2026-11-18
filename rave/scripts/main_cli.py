@@ -42,6 +42,7 @@ def main():
         app.run(train_prior.main)
     elif command == 'train_after':
         from rave.scripts import train_after
+        train_after.parse_flags()  # flags are not defined at import
         sys.argv[0] = train_after.__name__
         app.run(train_after.main)
     elif command == 'export':

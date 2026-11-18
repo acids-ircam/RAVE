@@ -54,6 +54,32 @@ def find_after_model(ckpt_path):
 
 
 
+def check_rave_model(model_path, ckpt_name="last.ckpt"):
+    """raises if model_path is not a RAVE model: a RAVE run (run / version folder, .ckpt, with
+    its config.gin) or a model exported by `rave export` (.ts)."""
+    from rave.uncompiling import is_scripted_rave
+    hint = ("rave train_after only works on RAVE models (run folder, .ckpt or .ts exported by rave export). "
+            "To train AFTER on other codecs, use AFTER directly: https://github.com/acids-ircam/AFTER")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(model_path)
+    if os.path.splitext(model_path)[1] == ".ts":
+        try:
+            ts = torch.jit.load(model_path, map_location="cpu")
+        except Exception as e:
+            raise ValueError(f"could not load {model_path} ({e}). {hint}") from e
+        if not is_scripted_rave(ts):
+            raise ValueError(f"{model_path} is not a RAVE export ({getattr(ts, 'original_name', type(ts).__name__)}). {hint}")
+        return
+    if os.path.isfile(model_path) and os.path.splitext(model_path)[1] != ".ckpt":
+        raise ValueError(f"{model_path} is neither a RAVE run, a .ckpt nor a .ts. {hint}")
+    ckpt = rave.core.search_for_run(model_path, name=ckpt_name) or rave.core.search_for_run(model_path, name=None)
+    if ckpt is None:
+        raise FileNotFoundError(f"no RAVE checkpoint found in {model_path}. {hint}")
+    config = rave.core.search_for_config(str(model_path))
+    if config is None or "RAVE" not in Path(config).read_text():
+        raise ValueError(f"no RAVE configuration (config.gin) found for {model_path}. {hint}")
+
+
 def parse_flags():
 
     flags.DEFINE_string('name', None, help='Name of the run')
@@ -99,10 +125,10 @@ def parse_flags():
     flags.DEFINE_integer('workers',
                         default=8,
                         help='Number of workers to spawn for dataset loading')
-    flags.DEFINE_integer('val_every', 10000, help='Checkpoint model every n steps')
+    flags.DEFINE_integer('val_every', None, help='validation (and audio logging) every n steps (default: AFTER config, 10k)')
     flags.DEFINE_integer('save_every',
                         None,
-                        help='save every n steps (default: just last)')
+                        help='save a checkpoint every n steps (default: AFTER config, 100k)')
     flags.DEFINE_multi_string('override', default=[], help='Override gin binding')
     flags.DEFINE_bool('derivative',
                     default=False,
@@ -140,6 +166,9 @@ def main(argv):
         model_dir = os.path.join(FLAGS.out_path, FLAGS.name)
         restart_step = None
     os.makedirs(model_dir, exist_ok=True)
+
+    # AFTER is trained on top of RAVE only: other codecs (e.g. AFTER autoencoders) must use AFTER directly
+    check_rave_model(FLAGS.model, FLAGS.ckpt_name)
 
     # [First step] initialize RAVE model. AFTER calls the encode / decode methods of the embedding
     # model directly, so RAVE runs / checkpoints are first exported to a (non-streaming) .ts.
@@ -307,7 +336,8 @@ def main(argv):
     else:
         gin.parse_config_files_and_bindings(
             [add_gin_extension(FLAGS.config)],
-            FLAGS.override + [f'IN_SIZE={z_shape}', f'STRUCTURE_TYPE="{structure_type}\"', f"N_SIGNAL={n_after_latents}"],
+            FLAGS.override + [f'IN_SIZE={z_shape}', f'STRUCTURE_TYPE="{structure_type}\"', f"N_SIGNAL={n_after_latents}",
+                              f"SR={rave_sr}"],
         )
 
     with gin.unlock_config():
@@ -315,6 +345,10 @@ def main(argv):
         gin.bind_parameter("after.diffusion.model.fit.adversarial_weight", FLAGS.adv_weight)
         gin.bind_parameter('after.diffusion.utils.collate_fn.n_signal', n_after_latents)
         gin.bind_parameter('after.diffusion.utils.collate_fn.structure_type', structure_type)
+        if FLAGS.val_every is not None:
+            gin.bind_parameter("after.diffusion.model.fit.steps_valid", FLAGS.val_every)
+        if FLAGS.save_every is not None:
+            gin.bind_parameter("after.diffusion.model.fit.steps_save", FLAGS.save_every)
 
     rave_model = rave_model.to('cpu')
 
@@ -390,6 +424,11 @@ def main(argv):
         pass
     else:
         after_model.fit(**d)
+        logging.info(f"AFTER training done. Export it for nn~ with a *streaming* export of the same RAVE model "
+                     f"(same latent size: {z_shape}), see the AFTER tutorial (docs/tutorials/06_prior.md):\n"
+                     f"  rave export --run {FLAGS.model} --streaming --latent_size {z_shape}\n"
+                     f"  python <AFTER>/after_scripts/export.py --model_path {model_dir} "
+                     f"--emb_model_path <rave_streaming.ts> --step <step>")
 
 
 
