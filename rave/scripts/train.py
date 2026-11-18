@@ -63,7 +63,7 @@ flags.DEFINE_integer('n_signal',
 flags.DEFINE_bool('stereo', False, help="flag to force stereo training")
 flags.DEFINE_bool('midside', False, help="flag to force stereo mid-side training")
 flags.DEFINE_bool('ambisonics', False, help="activates ambisonic mode : encodes the input signal before training")
-flags.DEFINE_integer('channels', 0, help="overrides the exact number of training channels (0 takes the one from dataset)")
+flags.DEFINE_integer('channels', 1, help="overrides the exact number of training channels (0 takes the one from dataset)")
 flags.DEFINE_integer('batch', 8, help='Batch size')
 flags.DEFINE_string('resume',
                     None,
