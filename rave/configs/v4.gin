@@ -1,0 +1,119 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import core
+from rave import blocks
+from rave import spectro_discriminator
+from rave import stft
+
+import torch.nn as nn
+
+# include "configs/v1.gin"
+
+SAMPLING_RATE = 44100
+NFFT = 1024
+HOP = 512
+KERNEL_SIZE = 3
+RATIOS_TIME =     [1, 2, 2, 1, 1, 1, 1]
+RATIOS_FREQ =     [2, 2, 2, 2, 2, 2, 1]
+RATIOS_CHANNELS = [1, 1, 2, 2, 2, 2, 2, 4]
+CAPACITY = 32
+NOISE_AUGMENTATION = 0
+LATENT_SIZE = 128
+
+PHASE_1_DURATION = 200000
+
+core.get_augmented_latent_size:
+    latent_size = %LATENT_SIZE
+    noise_augmentation = %NOISE_AUGMENTATION
+
+# ENCODER
+blocks.Encoder2D:
+    data_size = 2
+    n_out = 2
+    n_freqs = %NFFT
+    capacity = %CAPACITY
+    ratios_time = %RATIOS_TIME
+    ratios_freq = %RATIOS_FREQ
+    ratios_channels = %RATIOS_CHANNELS
+    latent_size = %LATENT_SIZE
+    kernel_size = %KERNEL_SIZE
+    
+
+blocks.VariationalEncoder:
+    encoder = @variational/blocks.Encoder2D
+
+# GENERATOR
+blocks.Generator2D:
+    data_size = 2
+    n_freqs = %NFFT
+    ratios_time = %RATIOS_TIME
+    ratios_freq = %RATIOS_FREQ
+    ratios_channels = %RATIOS_CHANNELS
+    latent_size = %LATENT_SIZE
+    kernel_size = %KERNEL_SIZE
+    capacity = %CAPACITY
+    output_kernel_size = %KERNEL_SIZE
+    output_smoothing_kernel_size = 7
+
+
+# DISCRIMINATOR
+
+spectro_discriminator.SpectroDiscriminator:
+    n_ffts= [128 , 256, 512, 1024, 2048, 4096]
+    hop_lengths=[64, 128, 256, 512, 1024, 2048]
+    normalize_losses = True
+    capacity = 16
+    channels = [1, 2, 4, 4, 4, 8]
+
+
+stft.StreamableSTFT:
+    nfft = %NFFT
+    hop_size = %HOP
+    stream = False
+    skip_features=-1
+    alpha_rescale = 0.3
+    beta_rescale = 0.66
+
+
+core.AudioDistanceV4:
+    scales = [64, 128, 256, 512, 1024, 2048]
+    sr = %SAMPLING_RATE
+    mel_bands = [64, 64, 64, 64, 64, 64, 64]
+
+feature_matching/core.mean_difference:
+    norm = 'L1'
+    relative = True
+
+
+# RAVE
+rave.RAVE:
+    pqmf=None
+    sampling_rate = %SAMPLING_RATE
+    latent_size = %LATENT_SIZE
+    discriminator = @spectro_discriminator.SpectroDiscriminator
+    spectrogram=@stft.StreamableSTFT()
+    input_mode = "complex_stft"
+    output_mode = "complex_stft"
+    audio_distance = @core.AudioDistanceV4
+    multiband_audio_distance = None
+    valid_signal_crop = False
+    num_skipped_features = 0
+    gan_loss = @core.hinge_gan
+    phase_1_duration = %PHASE_1_DURATION
+    encoder = @blocks.VariationalEncoder 
+    decoder = @blocks.Generator2D
+    feature_matching_fun = @feature_matching/core.mean_difference
+    update_discriminator_every = 4
+    gradient_clip_gen = 3.0
+    gradient_clip_dis = 2.0
+    weights = {
+        'feature_matching': 100.,
+        'audio_distance': 1.
+        }
+
+
+rave.BetaWarmupCallback:
+    initial_value = 1e-6 #1e-6
+    target_value = 2e-2 #5e-3
+    warmup_len = 20000

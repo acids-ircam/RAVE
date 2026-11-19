@@ -1,4 +1,11 @@
 import json
+import logging
+from types import ModuleType
+import copy
+import gin.config 
+import dill
+import re
+from typing import List
 import os
 from pathlib import Path
 from random import random
@@ -16,6 +23,8 @@ import torchaudio
 from einops import rearrange
 from scipy.signal import lfilter
 from torch import hann_window
+import sys, multiprocessing
+import math
 
 
 def mod_sigmoid(x):
@@ -95,35 +104,81 @@ def get_versions(folder):
     return sorted(Path(dirpath).iterdir(), key=os.path.getmtime)
 
 def search_for_config(folder):
+    if not Path(folder).exists():
+        raise FileNotFoundError(folder)
     if os.path.isfile(folder):
         folder = os.path.dirname(folder)
-    configs = list(map(str, Path(folder).rglob("config.gin")))
+    # in the folder or its subfolders: shallowest first, then most recent (e.g. version_N/config.gin of fine-tunings)
+    configs = sorted(Path(folder).rglob("config.gin"), key=lambda p: (len(p.parts), -os.path.getmtime(p)))
     if configs != []:
-        return os.path.abspath(os.path.join(folder, "config.gin"))
-    configs = list(map(str, Path(folder).rglob("../config.gin")))
-    if configs != []:
-        return os.path.abspath(os.path.join(folder, "../config.gin"))
-    configs = list(map(str, Path(folder).rglob("../../config.gin")))
-    if configs != []:
-        return os.path.abspath(os.path.join(folder, "../../config.gin"))
-    else:
-        return None
+        return os.path.abspath(configs[0])
+    for parent in ("..", os.path.join("..", "..")):
+        config = os.path.join(folder, parent, "config.gin")
+        if os.path.exists(config):
+            return os.path.abspath(config)
+    return None
 
     
 
-def search_for_run(run_path, name=None):
+def search_for_run(run_path, name: str | None = "last.ckpt"):
     if run_path is None: return None
-    if ".ckpt" in run_path: return run_path
-    ckpts = get_ckpts(run_path)
+    run_path = Path(run_path)
+    if run_path.suffix == ".ckpt": return run_path
+    ckpts = get_ckpts(str(run_path))
     if len(ckpts) != 0:
+        if name is None: 
+            # most recently written checkpoint (ctime changes with metadata, e.g. on file sync)
+            ordered = sorted(ckpts, key=os.path.getmtime, reverse=True)
+            return ordered[0]
+        else:
+            ckpts = list(filter(lambda x: os.path.basename(x) == name, ckpts))
+            if len(ckpts) == 0: 
+                print('No checkpoint found with name %s'%name)
+                return
+            # each resumed training writes its own version_N/checkpoints/<name>: take the most recent one
+            return ckpts[-1]
         return ckpts[-1]
     else:
         print('No checkpoint found')
     return None
 
 
-def setup_gpu():
-    return gpu.getAvailable(maxMemory=.05)
+
+def _checkpoint_progress(ckpt_path):
+    """(step, global_step) stored in a Lightning checkpoint (step = fine-tuning batches for fine-tuning runs),
+    or None if the file cannot be read (e.g. truncated by an interrupted write)."""
+    try:
+        # mmap: tensors are not read from disk, only the pickled structure
+        ckpt = torch.load(ckpt_path, map_location="cpu", mmap=True, weights_only=False)
+    except Exception as e:
+        logging.warning(f"skipping unreadable checkpoint {ckpt_path} ({type(e).__name__}: {e})")
+        return None
+    global_step = int(ckpt.get("global_step", 0))
+    finetune = ckpt.get("finetune")
+    step = int(finetune["steps"]) if isinstance(finetune, dict) and "steps" in finetune else global_step
+    return step, global_step
+
+
+def search_for_resume_checkpoint(run_path):
+    """Checkpoint to resume a training from. A .ckpt is returned as is; for a run or version folder, returns the
+    readable checkpoint with the highest training step (ties: most recently written).
+
+    Steps are read from the checkpoints rather than inferred from file names or dates, as every resumed training
+    writes its own version_N/checkpoints folder (with its own last.ckpt), and a checkpoint can be truncated if
+    the training was killed while writing it (e.g. on Colab)."""
+    if run_path is None: return None
+    run_path = Path(run_path)
+    if not run_path.exists():
+        raise FileNotFoundError(str(run_path))
+    if run_path.suffix == ".ckpt": return run_path
+    candidates = []
+    for ckpt in Path(run_path).rglob("*.ckpt"):
+        progress = _checkpoint_progress(ckpt)
+        if progress is not None:
+            candidates.append((progress, os.path.getmtime(ckpt), ckpt))
+    if len(candidates) == 0:
+        return None
+    return max(candidates, key=lambda x: (x[0], x[1]))[2]
 
 
 def get_beta_kl(step, warmup, min_beta, max_beta):
@@ -152,7 +207,7 @@ def hinge_gan(score_real, score_fake):
     loss_dis = torch.relu(1 - score_real) + torch.relu(1 + score_fake)
     loss_dis = loss_dis.mean()
     loss_gen = -score_fake.mean()
-    return loss_dis, loss_gen
+    return loss_dis / 2, loss_gen
 
 
 def ls_gan(score_real, score_fake):
@@ -171,8 +226,12 @@ def nonsaturating_gan(score_real, score_fake):
 
 def get_minimum_size(model):
     N = 2**15
+    if hasattr(model, "n_channels"):
+        n_channels = model.n_channels
+    else:
+        n_channels = 1
     device = next(iter(model.parameters())).device
-    x = torch.randn(1, model.n_channels, N, requires_grad=True, device=device)
+    x = torch.randn(1, n_channels, N, requires_grad=True, device=device)
     z = model.encode(x)
     return int(x.shape[-1] / z.shape[-1])
 
@@ -342,6 +401,96 @@ class AudioDistanceV1(nn.Module):
             distance = distance + lin_distance + log_distance
 
         return {'spectral_distance': distance}
+
+
+
+class STFTDistance(nn.Module):
+
+    def __init__(
+        self,
+        n_fft: int,
+        sampling_rate: int,
+        norm: Union[str, Sequence[str]] = None,
+        power: Union[int, None] = 1,
+        normalized: bool = True,
+        mel: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        if mel:
+            self.spec = torchaudio.transforms.MelSpectrogram(
+                sampling_rate,
+                n_fft,
+                hop_length=n_fft // 4,
+                n_mels=mel,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+        else:
+            self.spec = torchaudio.transforms.Spectrogram(
+                n_fft,
+                hop_length=n_fft // 4,
+                power=power,
+                normalized=normalized,
+                center=False,
+                pad_mode=None,
+            )
+
+        if isinstance(norm, str):
+            norm = (norm, )
+        self.norm = norm
+        self.n_fft = n_fft
+
+    def forward(self, x, y):
+        x = self.spec(x)
+        y = self.spec(y)
+
+        logx = torch.log1p(x)
+        logy = torch.log1p(y)
+
+        l_distance = mean_difference(x,
+                                     y,
+                                     norm='L1')
+        log_distance = mean_difference(logx,
+                                       logy,
+                                       norm='L2')
+        return l_distance + math.sqrt(self.n_fft / 2) * log_distance
+
+
+
+class AudioDistanceV4(nn.Module):
+
+    def __init__(self,
+                 scales: List[int],
+                 sr: int,
+                 mel_bands: Optional[List[int]],
+                 distance: nn.Module = STFTDistance) -> None:
+        super().__init__()
+
+        if mel_bands is None:
+            mel_bands = [None] * len(scales)
+
+        self.spectral_distances = nn.ModuleList([
+            distance(scale,
+                     sr,
+                     mel=mel)
+            for scale, mel in zip(scales, mel_bands)
+        ])
+        
+
+        self.name = "Spectral Distance"
+
+    def forward(self, x, y):
+        spectral_distance = 0.
+        for dist in self.spectral_distances:
+            spectral_distance = spectral_distance + dist(x, y)
+        return {'spectral_distance': spectral_distance}
+
+
+
+
+
 
 
 class WeightedInstantaneousSpectralDistance(nn.Module):
@@ -536,17 +685,50 @@ class LoggerCallback(pl.Callback):
 
 
 class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
-    def __init__(self, step_period: int = None, **kwargs):
+    def __init__(
+        self,
+        step_period: int = None,
+        last_period: int = 25000,
+        last_filename: str = "last.ckpt",
+        **kwargs,
+    ):
+        # This callback saves explicitly on batch intervals; the separate best
+        # checkpoint callback handles validation-based saves.
+        kwargs.setdefault("save_top_k", 0)
         super().__init__(**kwargs)
-        self.step_period = step_period 
-        self.__counter = 0
+        self.step_period = step_period
+        self.last_period = last_period
+        self.last_filename = last_filename
+        self._batches_seen = 0
+
+    def state_dict(self):
+        state = super().state_dict()
+        state['batches_seen'] = self._batches_seen
+        return state
+
+    def load_state_dict(self, state_dict):
+        state = state_dict.copy()
+        self._batches_seen = state.pop('batches_seen', 0)
+        super().load_state_dict(state)
+
+    def _save_last_checkpoint(self, trainer, monitor_candidates=None):
+        filename = os.path.join(self.dirpath, self.last_filename)
+        self._save_checkpoint(trainer, filename)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        self.__counter += 1
-        if self.step_period:
-            if self.__counter % self.step_period == 0:
-                filename = os.path.join(self.dirpath, f"epoch_{self.__counter}{self.FILE_EXTENSION}")
-                self._save_checkpoint(trainer, filename)
+        self._batches_seen += 1
+        if self.step_period and self._batches_seen % self.step_period == 0:
+            filename = os.path.join(self.dirpath, f"step_{self._batches_seen}{self.FILE_EXTENSION}")
+            self._save_checkpoint(trainer, filename)
+        if self.last_period and self._batches_seen % self.last_period == 0:
+            self._save_last_checkpoint(trainer)
+
+    def on_train_end(self, trainer, pl_module):
+        self._save_last_checkpoint(trainer)
+
+    def on_exception(self, trainer, pl_module, exception):
+        if isinstance(exception, KeyboardInterrupt):
+            self._save_checkpoint(trainer, os.path.join(self.dirpath, "interrupt.ckpt"))
 
 
 def get_valid_extensions():
@@ -559,3 +741,217 @@ def get_valid_extensions():
     elif backend == "soundfile":
         return ['.wav', '.flac', '.ogg', '.aiff', '.aif', '.aifc']
 
+accelerator_map = {
+    'cpu': pl.accelerators.CPUAccelerator, 
+    'cuda': pl.accelerators.CUDAAccelerator, 
+    'tpu': pl.accelerators.XLAAccelerator,
+    'hpu': pl.accelerators.XLAAccelerator,
+    'mps': pl.accelerators.MPSAccelerator 
+
+}
+
+def get_auto_device():
+    for available_accelerator in ['tpu', 'cuda', 'mps', 'cpu']:
+        if accelerator_map[available_accelerator].is_available(): 
+            break
+    return [available_accelerator]
+
+def setup_gpu():
+    return gpu.getAvailable(maxMemory=.05)
+
+
+def get_training_device(devices: str | List[str], allow_multi: bool = False):
+    if not isinstance(devices, list): 
+        devices = [devices]
+    if devices == ["auto"]: 
+        devices = get_auto_device()
+    device_type = set([d.split(':')[0] for d in devices])
+    if len(device_type) != 1: 
+        raise RuntimeError('Please give only one type for devices. Got : %s'%device_type)
+    device_type = list(device_type)[0]
+    assert accelerator_map[device_type].is_available()
+    if device_type == "cpu": 
+        return "cpu", "auto"
+    elif device_type == "cuda":
+        if devices[0] == "cuda": 
+            cuda_idx = setup_gpu()[0]
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda_idx)
+            return "cuda", 1
+        else:
+            idxs = [d.split(':')[1] for d in devices]
+            assert not "" in idxs, "found \"cuda\" in %s"%devices
+            assert allow_multi
+            os.environ['CUDA_VISIBLE_DEVICES'] = ",".join(idxs)
+            return "cuda", len(idxs)
+    elif device_type in ["tpu", "hpu"]:
+        if len(devices) > 1: assert allow_multi
+        return device_type, len(devices)
+    elif device_type == "mps":
+        return "mps", -1
+
+
+def get_workers(workers):
+    # get data-loader
+    if workers is None: workers = -1
+    if workers < 0:
+        num_workers = multiprocessing.cpu_count()
+    else:
+        num_workers = workers
+    return min(num_workers, 32)
+    
+
+# transfer / fine-tune related callbacks
+
+def parse_weight_shortcut(weight_pattern: str):
+    print('weight patrtern :', weight_pattern)
+    if weight_pattern == "all":
+        return r".*"
+    elif weight_pattern == "encoder":
+        return r"^encoder\..*"
+    elif weight_pattern == "decoder":
+        return r"^decoder\..*"
+    elif weight_pattern == "discriminator":
+        return r"^discriminator\..*"
+    else:
+        return weight_pattern
+
+def parse_dict_with_regexps(state_dict, patterns):
+    filtered_weights = {}
+    if not isinstance(patterns, list):
+        patterns = [patterns]
+    for p in patterns:
+        for k, v in state_dict.items():
+            if re.match(p, k):
+                filtered_weights[k] = v
+    return filtered_weights
+
+
+def get_weights_from_pattern(pattern: str):
+    parts = pattern.split('->')
+    model_path = search_for_run(parts[0])
+    if model_path is None: 
+        model_path = search_for_run(parts[0], None)
+    if model_path is None:
+        raise FileNotFoundError("no model found at : %s"%model_path)
+
+    if len(parts) == 1:
+        weights = ["all"]
+    elif len(parts) == 2:
+        weights = parts[1].split(',')
+    else:
+        raise ValueError('Cannot parse pattern : %s'%pattern)
+    weights = list(map(parse_weight_shortcut, weights))
+
+    state_dict = dict(torch.load(model_path)['state_dict'])
+    filtered_dict = parse_dict_with_regexps(state_dict, weights)
+    if len(filtered_dict) == 0:
+        raise KeyError("no weights found for patterns : %s"%weights)
+    return filtered_dict
+
+def get_finetune_keys(model, mode, train=[], freeze=[]):
+    state_dict = model.state_dict()
+    weights_to_train = set()
+    for t in train:
+        t = parse_weight_shortcut(t)
+        f_dict = parse_dict_with_regexps(state_dict, t)
+        weights_to_train = weights_to_train.union(set(f_dict.keys()))
+    for f in freeze: 
+        f = parse_weight_shortcut(f)
+        keys_to_remove = list(filter(lambda x: re.match(f, x) is not None, weights_to_train))
+        weights_to_train.difference_update(keys_to_remove)
+    training_keys = list(sorted(weights_to_train))
+    if mode == 'encoder':
+        training_keys = [k for k in training_keys if k.startswith('encoder.')]
+    elif mode == 'decoder': 
+        training_keys = [k for k in training_keys
+                         if k.startswith(('decoder.', 'discriminator.'))]
+    return training_keys
+
+
+def copy_for_gin_config_copy(obj):
+    if isinstance(obj, list):
+        return list(map(copy_for_gin_config_copy, obj))
+    elif isinstance(obj, tuple):
+        return tuple(map(copy_for_gin_config_copy, obj))
+    else:
+        if isinstance(obj, gin.config.ConfigurableReference):
+            new_obj = gin.config.ConfigurableReference(obj._scoped_selector, obj._evaluate)
+            return new_obj
+        else:
+            return copy.deepcopy(obj)
+
+
+def copy_gin_config(config):
+    copy_config = {}
+    for field_ref, field_dict in config.items():
+        field_copy = {}
+        for k, v in field_dict.items(): 
+            field_copy[k] = copy_for_gin_config_copy(v)
+        copy_config[field_ref] = field_copy
+    return copy_config
+
+def checklist(item, n=1, copy=False):
+    """Repeat list elemnts
+    """
+    if not isinstance(item, (list, )):
+        if copy:
+            item = [copy.deepcopy(item) for _ in range(n)]
+        elif isinstance(item, torch.Size):
+            item = [i for i in item]
+        else:
+            item = [item]*n
+    return item
+
+class GinEnv(object):
+    def __init__(self, paths=[], configs=[], bindings=[], clear:bool = True):
+        self._paths = checklist(paths)
+        self._configs = checklist(configs)
+        self._bindings = checklist(bindings)
+        self.keep_constants = True
+        self._dict = None
+        self._clear = clear 
+
+    def _copy_gin_dict(self):
+        gin_dict = {}
+        for k, v in gin.config.__dict__.items(): 
+            if isinstance(v, ModuleType) or callable(v): continue
+            try:
+                if k == "_SCOPE_MANAGER":
+                    gin_dict[k] = {'active_scopes': v.active_scopes,
+                                   'current_scope': v.current_scope,
+                                   '_active_scopes': v._active_scopes}
+                elif k == "_CONFIG":
+                    gin_dict[k] = copy_gin_config(v)
+                else:
+                    gin_dict[k] = copy.deepcopy(v)
+            except: 
+                try:
+                    gin_dict[k] = dill.dumps(v)
+                except: 
+                    gin_dict[k] = v
+        return gin_dict
+    
+    def __enter__(self):
+        self._dict = self._copy_gin_dict()
+        if self._clear:
+            gin.clear_config()
+        if self.keep_constants: 
+            gin.config._CONSTANTS = self._dict['_CONSTANTS']
+        for p in self._paths: 
+            gin.add_config_file_search_path(p)
+        # unlock for the scope of the environment (gin.unlock_config is a context manager,
+        # calling it has no effect); the previous lock state is restored on exit
+        gin.config._set_config_is_locked(False)
+        if len(self._configs) or len(self._bindings):
+            gin.parse_config_files_and_bindings(self._configs, self._bindings)
+            gin.config._set_config_is_locked(False)
+
+    def __exit__(self, *args):
+        gin.clear_config()
+        scope_manager = gin.config._ScopeManager()
+        scope_manager.__dict__.update(self._dict['_SCOPE_MANAGER'])
+        self._dict['_SCOPE_MANAGER'] = scope_manager
+        for k, v in self._dict.items():
+            if isinstance(v, bytes):
+                self._dict[k] = dill.loads(v)
+        gin.config.__dict__.update(self._dict)

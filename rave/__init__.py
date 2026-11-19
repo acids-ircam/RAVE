@@ -1,15 +1,50 @@
 from pathlib import Path
+import os
+import re
 
 import cached_conv as cc
 import gin
 import torch
+import acids_dataset as ad
 
 
-BASE_PATH: Path = Path(__file__).parent
+BASE_PATH: Path = Path(__file__).parent.resolve()
+CUSTOM_PATH: Path = (Path(__file__).parent.parent / "configs").resolve()
 
 gin.add_config_file_search_path(BASE_PATH)
+gin.add_config_file_search_path(CUSTOM_PATH)
 gin.add_config_file_search_path(BASE_PATH.joinpath('configs'))
-gin.add_config_file_search_path(BASE_PATH.joinpath('configs', 'augmentations'))
+
+# AUGMENTATION_CONFIG_PATH = BASE_PATH.joinpath('configs', 'augmentations')
+# AUGMENTATION_CONFIG_PATH = Path(ad.__file__).parent.resolve() / "configs" / "transforms"
+# if (AUGMENTATION_CONFIG_PATH.resolve() != target_augment_config_path) or (not AUGMENTATION_CONFIG_PATH.exists()): 
+#     if (AUGMENTATION_CONFIG_PATH.exists()):
+#         os.remove(AUGMENTATION_CONFIG_PATH)
+#     AUGMENTATION_CONFIG_PATH.symlink_to(target_augment_config_path)
+
+
+def __legacy_cached_conv_aliases():
+    """backward compatibility: older cached_conv versions exposed everything in a single
+    `cached_conv.convs` module (referenced by old config.gin files as `from cached_conv import
+    convs`, `convs.get_padding.mode = ...`). Newer versions split it into `conv_1d` and `utils`;
+    register an alias module re-exporting the same objects, so that old bindings target the
+    functions actually used by the convolutions."""
+    import sys, types, importlib
+    if "cached_conv.convs" in sys.modules or hasattr(cc, "convs"):
+        return
+    convs = types.ModuleType("cached_conv.convs")
+    for sub in ("utils", "conv_1d"):
+        try:
+            mod = importlib.import_module(f"cached_conv.{sub}")
+        except ImportError:
+            continue
+        for k, v in vars(mod).items():
+            if not k.startswith("__"):
+                setattr(convs, k, v)
+    sys.modules["cached_conv.convs"] = convs
+    cc.convs = convs
+
+__legacy_cached_conv_aliases()
 
 
 def __safe_configurable(name):
@@ -18,11 +53,40 @@ def __safe_configurable(name):
     except ValueError:
         setattr(cc, name, gin.external_configurable(getattr(cc, name), module="cc"))
 
-# cc.get_padding = gin.external_configurable(cc.get_padding, module="cc")
-# cc.Conv1d = gin.external_configurable(cc.Conv1d, module="cc")
-# cc.ConvTranspose1d = gin.external_configurable(cc.ConvTranspose1d, module="cc")
+if ad.__file__:
+    AUGMENTATION_CONFIG_PATH = Path(ad.__file__).parent.resolve() / "configs" / "transforms"
+    gin.add_config_file_search_path(AUGMENTATION_CONFIG_PATH)
+else:
+    AUGMENTATION_CONFIG_PATH = None
+    print('[Warning] Could not locate acids_dataset ; augmentations not available')
 
-__safe_configurable("get_padding")
+
+def __register_get_padding():
+    """registers cc.get_padding with an additional `legacy_stride` option: older cached_conv
+    versions removed (stride - 1) from the padding of strided convolutions (e.g. a total
+    padding of 4 instead of 7 for kernel 8 / stride 4). Needed to rebuild old models
+    (see rave.uncompiling); identical to cc.get_padding when stride == 1."""
+    try:
+        cc.get_padding = gin.get_configurable("cc.get_padding")
+        return
+    except ValueError:
+        pass
+    _cc_get_padding = cc.get_padding
+
+    def get_padding(kernel_size, stride=1, dilation=1, mode="centered", legacy_stride=False):
+        if legacy_stride and stride > 1 and kernel_size > 1:
+            # same split as cc.get_padding, for an effective span reduced by (stride - 1)
+            span = max((kernel_size - 1) * dilation + 2 - stride, 1)
+            return _cc_get_padding(span, 1, 1, mode)
+        return _cc_get_padding(kernel_size, stride, dilation, mode)
+
+    # replaces cc.get_padding: same import path, so that gin serializes it as cc.get_padding
+    get_padding.__doc__ = _cc_get_padding.__doc__
+    get_padding.__module__ = cc.__name__
+    get_padding.__qualname__ = "get_padding"
+    cc.get_padding = gin.external_configurable(get_padding, name="get_padding", module="cc")
+
+__register_get_padding()
 __safe_configurable("Conv1d")
 __safe_configurable("ConvTranspose1d")
 
@@ -31,3 +95,81 @@ from .discriminator import *
 from .model import RAVE, BetaWarmupCallback
 from .pqmf import *
 from .balancer import *
+from . import core
+
+# configs that can be parsed even if system is resumed.
+RAVE_OVERRIDE_CONFIGS = [
+    "no_encoder_freeze.gin", 
+    "adv_at_start.gin", 
+    "full_beta.gin"
+]
+
+
+def get_run_name(run_path): 
+    checkpoint_path = (Path(run_path) / "..").resolve()
+    if checkpoint_path.stem != "checkpoints": 
+        return None
+    version_path = (checkpoint_path / "..").resolve()
+    if checkpoint_path.stem.startswith("version_"):
+        return None
+    return ((version_path / "..").resolve()).stem
+
+def load_rave_checkpoint(model_path, ema=False, name: str | None = "last.ckpt", remove_keys=None, configs=[], overrides=[], keep_config=False):
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise FileNotFoundError(str(model_path))
+    if model_path.suffix == ".ts":
+        return torch.jit.load(model_path)
+    with ad.GinEnv():
+        config_file = core.search_for_config(model_path) 
+        if config_file is None:
+            print('no configuration file found at address :'%model_path)
+        gin.parse_config_files_and_bindings([config_file] + configs, overrides)
+        run_path = core.search_for_run(model_path, name=name)
+        if run_path is None: 
+            raise FileNotFoundError("no model found with name: %s"%name)
+        rave_model = RAVE()
+        checkpoint = torch.load(run_path, map_location='cpu', weights_only=True)
+        if remove_keys is not None: 
+            if not isinstance(remove_keys, list): remove_keys = [remove_keys]
+            weights_to_remove = []
+            for k in checkpoint['state_dict']: 
+                if set([re.match(f, k) for f in remove_keys]) != {None}: 
+                    weights_to_remove.append(k)
+            for w in weights_to_remove: 
+                del checkpoint['state_dict'][w]
+        if ema and "EMA" in checkpoint["callbacks"]:
+            rave_model.load_state_dict(
+                checkpoint["callbacks"]["EMA"],
+                strict=False,
+            )
+        else:
+            rave_model.load_state_dict(
+                checkpoint["state_dict"],
+                strict=False,
+            )
+    if keep_config:
+        gin.parse_config_files_and_bindings([config_file] + configs, overrides)
+    return rave_model, run_path
+
+from rave.dataset import get_augmentations, parse_transform
+def add_gin_extension(config_name: str) -> str:
+    if config_name[-4:] != '.gin':
+        config_name += '.gin'
+    return config_name
+
+def parse_augmentations(augmentations, sr):
+    """builds the acids_dataset transforms described by the given augmentation configs
+    (searched in acids_dataset/configs/transforms), at sampling rate sr."""
+    parsed = []
+    for a in augmentations:
+        paths = [AUGMENTATION_CONFIG_PATH] if AUGMENTATION_CONFIG_PATH is not None else []
+        with ad.GinEnv(paths=paths, bindings="SAMPLE_RATE=%d" % sr, configs=[a]):
+            augments = ad.utils.parse_transform()
+            if isinstance(augments, list):
+                parsed.extend(augments)
+            else:
+                parsed.append(augments)
+    return parsed
+
+

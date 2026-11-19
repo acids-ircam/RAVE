@@ -1,0 +1,8 @@
+output_transform/ad.transforms.MidSide: 
+    p = 1.0
+
+get_output_transform: 
+    transform = @output_transform/ad.transforms.MidSide()
+
+RAVE: 
+    output_transform = @output_transform/ad.transforms.MidSide()

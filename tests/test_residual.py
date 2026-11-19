@@ -95,7 +95,7 @@ def test_residual_layer(kernel_size, dilations_list):
     assert torch.allclose(y_regular, y_stream, 1e-3, 1e-4)
 
 
-@pytest.mark.parametrize('ratio,', ratios)
+@pytest.mark.parametrize('ratio', ratios)
 def test_upsample_layer(ratio):
     dim = 16
     x = torch.randn(1, dim, 32)

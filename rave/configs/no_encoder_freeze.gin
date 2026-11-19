@@ -1,0 +1,9 @@
+from __gin__ import dynamic_registration
+import rave
+from rave import core
+from rave import blocks
+from rave import discriminator
+from rave import dataset
+
+rave.RAVE: 
+    no_freeze_when_warmed_up = True

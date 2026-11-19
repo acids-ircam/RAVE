@@ -1,6 +1,7 @@
 from __gin__ import dynamic_registration
 
 import rave
+from rave import pqmf
 from rave import core
 from rave import dataset
 from rave import blocks
@@ -13,14 +14,18 @@ import torch.nn as nn
 include "configs/v1.gin"
 
 KERNEL_SIZE = 3
+N_BAND = 1
+N_ENCODER_BAND = 16
 DILATIONS = [
     [1, 3, 9],
     [1, 3, 9],
     [1, 3, 9],
     [1, 3],
 ]
-RATIOS = [4, 4, 4, 2]
-CAPACITY = 64
+
+ENC_RATIOS = [2, 2, 2, 4]
+DEC_RATIOS = [4, 4, 4, 8]
+CAPACITY = 32
 NOISE_AUGMENTATION = 0
 
 core.AudioDistanceV1.log_epsilon = 1e-7
@@ -33,19 +38,25 @@ core.get_augmented_latent_size:
 # AUGMENTATIONS
 dataset.get_dataset:
     augmentations = [
-        @augmentations/transforms.Compress()
+        @augmentations/transforms.RandomCompress()
     ]
 
-augmentations/transforms.Compress:
+augmentations/transforms.RandomCompress:
     amp_range = [-60,-10]
     threshold=-40
     prob = 0.5
 
 # ENCODER
+
+pqmf.CachedPQMF:
+    attenuation = 100
+    n_band = %N_ENCODER_BAND
+
+
 blocks.EncoderV2:
-    data_size = %N_BAND
+    data_size = %N_ENCODER_BAND
     capacity = %CAPACITY
-    ratios = [4, 4, 4, 2]
+    ratios = %ENC_RATIOS
     latent_size = %LATENT_SIZE
     n_out = 2
     kernel_size = %KERNEL_SIZE
@@ -57,7 +68,7 @@ blocks.VariationalEncoder:
 # GENERATOR
 blocks.GeneratorV2:
     capacity = %CAPACITY
-    ratios = [8, 8, 8, 4]
+    ratios = %DEC_RATIOS
     latent_size = @core.get_augmented_latent_size()
     kernel_size = %KERNEL_SIZE
     dilations = %DILATIONS
@@ -104,4 +115,10 @@ rave.RAVE:
     enable_pqmf_encode = True 
     enable_pqmf_decode = False 
     audio_monitor_epochs = 10
+    
+rave.BetaWarmupCallback:
+    initial_value = 1e-6
+    target_value = 1e-1
+    log = False
+    warmup_len = 300000
     

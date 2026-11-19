@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acids-rave"
+description = "RAVE: a Realtime Audio Variational autoEncoder"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Antoine Caillon" },
+    { name = "ACIDS", email = "acids.paris@gmail.com" },
+    { name = "Axel Chemla--Romeu-Santos"}, 
+    { name = "Nils Demerlé" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dynamic = ["version", "dependencies"]
+
+[project.optional-dependencies]
+after = ["after @ git+https://github.com/acids-ircam/AFTER@rave"]
+
+[project.scripts]
+rave = "rave.scripts.main_cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "rave.version.__version__" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["rave*"]
+
+[tool.setuptools.package-data]
+rave = ["configs/*.gin", "configs/**/*.gin"]

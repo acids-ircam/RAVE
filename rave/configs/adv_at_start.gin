@@ -1,0 +1,23 @@
+from __gin__ import dynamic_registration
+
+import rave
+from rave import model
+
+rave.RAVE: 
+    no_freeze_when_warmed_up = True 
+    update_discriminator_every = 4
+
+model.WarmupCallback:
+    adversarial_at_start = True
+
+rave.BetaWarmupCallback:
+    warmup_len = 50000
+    multiplier = 1
+
+rave.RAVE:
+    weights = {
+        'audio_distance': [1., 0., 200000],
+        'multiband_audio_distance': [1., 0., 200000],
+        'adversarial': 1.,
+        'feature_matching' : [20., 100., 200000],
+    }

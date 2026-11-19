@@ -1,0 +1,11 @@
+
+
+output_transform/ad.transforms.AmbisonicEncoder: 
+    p = 1.0
+    order = %AMBISONICS_ORDER
+
+get_output_transform: 
+    transform = @output_transform/ad.transforms.AmbisonicEncoder()
+
+RAVE: 
+    output_transform = @output_transform/ad.transforms.AmbisonicEncoder()

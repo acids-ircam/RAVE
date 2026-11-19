@@ -90,12 +90,12 @@ rave.RAVE:
     valid_signal_crop = True
     num_skipped_features = 1
     decoder = @blocks.GeneratorV2
-    update_discriminator_every = 2
+    update_discriminator_every = 1
     weights = {
-        'feature_matching': 20,
+        'feature_matching': 50,
         }
 
 rave.BetaWarmupCallback:
-    initial_value = .01
-    target_value = .01
-    warmup_len = 300000
+    initial_value = 1e-6
+    target_value = 5e-2
+    warmup_len = 20000

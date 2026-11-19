@@ -31,7 +31,7 @@ class Prior(pl.LightningModule):
         elif fidelity is not None:
             assert pretrained_vae, "giving fidelity keyword needs the pretrained_vae keyword to be given"
             latent_size = torch.where(pretrained_vae.fidelity > fidelity)[0][0]
-            self.latent_size = 2**math.ceil(math.log2(latent_size))
+            self.latent_size = 2**math.ceil(math.log2(max(1, latent_size)))
         else:
             raise RuntimeError('please init Prior with either fidelity or latent_size keywords')
 
@@ -180,8 +180,8 @@ class Prior(pl.LightningModule):
         self.log("validation", loss)
         return batch
 
-    def validation_epoch_end(self, out):
-        x = torch.randn_like(self.encode(out[0]))
+    def on_validation_batch_end(self, out, *args, **kwargs):
+        x = torch.randn_like(self.encode(out))
         x = self.quantized_normal.encode(self.diagonal_shift(x))
         z = self.generate(x)
         z = self.diagonal_shift.inverse(self.quantized_normal.decode(z))
@@ -224,4 +224,19 @@ class VariationalPrior(Prior):
         z = torch.cat([z, noise], 1)
         z = F.conv1d(z, self.synth.latent_pca.T.unsqueeze(-1))
         z = z + self.synth.latent_mean.unsqueeze(-1)
+        return z
+
+
+
+@gin.configurable
+class WassersteinPrior(Prior):
+
+    def post_process_latent(self, z):
+        return z
+
+    def pre_process_latent(self, z):
+        if self.synth.encoder.noise_augmentation:
+            noise = torch.randn(z.shape[0], self.synth.encoder.noise_augmentation,
+                                z.shape[-1]).type_as(z)
+            z = torch.cat([z, noise], 1)
         return z

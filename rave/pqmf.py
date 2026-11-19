@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 from scipy.optimize import fmin
-from scipy.signal import firwin, kaiser, kaiser_beta, kaiserord
+from scipy.signal import firwin, kaiserord
 
 
 def reverse_half(x):
@@ -66,9 +66,8 @@ def kaiser_filter(wc, atten, N=None):
     N_, beta = kaiserord(atten, wc / np.pi)
     N_ = 2 * (N_ // 2) + 1
     N = N if N is not None else N_
-    h = firwin(N, wc, window=('kaiser', beta), scale=False, nyq=np.pi)
+    h = firwin(N, wc, window=('kaiser', beta), scale=False, fs=np.pi)
     return h
-
 
 def loss_wc(wc, atten, M, N):
     """
@@ -191,25 +190,41 @@ class PQMF(nn.Module):
 
     def __init__(self, attenuation, n_band, polyphase=True, n_channels = 1):
         super().__init__()
-        h = get_prototype(attenuation, n_band)
 
-        if polyphase:
-            power = math.log2(n_band)
+
+        self.attenuation = attenuation
+        self.n_band = n_band
+        self.polyphase = polyphase
+        self.n_channels = n_channels
+        h = get_prototype(self.attenuation, self.n_band)
+        if self.polyphase:
+            power = math.log2(self.n_band)
             assert power == math.floor(
                 power
             ), "when using the polyphase algorithm, n_band must be a power of 2"
 
         h = torch.from_numpy(h).float()
-        hk = get_qmf_bank(h, n_band)
+        hk = get_qmf_bank(h, self.n_band)
         hk = center_pad_next_pow_2(hk)
-
         self.register_buffer("hk", hk)
         self.register_buffer("h", h)
-        self.n_band = n_band
-        self.polyphase = polyphase
-        self.n_channels = n_channels
+
+    def initialized(self): 
+        return not (isinstance(self.h, nn.UninitializedParameter) or isinstance(self.hk, nn.UninitializedParameter))
+
+    def _load_from_state_dict(self, 
+                            local_state_dict,
+                            prefix,
+                            local_metadata,
+                            strict,
+                            missing_keys,
+                            unexpected_keys,
+                            error_msgs):
+        self.h = nn.Parameter(local_state_dict[f'{prefix}h'])
+        self.hk = nn.Parameter(local_state_dict[f'{prefix}hk'])
 
     def forward(self, x):
+
         if x.ndim == 2:
             return torch.stack([self.forward(x[i]) for i in range(x.shape[0])])
         if self.n_band == 1:
@@ -224,6 +239,8 @@ class PQMF(nn.Module):
         return x
 
     def inverse(self, x):
+        if not self.initialized():
+            self._init_buffers()
         if x.ndim == 2:
             if self.n_channels == 1:
                 return self.inverse(x[0]).unsqueeze(0)
@@ -246,9 +263,7 @@ class CachedPQMF(PQMF):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         hkf = make_odd(self.hk).unsqueeze(1)
-
         hki = self.hk.flip(-1)
         hki = rearrange(hki, "c (t m) -> m c t", m=self.hk.shape[0])
         hki = make_odd(hki)
@@ -261,8 +276,7 @@ class CachedPQMF(PQMF):
             stride=hkf.shape[0],
             bias=False,
         )
-        self.forward_conv.weight.data.copy_(hkf)
-
+        self.forward_conv.weight.data.copy_(hkf.data)
         self.inverse_conv = cc.Conv1d(
             hki.shape[1],
             hki.shape[0],
@@ -270,11 +284,59 @@ class CachedPQMF(PQMF):
             padding=cc.get_padding(hki.shape[-1]),
             bias=False,
         )
-        self.inverse_conv.weight.data.copy_(hki)
+        self.inverse_conv.weight.data.copy_(hki.data)
+
+    def _load_from_state_dict(self, 
+                              local_state_dict,
+                              prefix,
+                              local_metadata,
+                              strict,
+                              missing_keys,
+                              unexpected_keys,
+                              error_msgs):
+        self.h = nn.Parameter(local_state_dict[f'{prefix}h'])
+        self.hk = nn.Parameter(local_state_dict[f'{prefix}hk'])
+        forward_weight = local_state_dict.get(f'{prefix}forward_conv.weight')
+        if forward_weight is not None:
+            self.forward_conv = cc.Conv1d(
+                    forward_weight.shape[1],
+                    forward_weight.shape[0],
+                    forward_weight.shape[2],
+                    padding=cc.get_padding(forward_weight.shape[-1]),
+                    stride=forward_weight.shape[0],
+                    bias=False,
+                )
+            self.forward_conv.weight.data.copy_(forward_weight.data)
+            if hasattr(self.forward_conv, "cache"):
+                if f"{prefix}forward_conv.cache.pad" in local_state_dict:
+                    n_channels = local_state_dict[ f"{prefix}forward_conv.cache.pad"].shape[1]
+                    self.forward_conv.cache.init_cache(torch.zeros(1, n_channels, 1))
+                    self.forward_conv.cache.pad.copy_(local_state_dict[f"{prefix}forward_conv.cache.pad"])
+            
+        inverse_weight = local_state_dict.get(f'{prefix}inverse_conv.weight') 
+        if inverse_weight is not None:
+            self.inverse_conv = cc.Conv1d(
+                    inverse_weight.shape[1],
+                    inverse_weight.shape[0],
+                    inverse_weight.shape[2],
+                    padding=cc.get_padding(inverse_weight.shape[-1]),
+                    bias=False,
+                )
+            self.inverse_conv.weight.data.copy_(inverse_weight.data)
+            if hasattr(self.forward_conv, "cache"):
+                if f"{prefix}inverse_conv.cache.pad" in local_state_dict:
+                    n_channels = local_state_dict[ f"{prefix}inverse_conv.cache.pad"].shape[1]
+                    self.inverse_conv.cache.init_cache(torch.zeros(1, n_channels, 1))
+                    self.inverse_conv.cache.pad.data.copy_(local_state_dict[f"{prefix}inverse_conv.cache.pad"])
+            
+
+    def initialized(self):
+        return super().initialized() and hasattr(self, "forward_conv") and hasattr(self, "inverse_conv")
 
     def script_cache(self):
         self.forward_conv.script_cache()
         self.inverse_conv.script_cache()
+    
 
     def forward(self, x):
         if self.n_band == 1: return x

@@ -5,11 +5,14 @@ lightning_logs/
 *.ts
 *libtorch*
 *.wav
-*.txt
 runs
 *.npy
-*.yaml
 *.onnx
 __version__*
 PKG-INFO
 .junit-test-report.xml
+rave/.dimred_cache/
+tests/outs/
+
+# mkdocs build output
+site/

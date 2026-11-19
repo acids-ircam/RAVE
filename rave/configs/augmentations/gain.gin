@@ -1,3 +1,0 @@
-add_augmentation:
-    aug = @augmentations/transforms.RandomGain()
-
