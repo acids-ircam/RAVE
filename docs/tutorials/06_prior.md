@@ -7,7 +7,7 @@ model **on top of the latent space** of a trained RAVE, to give it new abilities
 | --- | --- | --- |
 | What it does | generates audio **on its own**, continuously | **timbre transfer**: plays the *structure* (rhythm, melody, dynamics) of one sound with the *timbre* of another |
 | Inputs at runtime | a temperature control | a structure audio stream (or MIDI) + a timbre audio stream, or latent controls |
-| Model | causal WaveNet-like, autoregressive | diffusion transformer ([AFTER](https://github.com/acids-ircam/AFTER)) |
+| Model | autoregressive: causal WaveNet-like (`prior/prior_v1`) or continuous transformer, CAM (`prior/cam`) | diffusion transformer ([AFTER](https://github.com/acids-ircam/AFTER)) |
 | Command | `rave train_prior` | `rave train_after` (optional dependency) |
 | Export | embedded in the RAVE `.ts` (`rave export --prior`) | separate `.ts`, embedding a streaming RAVE |
 
@@ -26,7 +26,7 @@ single "temperature" control for how adventurous it is.
 it was trained on (already preprocessed). A GPU.
 
 > For discrete models (`--config discrete`), use [msprior](https://github.com/caillonantoine/msprior)
-> instead. Wasserstein models are not supported by the built-in prior yet (see the end of this page).
+> instead. Wasserstein models are supported by the [CAM prior](#option-the-cam-prior-config-priorcam) only.
 
 ### How it works
 
@@ -129,6 +129,60 @@ with torch.no_grad():
 torchaudio.save("prior.wav", y[0], model.sr)
 ```
 
+
+### Option: the CAM prior (`--config prior/cam`)
+
+The default prior above is a quantized WaveNet. `prior/cam` is a newer prior, derived from
+**Continuous Autoregressive Models** ([Pasini, Nistal, Lattner, Fazekas, *Continuous Autoregressive Models with
+Noise Augmentation Avoid Error Accumulation*, arXiv:2411.18447](https://arxiv.org/abs/2411.18447)). It has no
+quantization, no PCA truncation, and it also works with Wasserstein models.
+
+- A causal **transformer** (rotary embeddings) reads the previous latent frames and gives a context vector. The
+  attention only looks at the last `local_attention_size` frames (32 by default): this window is exactly the
+  size of the cache when streaming.
+- A small **flow head** (rectified flow, `nb steps` Euler steps) turns the context into the next latent frame.
+- **Noise augmentation** of the inputs during training makes the model robust to its own errors.
+- It models the **full latent space** (`encode_full`: sampled latents, no projection, no normalization). Latents
+  are computed on the fly by the frozen RAVE, so the dataset is not modified.
+
+```bash
+rave train_prior \
+    --name darbouka_cam \
+    --model ~/runs/darbouka_abc123 \
+    --db_path ~/datasets/darbouka \
+    --out_path ~/runs \
+    --config prior/cam
+```
+
+The command line is the same as `rave train` and as the default prior (`--db_path`, `--batch`, `--device`,
+`--normalize`, `--derivative`, `--rand_pitch`, `--augment`, `--stereo`, `--channels`...). Differences:
+
+- `--model` is a RAVE run folder, a `.ckpt`, **or an exported `.ts`**. Runs are exported once (non streaming) to
+  `<prior run>/rave/`. A streaming `.ts` is accepted with a warning: its cached convolutions keep a state between
+  batches, which can degrade the latents.
+- `--n_signal` is the length of the sequences **in audio samples**; by default `n_frames` (64) latent frames of the
+  `prior/cam` config. It does not have to be the one used to train the RAVE.
+- `--fidelity` and `--latent_size` are ignored: the prior does not depend on the exported latent size.
+- Hyper-parameters (`CAMPrior`, `CAMTransformer`, `FlowHead`) are in `rave/configs/prior/cam.gin` and can be
+  overridden with `--override`.
+- Only continuous models (variational, Wasserstein) are supported.
+
+Export is the same: `rave export --run ~/runs/darbouka_abc123 --prior ~/runs/darbouka_cam_<hash> --streaming`.
+The exported model has three methods (and no fidelity constraint):
+
+| Method | Input | Output |
+| ------ | ----- | ------ |
+| `prior` | temperature control, like above | latents projected as `encode` (PCA...), to feed `decode` |
+| `prior_full` | temperature control | full latents, to feed `decode_full` |
+| `prior_listen` | full latents of a stream (`encode_full`) | full latents, **guided** by this stream |
+
+`prior_listen` makes the prior follow an audio stream. The stream goes through the transformer, and the context it
+would give to the next frame guides the flow **in the velocity space**, like classifier-free guidance:
+`v = v_prior + w * (v_listen - v_prior)`. The output frame `t` only depends on the stream frames before `t`.
+
+Attributes: `prior_steps` (flow steps per frame, 10 by default: fewer is faster, more is more precise),
+`prior_listen_weight` (`w`: 0 is the free prior, 1 follows the stream, above 1 insists on it).
+
 ### Troubleshooting
 
 | Problem | Solution |
@@ -140,11 +194,8 @@ torchaudio.save("prior.wav", y[0], model.sr)
 
 ### Note on Wasserstein models
 
-`rave train_prior` builds a `WassersteinPrior` for Wasserstein models, but the default prior
-configuration only defines hyper-parameters for `VariationalPrior`, and `rave export --prior` only
-knows how to load variational priors. Training a prior for a Wasserstein model therefore requires
-overriding the prior's hyper-parameters (`--override "WassersteinPrior.resolution=32"` etc.), and
-exporting it is not supported yet.
+The default prior (`prior/prior_v1`) cannot be used on Wasserstein models: its configuration only defines
+hyper-parameters for `VariationalPrior`. Use the [CAM prior](#option-the-cam-prior-config-priorcam) (`--config prior/cam`).
 
 ---
 

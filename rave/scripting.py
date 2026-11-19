@@ -18,6 +18,7 @@ from . import blocks
 from .stft import CausalSTFT, StreamableSTFT
 from .cachedConv2D import CachedPadding2d
 from .prior import model as prior_models
+from .prior.cam import CAMStreamer, streamer_from_checkpoint
 
 from .projections import *
 
@@ -175,6 +176,15 @@ class DumbPQMF(nn.Module):
 class DumbPrior(nn.Module):
     def forward(self, x: torch.Tensor):
         return x
+
+class DumbFullPrior(nn.Module):
+    """placeholder of the CAM prior (all branches are compiled by TorchScript)."""
+    def generate(self, temp: torch.Tensor, steps: int) -> torch.Tensor:
+        return temp
+    def generate_listen(self, z: torch.Tensor, steps: int, temperature: float, weight: float) -> torch.Tensor:
+        return z
+    def reset(self):
+        pass
 
 class DumbSpectrogram(nn.Module): 
     def forward(self, x: torch.Tensor):
@@ -391,8 +401,45 @@ class ScriptedRAVE(nn_tilde.Module):
 
         # init prior in case
         self._has_prior = False
-        
-        if prior is not None:
+        self._has_full_prior = False
+        self.prior_module = DumbPrior()
+        self.full_prior_module = DumbFullPrior()
+        self.prior_steps = (10, )
+        self.prior_listen_weight = (0., )
+
+        if isinstance(prior, CAMStreamer):
+            # CAM prior: generates full latents, projected for the `prior` method
+            if prior.latent_size != self.full_latent_size:
+                raise ValueError(f"the CAM prior was trained on {prior.latent_size} latent dimensions, "
+                                 f"but the model has {self.full_latent_size}")
+            self._has_full_prior = True
+            self.full_prior_module = prior
+            self.register_attribute("prior_steps", 10)
+            self.register_attribute("prior_listen_weight", 0.)
+            self.register_method(
+                "prior",
+                in_channels=1,
+                in_ratio=prior.ratio,
+                out_channels=self.latent_size,
+                out_ratio=prior.ratio
+            )
+            self.register_method(
+                "prior_full",
+                in_channels=1,
+                in_ratio=prior.ratio,
+                out_channels=self.full_latent_size,
+                out_ratio=prior.ratio
+            )
+            self.register_method(
+                "prior_listen",
+                in_channels=self.full_latent_size,
+                in_ratio=prior.ratio,
+                out_channels=self.full_latent_size,
+                out_ratio=prior.ratio,
+                input_labels=[f'(signal) Latent dimension {i + 1}' for i in range(self.full_latent_size)],
+                output_labels=[f'(signal) Latent dimension {i + 1}' for i in range(self.full_latent_size)],
+            )
+        elif prior is not None:
             self._has_prior = True
             self.prior_module = prior
             self.register_method(
@@ -402,8 +449,6 @@ class ScriptedRAVE(nn_tilde.Module):
                 out_channels = self.latent_size,
                 out_ratio=prior.ratio
             )
-        else:
-            self.prior_module = DumbPrior()        
 
 
     def post_process_latent(self, z):
@@ -611,9 +656,55 @@ class ScriptedRAVE(nn_tilde.Module):
     def prior(self, temp: torch.Tensor):
         if self._has_prior:
             return self.prior_module.forward(temp)
+        elif self._has_full_prior:
+            z = self.full_prior_module.generate(temp, self.prior_steps[0])
+            return self.projections(z, int(self.projection_idx.item()), self.latent_size)[:, :self.latent_size]
         else:
             return torch.tensor(0)
-        
+
+    @torch.jit.export
+    def prior_full(self, temp: torch.Tensor):
+        """CAM prior, full latent space (to decode with decode_full)."""
+        if self._has_full_prior:
+            return self.full_prior_module.generate(temp, self.prior_steps[0])
+        else:
+            return torch.tensor(0)
+
+    @torch.jit.export
+    def prior_listen(self, z: torch.Tensor):
+        """CAM prior guided by a stream of full latents (encode_full), in the velocity space, with
+        strength prior_listen_weight. Full latent space."""
+        if self._has_full_prior:
+            return self.full_prior_module.generate_listen(
+                z, self.prior_steps[0], 1., self.prior_listen_weight[0])
+        else:
+            return torch.tensor(0)
+
+    @torch.jit.export
+    def get_prior_steps(self) -> int:
+        return self.prior_steps[0]
+
+    @torch.jit.export
+    def set_prior_steps(self, steps: int) -> int:
+        if steps < 1:
+            return -1
+        self.prior_steps = (steps, )
+        return 0
+
+    @torch.jit.export
+    def get_prior_listen_weight(self) -> float:
+        return self.prior_listen_weight[0]
+
+    @torch.jit.export
+    def set_prior_listen_weight(self, weight: float) -> int:
+        self.prior_listen_weight = (weight, )
+        return 0
+
+    @torch.jit.export
+    def reset_prior(self) -> int:
+        self.full_prior_module.reset()
+        return 0
+
 
 class ContinuousScriptedRAVE(ScriptedRAVE):
     """continuous latent spaces (variational / wasserstein). Latents are encoded through the
@@ -927,14 +1018,15 @@ class TraceModel(nn.Module):
         return x
 
 
-prior_classes = ['VariationalPrior']
+prior_classes = ['VariationalPrior', 'CAMPrior']
 def get_prior_class_from_config():
+    """name of the prior class bound in the gin config (the config of a prior run binds exactly one)."""
     prior_class = None
     for cl in prior_classes:
         try:
-            gin.get_bindings(cl)
-            prior_class = cl
-        except:
+            if gin.get_bindings(cl):
+                prior_class = cl
+        except Exception:
             pass
     if prior_class is None:
         raise RuntimeError('Could not retrive Prior class from gin config')
@@ -985,6 +1077,13 @@ def _load_prior(prior_path, pretrained, latent_size, fidelity):
         prior_ckpt = core.search_for_run(prior_path)
         _log.info(f"using prior model at {prior_ckpt}")
         prior_class = get_prior_class_from_config()
+        if prior_class == 'CAMPrior':
+            try:
+                streamer, _ = streamer_from_checkpoint(prior_ckpt)
+                return streamer
+            except Exception as e:
+                _log.error(f"could not load the CAM prior from {prior_ckpt}: {e}")
+                return None
         prior_pretrained = getattr(prior_models, prior_class)(
             pretrained_vae=pretrained, n_channels=pretrained.n_channels,
             latent_size=latent_size, fidelity=fidelity)
@@ -1007,6 +1106,8 @@ def _clear_streaming_caches(module, stft: bool = True):
     model (cached_conv allocates them once, for max_batch_size items: they must keep their
     shape), and, if stft, buffers of streaming STFTs are emptied."""
     for m in module.modules():
+        if isinstance(m, CAMStreamer):
+            m.reset()
         if type(m).__module__.startswith(("cached_conv", "rave.cachedConv2D")):
             for name in ("pad", "cache"):
                 buf = m._buffers.get(name)

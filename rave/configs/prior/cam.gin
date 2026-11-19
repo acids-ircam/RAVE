@@ -1,0 +1,30 @@
+# CAM prior: continuous autoregressive prior on the full latent space of a RAVE model.
+# Derived from Continuous Autoregressive Models:
+#   M. Pasini, J. Nistal, S. Lattner, G. Fazekas. "Continuous Autoregressive Models with Noise
+#   Augmentation Avoid Error Accumulation". arXiv:2411.18447 (2024).
+#
+# usage: rave train_prior --model <run | .ckpt | .ts> --db_path <dataset> --name <name> --config prior/cam
+
+CAMPrior:
+    n_frames = 128            # training sequence, in latent frames (audio: n_frames * ratio samples, see --n_signal)
+    context_dim = 16         # transformer -> flow head
+    rf_batch_mul = 2
+    p_drop_sos = 0.1
+    noise_mode = "convex"    # noise augmentation of the inputs: none | convex | linear
+    lr = 1e-4
+    lr_warmup = 20000
+    ema_decay = 0.999
+    grad_clip = 3.
+    sampling_steps = 10      # flow steps of the validation samples
+
+CAMTransformer:
+    embed_dim = 384
+    n_layers = 6
+    n_heads = 6
+    mlp_multiplier = 3
+    dropout = 0.1
+    local_attention_size = 32    # attention window (frames); also the size of the cache when streaming
+
+FlowHead:
+    model_channels = 256
+    n_blocks = 6
