@@ -8,8 +8,6 @@ import torch
 
 from rave.resampler import Resampler
 
-torch.set_grad_enabled(False)
-
 # (target_sr, model_sr): ratios 2, 3, 4, 8 and a non power of 2 even one
 INTEGER = [(44100, 22050), (66150, 22050), (88200, 22050), (176400, 22050),
            (48000, 16000), (96000, 16000)]
@@ -25,7 +23,8 @@ def ids(configs):
 def clean_state():
     gin.clear_config()
     initial = cc.is_cached()
-    yield
+    with torch.no_grad():
+        yield
     cc.use_cached_conv(initial)
     gin.clear_config()
 

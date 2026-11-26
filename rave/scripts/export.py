@@ -2,9 +2,6 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 import torch
-
-torch.set_grad_enabled(False)
-
 from absl import flags, app
 
 try:
@@ -90,6 +87,7 @@ flags.DEFINE_string('prior',
 
 
 def main(argv):
+    torch.set_grad_enabled(False)
     export(FLAGS.run,
            out_path=FLAGS.out_path,
            name=FLAGS.name,
