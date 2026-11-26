@@ -1,6 +1,5 @@
 # adapted from https://github.com/descriptinc/descript-audio-codec
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,7 +7,7 @@ from einops import rearrange
 from torch.nn.utils import weight_norm
 from torchaudio.transforms import Spectrogram
 
-from .pqmf import kaiser_filter
+from cached_conv.resample import Resample1d
 
 
 def WNConv1d(*args, **kwargs):
@@ -68,7 +67,7 @@ class MPD(nn.Module):
 
 class MSD(nn.Module):
 
-    def __init__(self, scale: int, n_channels: int = 1):
+    def __init__(self, scale: int, sample_rate: int = None, n_channels: int = 1):
         super().__init__()
         self.convs = nn.ModuleList([
             WNConv1d(n_channels, 16, 15, 1, padding=7),
@@ -82,24 +81,13 @@ class MSD(nn.Module):
 
         self.scale = scale
 
-        if self.scale != 1:
-            wc = np.pi / self.scale
-            filt = kaiser_filter(wc, 140)
-            if not len(filt) % 2:
-                filt = np.pad(filt, (1, 0))
-
-            self.register_buffer(
-                "downsampler",
-                torch.from_numpy(filt).reshape(1, 1, -1).float())
+        # anti-aliased downsampling by `scale` (eager: the discriminator is
+        # never streamed). sample_rate is only kept for the DAC signature.
+        self.downsampler = Resample1d(self.scale, 1) if self.scale != 1 \
+            else nn.Identity()
 
     def forward(self, x):
-        if self.scale != 1:
-            x = nn.functional.conv1d(
-                x,
-                self.downsampler,
-                padding=self.downsampler.shape[-1] // 2,
-                stride=self.scale,
-            )
+        x = self.downsampler(x)
 
         fmap = []
 
