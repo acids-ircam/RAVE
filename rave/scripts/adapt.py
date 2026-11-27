@@ -11,8 +11,6 @@ logging.info("library loading")
 logging.info("DEBUG")
 import torch
 
-torch.set_grad_enabled(False)
-
 # import cached_conv as cc
 import acids_dataset as ad
 from pathlib import Path
@@ -130,6 +128,7 @@ class Adapter(nn_tilde.Module):
 
 
 def main(argv):
+    torch.set_grad_enabled(False)
 
     FLAGS = flags.FLAGS
     random.seed(FLAGS.seed)

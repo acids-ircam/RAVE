@@ -5,8 +5,6 @@ import acids_dataset
 import torch
 from absl import app, flags
 
-torch.set_grad_enabled(False)
-
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('input_path',
@@ -36,6 +34,7 @@ flags.DEFINE_multi_string('feature', [], help="additional feature files (see aci
 
 
 def main(args):
+    torch.set_grad_enabled(False)
     acids_dataset.preprocess_dataset(
         FLAGS.input_path, 
         FLAGS.output_path, 
